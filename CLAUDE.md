@@ -37,7 +37,7 @@ internal/
     delete.go             → teardown with confirmation prompt (uses charmbracelet/huh)
     list.go               → table output with live docker status (uses lipgloss v2)
     start.go / stop.go    → lifecycle commands
-    shell.go / logs.go    → interactive docker exec (zsh for frappe container) / log streaming
+    shell.go / logs.go    → interactive docker exec (zsh for frappe container) / log streaming; shell.go also supports --exec for non-interactive one-shot commands
     status.go / version.go
     pick.go               → resolveBenchName() + pickBench() helpers: interactive bench selector shown when name arg is omitted
     preset.go             → ffm preset: change starship prompt preset on a running bench; starshipPresets slice shared with create form (Pure is default)
@@ -46,7 +46,7 @@ internal/
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
     compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates
-    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps)
+    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps); ExecOutputInDir for non-interactive streaming exec (used by shell --exec)
     frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName): runs bench execute inside container to generate API key/secret for Administrator
     port.go               → port allocation: scans state store + probes host for free port pairs
     templates/

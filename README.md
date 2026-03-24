@@ -101,12 +101,20 @@ Stops all containers for a bench. Data is preserved — use `start` to resume. I
 
 Opens an interactive **zsh** shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and the starship prompt pre-configured.
 
+Use `--exec` to run a single command non-interactively and print its output — the user stays in their own shell. Go and ffc are on the PATH automatically.
+
+```bash
+ffm shell mybench --exec "ffc list-docs -D Company"
+ffm shell mybench --exec "bench --site mybench.localhost list-apps"
+```
+
 If `name` is omitted, an interactive picker is shown.
 
 ```
 Flags:
   --service string   Container to shell into (default "frappe")
                      Use "mariadb" to get a DB shell (uses bash), etc.
+  --exec string      Run a command non-interactively and print its output
 ```
 
 ### `ffm logs [name] [service]`
