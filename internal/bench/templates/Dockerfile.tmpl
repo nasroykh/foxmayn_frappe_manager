@@ -1,0 +1,36 @@
+FROM docker.io/frappe/bench:latest
+
+USER root
+
+# Install zsh and curl
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends zsh curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install starship (system-wide)
+RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
+
+USER frappe
+
+# Install zinit
+RUN git clone --depth=1 https://github.com/zdharma-continuum/zinit.git \
+    /home/frappe/.local/share/zinit/zinit.git
+
+# Pre-fetch plugins into the image layer (no network needed at shell startup)
+RUN zsh -c 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh \
+    && zinit light zsh-users/zsh-autosuggestions \
+    && zinit light zsh-users/zsh-syntax-highlighting'
+
+# Write .zshrc
+RUN echo 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh' > /home/frappe/.zshrc \
+    && echo '' >> /home/frappe/.zshrc \
+    && echo 'zinit light zsh-users/zsh-autosuggestions' >> /home/frappe/.zshrc \
+    && echo 'zinit light zsh-users/zsh-syntax-highlighting' >> /home/frappe/.zshrc \
+    && echo '' >> /home/frappe/.zshrc \
+    && echo 'eval "$(starship init zsh)"' >> /home/frappe/.zshrc
+{{- if .StarshipPreset}}
+
+# Apply starship preset: {{.StarshipPreset}}
+RUN mkdir -p /home/frappe/.config \
+    && starship preset {{.StarshipPreset}} -o /home/frappe/.config/starship.toml
+{{- end}}

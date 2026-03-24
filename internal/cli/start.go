@@ -12,11 +12,15 @@ import (
 
 func newStartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "start <name>",
+		Use:   "start [name]",
 		Short: "Start a stopped bench",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(args[0])
+			name, err := resolveBenchName(args, "Select a bench to start")
+			if err != nil {
+				return err
+			}
+			return runStart(name)
 		},
 	}
 }

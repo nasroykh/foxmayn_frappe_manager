@@ -19,10 +19,10 @@ services:
     image: docker.io/redis:alpine
 
   frappe:
-    image: docker.io/frappe/bench:latest
+    build: .
     command: sleep infinity
     environment:
-      - SHELL=/bin/bash
+      - SHELL=/bin/zsh
     volumes:
       - {{.BenchDir}}:/workspace:cached
     working_dir: /workspace

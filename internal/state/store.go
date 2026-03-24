@@ -11,14 +11,17 @@ import (
 
 // Bench holds the persisted state for a single managed bench.
 type Bench struct {
-	Name          string    `json:"name"`
-	Dir           string    `json:"dir"`
-	WebPort       int       `json:"web_port"`
-	SocketIOPort  int       `json:"socketio_port"`
-	FrappeBranch  string    `json:"frappe_branch"`
-	AdminPassword string    `json:"admin_password"`
-	SiteName      string    `json:"site_name"`
-	CreatedAt     time.Time `json:"created_at"`
+	Name           string    `json:"name"`
+	Dir            string    `json:"dir"`
+	WebPort        int       `json:"web_port"`
+	SocketIOPort   int       `json:"socketio_port"`
+	FrappeBranch   string    `json:"frappe_branch"`
+	AdminPassword  string    `json:"admin_password"`
+	DBPassword     string    `json:"db_password"`
+	SiteName       string    `json:"site_name"`
+	Apps           []string  `json:"apps"`
+	StarshipPreset string    `json:"starship_preset,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Store is a thin wrapper around the benches.json state file.

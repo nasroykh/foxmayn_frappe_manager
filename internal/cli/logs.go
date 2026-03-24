@@ -11,15 +11,19 @@ func newLogsCmd() *cobra.Command {
 	var follow bool
 
 	cmd := &cobra.Command{
-		Use:   "logs <name> [service]",
+		Use:   "logs [name] [service]",
 		Short: "Stream logs from a bench (all services or one)",
-		Args:  cobra.RangeArgs(1, 2),
+		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name, err := resolveBenchName(args, "Select a bench to view logs")
+			if err != nil {
+				return err
+			}
 			service := ""
 			if len(args) == 2 {
 				service = args[1]
 			}
-			return runLogs(args[0], service, follow)
+			return runLogs(name, service, follow)
 		},
 	}
 

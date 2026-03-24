@@ -1,8 +1,8 @@
 # ffm — Foxmayn Frappe Manager
 
-BINARY  := ffm
+BINARY    := ffm
 BINARY_DIR := bin
-CMD_PATH := ./cmd/ffm
+CMD_PATH  := ./cmd/ffm
 
 # Build-time version injection
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -13,26 +13,27 @@ LDFLAGS := -s -w \
 	-X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Commit=$(COMMIT) \
 	-X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Date=$(DATE)
 
-.PHONY: build install clean tidy vet fmt help skills-init skills-init-claude skills-init-cursor skills-init-agent
+.PHONY: build install clean test tidy vet fmt help \
+        skills-init skills-init-claude skills-init-cursor skills-init-agent
 
-## build: compile binary to project root
+## build: compile binary to ./bin/ffm
 build:
+	@mkdir -p $(BINARY_DIR)
 	go build -ldflags "$(LDFLAGS)" -o ./$(BINARY_DIR)/$(BINARY) $(CMD_PATH)
 
-## install: install binary to $GOPATH/bin and set up default config
+## install: install binary to $GOPATH/bin
 install:
 	go install -ldflags "$(LDFLAGS)" $(CMD_PATH)
 	@mkdir -p ~/.config/ffm/
-	@if [ ! -f ~/.config/ffm/config.yaml ]; then \
-		cp config.example.yaml ~/.config/ffm/config.yaml; \
-		echo "Created ~/.config/ffm/config.yaml from example — edit it with your site details."; \
-	else \
-		echo "~/.config/ffm/config.yaml already exists, skipping copy."; \
-	fi
 
-## tidy: install/update all dependencies
+## test: run all tests
+test:
+	go test ./...
+
+## tidy: tidy and verify module dependencies
 tidy:
 	go mod tidy
+	go mod verify
 
 ## vet: run go vet
 vet:
@@ -50,21 +51,21 @@ clean:
 help:
 	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
 
-## skills-init: Initialize skills for AI agents
+## skills-init: initialise skills symlinks for all AI agents
 skills-init:
 	$(MAKE) skills-init-claude skills-init-cursor skills-init-agent
 
-## skills-init-claude: Initialize skills for Claude
+## skills-init-claude: initialise skills for Claude
 skills-init-claude:
 	mkdir -p .claude/skills/ && rm -rf .claude/skills/* && cd .claude/skills/ && ln -s ../../.agents/skills/*/ .
-	echo "Skills initialized for Claude"
+	@echo "Skills initialised for Claude"
 
-## skills-init-cursor: Initialize skills for Cursor
+## skills-init-cursor: initialise skills for Cursor
 skills-init-cursor:
 	mkdir -p .cursor/skills/ && rm -rf .cursor/skills/* && cd .cursor/skills/ && ln -s ../../.agents/skills/*/ .
-	echo "Skills initialized for Cursor"
+	@echo "Skills initialised for Cursor"
 
-## skills-init-agent: Initialize skills for Agent
+## skills-init-agent: initialise skills for other agents (Antigravity, Gemini CLI, Codex, …)
 skills-init-agent:
 	mkdir -p .agent/skills/ && rm -rf .agent/skills/* && cd .agent/skills/ && ln -s ../../.agents/skills/*/ .
-	echo "Skills initialized for Antigravity, Gemini CLI, Codex, ...etc"
+	@echo "Skills initialised for agent"

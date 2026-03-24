@@ -13,15 +13,19 @@ func newShellCmd() *cobra.Command {
 	var service string
 
 	cmd := &cobra.Command{
-		Use:   "shell <name>",
+		Use:   "shell [name]",
 		Short: "Open an interactive shell inside a bench container",
 		Long: `Open an interactive bash shell inside the specified bench's frappe container,
 landing directly in the frappe-bench directory.
 
 Use --service to target a different container (e.g. mariadb).`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShell(args[0], service)
+			name, err := resolveBenchName(args, "Select a bench to shell into")
+			if err != nil {
+				return err
+			}
+			return runShell(name, service)
 		},
 	}
 
@@ -38,10 +42,10 @@ func runShell(name, service string) error {
 
 	runner := bench.NewRunner(b.Name, b.Dir, false)
 
-	// For the frappe container, land directly in the bench directory.
-	// For other services (e.g. mariadb) the default workdir is fine.
+	// For the frappe container, land in the bench directory using zsh.
+	// For other services (e.g. mariadb) fall back to bash.
 	if service == "frappe" {
-		return runner.ExecInDir(service, frappeBenchDir, "bash")
+		return runner.ExecInDir(service, frappeBenchDir, "zsh")
 	}
 	return runner.Exec(service, "bash")
 }

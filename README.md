@@ -28,85 +28,106 @@ make install
 ## Quick start
 
 ```bash
-# Create a new bench (pulls images, runs bench init, creates site — takes ~10 min first run)
+# Create a new bench (interactive form: version, apps, starship preset)
 ffm create mybench
 
 # Open the site
 open http://localhost:8000   # or whatever port was allocated
 # Login: administrator / admin
 
-# Shell into the bench container
-ffm shell mybench
+# Shell into the bench container (drops you into zsh inside frappe-bench/)
+ffm shell
 
 # Stop and start
-ffm stop mybench
-ffm start mybench
+ffm stop
+ffm start
 
 # Tear it all down
-ffm delete mybench
+ffm delete
 ```
+
+Most commands accept an optional bench name. If omitted, an interactive picker lets you select from your existing benches.
 
 ## Commands
 
 ### `ffm create <name>`
 
-Creates and starts a new Frappe development bench end-to-end:
+Creates and starts a new Frappe development bench end-to-end. When run without `--frappe-branch` or `--apps`, an interactive form lets you choose:
+
+- Frappe version (v15 stable / v16 latest)
+- Additional apps to install (ERPNext, HRMS)
+- Starship prompt preset for the shell (Default, Tokyo Night, Pastel Powerline, and more)
+
+Steps performed:
 
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
-2. Writes a `docker-compose.yml` to `~/frappe/<name>/`
-3. Starts MariaDB, Redis (cache + queue), and the Frappe container
-4. Runs `bench init` (clones Frappe, installs Python/Node deps)
-5. Configures `common_site_config.json` with DB and Redis connection strings
-6. Creates the site with `bench new-site`
-7. Enables developer mode
-8. Starts the dev server via `nohup bench start`
+2. Writes `docker-compose.yml` and a `Dockerfile` to `~/frappe/<name>/`
+3. Builds the Docker image — installs **zsh**, **zinit** (with zsh-autosuggestions + zsh-syntax-highlighting), and **starship**, baked into the image layer
+4. Starts MariaDB, Redis (cache + queue), and the Frappe container
+5. Runs `bench init` (clones Frappe, installs Python/Node deps)
+6. Configures `common_site_config.json` with DB and Redis connection strings
+7. Creates the site with `bench new-site`
+8. Enables developer mode
+9. Starts the dev server via `nohup bench start`
 
 ```
 Flags:
-  --frappe-branch string    Frappe branch to initialise (default "version-15")
-  --admin-password string   Frappe site admin password (default "admin")
-  --db-password string      MariaDB root password (default "123")
-  -v, --verbose             Show docker compose output
+  --frappe-branch string      Frappe branch to initialise (default "version-15")
+  --apps stringArray          Additional apps to install (e.g. --apps erpnext)
+  --admin-password string     Frappe site admin password (default "admin")
+  --db-password string        MariaDB root password (default "123")
+  --starship-preset string    Starship prompt preset (e.g. tokyo-night, pastel-powerline)
+  -v, --verbose               Show docker compose output
 ```
 
 ### `ffm list` / `ffm ls`
 
 Lists all managed benches with their live status, port, site name, and Frappe branch.
 
-### `ffm status <name>`
+### `ffm status [name]`
 
-Shows per-container status for a bench (image, state, ports, uptime).
+Shows per-container status for a bench (image, state, ports, uptime). If `name` is omitted, an interactive picker is shown.
 
-### `ffm start <name>`
+### `ffm start [name]`
 
-Starts a stopped bench and re-launches the dev server.
+Starts a stopped bench and re-launches the dev server. If `name` is omitted, an interactive picker is shown.
 
-### `ffm stop <name>`
+### `ffm stop [name]`
 
-Stops all containers for a bench. Data is preserved — use `start` to resume.
+Stops all containers for a bench. Data is preserved — use `start` to resume. If `name` is omitted, an interactive picker is shown.
 
-### `ffm shell <name>`
+### `ffm shell [name]`
 
-Opens an interactive bash shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`.
+Opens an interactive **zsh** shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and the starship prompt pre-configured.
+
+If `name` is omitted, an interactive picker is shown.
 
 ```
 Flags:
   --service string   Container to shell into (default "frappe")
-                     Use "mariadb" to get a DB shell, etc.
+                     Use "mariadb" to get a DB shell (uses bash), etc.
 ```
 
-### `ffm logs <name> [service]`
+### `ffm logs [name] [service]`
 
-Streams container logs. Omit `[service]` to tail all containers.
+Streams container logs. Omit `[service]` to tail all containers. If `name` is omitted, an interactive picker is shown.
 
 ```
 Flags:
   -f, --follow   Follow log output (default true)
 ```
 
-### `ffm delete <name>`
+### `ffm preset [name]`
 
-Stops and removes all containers, volumes, and the bench directory. Prompts for confirmation unless `--force` is passed.
+Changes the starship prompt preset on a running bench without rebuilding the image. Applies the new preset config directly inside the container — takes under a second.
+
+Available presets: Default, Tokyo Night, Pastel Powerline, Gruvbox Rainbow, Nerd Font Symbols, Bracketed Segments, Jetpack.
+
+If `name` is omitted, an interactive picker is shown. The bench must be running.
+
+### `ffm delete [name]`
+
+Stops and removes all containers, volumes, and the bench directory. Prompts for confirmation unless `--force` is passed. If `name` is omitted, an interactive picker is shown.
 
 ```
 Aliases: rm, remove
@@ -125,6 +146,7 @@ Prints the build version, commit hash, and build date.
 ~/frappe/
   <bench-name>/
     docker-compose.yml   # generated per bench
+    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches
@@ -141,12 +163,12 @@ Prints the build version, commit hash, and build date.
 
 Each bench runs four Docker containers scoped to a Compose project named `ffm-<name>`:
 
-| Service       | Image                        | Purpose                  |
-|---------------|------------------------------|--------------------------|
-| `frappe`      | `frappe/bench:latest`        | Frappe app + dev server  |
-| `mariadb`     | `mariadb:11.8`               | Database                 |
-| `redis-cache` | `redis:alpine`               | Cache                    |
-| `redis-queue` | `redis:alpine`               | Background job queue     |
+| Service       | Image                              | Purpose                  |
+|---------------|------------------------------------|--------------------------|
+| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship) |
+| `mariadb`     | `mariadb:11.8`                     | Database                 |
+| `redis-cache` | `redis:alpine`                     | Cache                    |
+| `redis-queue` | `redis:alpine`                     | Background job queue     |
 
 ## Building from source
 

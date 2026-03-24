@@ -10,7 +10,10 @@ import (
 //go:embed templates/docker-compose.yml.tmpl
 var composeTmpl string
 
-// ComposeData holds the values substituted into the compose template.
+//go:embed templates/Dockerfile.tmpl
+var dockerfileTmpl string
+
+// ComposeData holds the values substituted into the compose and Dockerfile templates.
 type ComposeData struct {
 	BenchDir            string
 	WebPort             int
@@ -18,6 +21,7 @@ type ComposeData struct {
 	SocketIOPort        int
 	SocketIOPortEnd     int
 	MariaDBRootPassword string
+	StarshipPreset      string
 }
 
 // WriteCompose renders the compose template into the bench directory.
@@ -32,6 +36,27 @@ func WriteCompose(benchDir string, data ComposeData) error {
 	}
 
 	dest := filepath.Join(benchDir, "docker-compose.yml")
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return tmpl.Execute(f, data)
+}
+
+// WriteDockerfile renders the Dockerfile template into the bench directory.
+func WriteDockerfile(benchDir string, data ComposeData) error {
+	if err := os.MkdirAll(benchDir, 0o755); err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("dockerfile").Parse(dockerfileTmpl)
+	if err != nil {
+		return err
+	}
+
+	dest := filepath.Join(benchDir, "Dockerfile")
 	f, err := os.Create(dest)
 	if err != nil {
 		return err

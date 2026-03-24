@@ -57,6 +57,16 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 	return cmd
 }
 
+// Build builds the Docker image for the compose project, always streaming
+// output so the user can see progress (the build takes several minutes).
+func (r *Runner) Build() error {
+	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "build"}
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // Up starts all services detached.
 func (r *Runner) Up() error {
 	return r.withOutput(r.compose("up", "-d")).Run()

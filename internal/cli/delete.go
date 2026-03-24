@@ -15,12 +15,16 @@ func newDeleteCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:     "delete <name>",
+		Use:     "delete [name]",
 		Aliases: []string{"rm", "remove"},
 		Short:   "Delete a bench and all its data",
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDelete(args[0], force)
+			name, err := resolveBenchName(args, "Select a bench to delete")
+			if err != nil {
+				return err
+			}
+			return runDelete(name, force)
 		},
 	}
 

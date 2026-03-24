@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is this?
 
-**ffm** (Foxmayn Frappe Manager) — a Go CLI that wraps `frappe_docker`'s devcontainer compose pattern to create, manage, and destroy local Frappe development benches. Each bench gets its own Docker Compose project (`ffm-<name>`) with MariaDB, Redis (cache + queue), and a Frappe container.
+**ffm** (Foxmayn Frappe Manager) — a Go CLI that wraps `frappe_docker`'s devcontainer compose pattern to create, manage, and destroy local Frappe development benches. Each bench gets its own Docker Compose project (`ffm-<name>`) with MariaDB, Redis (cache + queue), and a Frappe container running zsh + zinit + starship.
 
 ## Install & Build
 
@@ -33,20 +33,23 @@ cmd/ffm/main.go          → entrypoint, calls cli.NewRootCmd().Execute()
 internal/
   cli/                    → cobra command definitions (one file per subcommand)
     root.go               → root command, registers all subcommands, global --verbose flag
-    create.go             → multi-step bench provisioning (port alloc → compose write → docker up → bench init → site creation → dev server)
+    create.go             → multi-step bench provisioning (port alloc → compose+Dockerfile write → docker build → docker up → bench init → site creation → dev server)
     delete.go             → teardown with confirmation prompt (uses charmbracelet/huh)
     list.go               → table output with live docker status (uses lipgloss v2)
     start.go / stop.go    → lifecycle commands
-    shell.go / logs.go    → interactive docker exec / log streaming
+    shell.go / logs.go    → interactive docker exec (zsh for frappe container) / log streaming
     status.go / version.go
+    pick.go               → resolveBenchName() + pickBench() helpers: interactive bench selector shown when name arg is omitted
+    preset.go             → ffm preset: change starship prompt preset on a running bench
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
-    compose.go            → renders docker-compose.yml from embedded Go template
-    docker.go             → Runner type: all docker compose interactions (up/down/exec/logs/ps)
+    compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates
+    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps)
     port.go               → port allocation: scans state store + probes host for free port pairs
     templates/
       docker-compose.yml.tmpl  → Go text/template, embedded via //go:embed
+      Dockerfile.tmpl          → Go text/template, embedded via //go:embed; extends frappe/bench:latest with zsh+zinit+starship
 
   config/                 → path resolution (bench dirs, state file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars
   state/                  → JSON-file state store (~/.config/ffm/benches.json), tracks bench metadata
@@ -55,22 +58,29 @@ internal/
 
 ### Key patterns
 
-- **`bench.Runner`** is the central abstraction for docker compose operations. All CLI commands that touch Docker go through it. It has three output modes: silent (`ExecSilent`), verbose-conditional (`withOutput`), and always-interactive (`composeWithIO`).
+- **`bench.Runner`** is the central abstraction for docker compose operations. All CLI commands that touch Docker go through it. It has three output modes: silent (`ExecSilent`), verbose-conditional (`withOutput`), and always-interactive (`composeWithIO`). `Build()` always streams output (image build takes minutes).
 - **State store** (`state.Store`) is a flat JSON file, not a database. Load-modify-save pattern; not concurrency-safe (OK for a CLI).
 - **Port allocation** starts at web=8000 / socketio=9000 and increments by 10 per bench. Each pair is checked against both the state store and a live host port probe.
-- **Compose template** is embedded at compile time via `//go:embed`. Changes to `templates/docker-compose.yml.tmpl` require rebuild.
-- The `create` command is the most complex — it's a 12-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
+- **Compose + Dockerfile templates** are embedded at compile time via `//go:embed`. Changes to either template require rebuild.
+- **Interactive bench picker** — `resolveBenchName(args, title)` in `pick.go` is called by every command that takes an optional bench name. If `args` is empty it calls `pickBench()`, which loads the state store, auto-selects if only one bench exists, and otherwise shows a `huh.Select` list. Escape and ctrl+c both abort via a custom `huh.KeyMap`.
+- **zsh shell** — `ffm shell` execs into `zsh` for the `frappe` container (falls back to `bash` for other services like mariadb). The shell is pre-configured with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and starship, all baked into the image at `ffm create` time.
+- **Starship preset** — chosen during `ffm create` (form or `--starship-preset` flag) and baked into the Docker image. Can be changed at any time on a running bench with `ffm preset` — it execs `starship preset <name> -o ~/.config/starship.toml` inside the container without rebuilding the image.
+- The `create` command is the most complex — it's a 14-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
 
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
 - `charm.land/lipgloss/v2` — terminal styling (list/status output)
-- `github.com/charmbracelet/huh` — interactive prompts (delete confirmation)
+- `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation, preset selector)
+- `github.com/charmbracelet/bubbles` — key bindings for huh KeyMap (Escape to quit)
 
 ## Runtime layout (on user's machine)
 
 ```
-~/frappe/<bench-name>/docker-compose.yml   # generated per bench
-~/.config/ffm/benches.json                 # state file
-~/.config/ffm/config.yaml                  # user config (from config.example.yaml)
+~/frappe/<bench-name>/
+  docker-compose.yml     # generated per bench
+  Dockerfile             # generated per bench; extends frappe/bench:latest with zsh+zinit+starship
+
+~/.config/ffm/
+  benches.json           # state file (includes starship_preset per bench)
 ```

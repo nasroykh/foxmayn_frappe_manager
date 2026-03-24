@@ -13,11 +13,15 @@ import (
 
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "status <name>",
+		Use:   "status [name]",
 		Short: "Show per-container status for a bench",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(args[0])
+			name, err := resolveBenchName(args, "Select a bench to inspect")
+			if err != nil {
+				return err
+			}
+			return runStatus(name)
 		},
 	}
 }
@@ -29,17 +33,34 @@ func runStatus(name string) error {
 		return err
 	}
 
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+
+	label := func(k, v string) {
+		fmt.Printf("  %s  %s\n", labelStyle.Render(fmt.Sprintf("%-12s", k)), valStyle.Render(v))
+	}
+
+	fmt.Println(titleStyle.Render(b.Name))
+	label("site", b.SiteName)
+	label("url", fmt.Sprintf("http://localhost:%d", b.WebPort))
+	label("branch", b.FrappeBranch)
+	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
+	if b.DBPassword != "" {
+		label("db root", b.DBPassword)
+	}
+	if len(b.Apps) > 0 {
+		label("apps", strings.Join(b.Apps, ", "))
+	}
+	label("web port", fmt.Sprintf("%d", b.WebPort))
+	label("socketio", fmt.Sprintf("%d", b.SocketIOPort))
+	fmt.Println()
+
 	runner := bench.NewRunner(b.Name, b.Dir, false)
 	out, err := runner.PS("")
 	if err != nil {
 		return fmt.Errorf("docker compose ps: %w", err)
 	}
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	fmt.Printf("%s  (web: :%d  socketio: :%d  site: %s)\n\n",
-		titleStyle.Render(b.Name),
-		b.WebPort, b.SocketIOPort, b.SiteName,
-	)
 
 	if out == "" {
 		fmt.Println("  No containers found.")

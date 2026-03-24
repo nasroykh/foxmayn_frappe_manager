@@ -11,11 +11,15 @@ import (
 
 func newStopCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "stop <name>",
+		Use:   "stop [name]",
 		Short: "Stop a running bench (containers remain, data preserved)",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStop(args[0])
+			name, err := resolveBenchName(args, "Select a bench to stop")
+			if err != nil {
+				return err
+			}
+			return runStop(name)
 		},
 	}
 }

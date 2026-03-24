@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
@@ -12,11 +13,29 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
+// knownApps lists apps that follow Frappe's branch naming convention.
+// When installing these, ffm uses the same branch as the Frappe installation.
+var knownApps = map[string]bool{
+	"erpnext":  true,
+	"hrms":     true,
+	"payments": true,
+	"lending":  true,
+}
+
+func appBranch(app, frappeBranch string) string {
+	if knownApps[app] {
+		return frappeBranch
+	}
+	return frappeBranch
+}
+
 func newCreateCmd() *cobra.Command {
 	var (
-		frappeBranch  string
-		adminPassword string
-		dbPassword    string
+		frappeBranch   string
+		apps           []string
+		adminPassword  string
+		dbPassword     string
+		starshipPreset string
 	)
 
 	cmd := &cobra.Command{
@@ -24,38 +43,92 @@ func newCreateCmd() *cobra.Command {
 		Short: "Create and start a new Frappe bench",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCreate(args[0], frappeBranch, adminPassword, dbPassword)
+			// Show interactive form only when the user didn't pass
+			// --frappe-branch or --apps explicitly.
+			branchSet := cmd.Flags().Changed("frappe-branch")
+			appsSet := cmd.Flags().Changed("apps")
+			if !branchSet && !appsSet {
+				if err := runCreateForm(&frappeBranch, &apps, &starshipPreset); err != nil {
+					return err
+				}
+			}
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, starshipPreset)
 		},
 	}
 
-	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch to initialise")
+	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch (version-15 or version-16)")
+	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Additional apps to install (e.g. --apps erpnext)")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
 	cmd.Flags().StringVar(&dbPassword, "db-password", "123", "MariaDB root password")
+	cmd.Flags().StringVar(&starshipPreset, "starship-preset", "", "Starship prompt preset (e.g. tokyo-night, pastel-powerline)")
 
 	return cmd
 }
 
-func step(n int, msg string) {
-	fmt.Printf("  [%d] %s\n", n, msg)
+// runCreateForm shows an interactive TUI to choose Frappe version, apps, and starship preset.
+func runCreateForm(branch *string, apps *[]string, starshipPreset *string) error {
+	versionOptions := []huh.Option[string]{
+		huh.NewOption("Frappe v15 (stable)", "version-15"),
+		huh.NewOption("Frappe v16 (latest)", "version-16"),
+	}
+
+	appOptions := []huh.Option[string]{
+		huh.NewOption("ERPNext", "erpnext"),
+		huh.NewOption("HRMS", "hrms"),
+	}
+
+	// Defaults
+	*branch = "version-15"
+
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Frappe version").
+				Options(versionOptions...).
+				Value(branch),
+			huh.NewMultiSelect[string]().
+				Title("Additional apps to install").
+				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
+				Options(appOptions...).
+				Value(apps),
+			huh.NewSelect[string]().
+				Title("Starship prompt preset").
+				Description("Shell prompt theme inside the bench container.").
+				Options(starshipPresets...).
+				Value(starshipPreset),
+		),
+	).Run()
 }
 
-func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
+// counter provides auto-incrementing step numbers for create output.
+type counter struct{ n int }
+
+func (c *counter) step(msg string) {
+	c.n++
+	fmt.Printf("  [%d] %s\n", c.n, msg)
+}
+
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, starshipPreset string) error {
 	// 1. Validate name
 	if err := bench.ValidateName(name); err != nil {
 		return err
 	}
 
 	store := state.Default()
-
-	// Check for duplicate
 	if _, err := store.Get(name); err == nil {
 		return fmt.Errorf("bench %q already exists", name)
 	}
 
-	fmt.Printf("Creating bench %q...\n", name)
+	fmt.Printf("Creating bench %q  (frappe: %s", name, frappeBranch)
+	if len(apps) > 0 {
+		fmt.Printf("  apps: %v", apps)
+	}
+	fmt.Println(")")
 
-	// 2 & 3. Allocate ports (includes host collision check)
-	step(1, "Allocating ports")
+	s := &counter{}
+
+	// Allocate ports
+	s.step("Allocating ports")
 	webPort, socketIOPort, err := bench.AllocatePorts(store)
 	if err != nil {
 		return fmt.Errorf("port allocation: %w", err)
@@ -65,14 +138,14 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 	runner := bench.NewRunner(name, benchDir, verbose)
 	siteName := name + ".localhost"
 
-	// 4. Create bench directory
-	step(2, "Creating bench directory")
+	// Create bench directory
+	s.step("Creating bench directory")
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
 		return fmt.Errorf("create bench dir: %w", err)
 	}
 
-	// 5. Render compose file
-	step(3, "Writing docker-compose.yml")
+	// Write compose file and Dockerfile
+	s.step("Writing docker-compose.yml and Dockerfile")
 	data := bench.ComposeData{
 		BenchDir:            benchDir,
 		WebPort:             webPort,
@@ -80,33 +153,42 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 		SocketIOPort:        socketIOPort,
 		SocketIOPortEnd:     socketIOPort + 5,
 		MariaDBRootPassword: dbPassword,
+		StarshipPreset:      starshipPreset,
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
 		return fmt.Errorf("render compose: %w", err)
 	}
+	if err := bench.WriteDockerfile(benchDir, data); err != nil {
+		return fmt.Errorf("render dockerfile: %w", err)
+	}
 
-	// 6. docker compose up -d
-	step(4, "Starting containers (docker compose up)")
+	// Build the Docker image (installs zsh, zinit, starship)
+	s.step("Building Docker image (zsh + zinit + starship) — this takes a few minutes")
+	if err := runner.Build(); err != nil {
+		return fmt.Errorf("docker compose build: %w", err)
+	}
+
+	// Start containers
+	s.step("Starting containers (docker compose up)")
 	if err := runner.Up(); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
 
-	// 7. Wait for MariaDB
-	step(5, "Waiting for MariaDB to be ready...")
+	// Wait for MariaDB
+	s.step("Waiting for MariaDB to be ready...")
 	if err := runner.WaitForMariaDB(dbPassword, 90*time.Second, os.Stderr); err != nil {
 		return fmt.Errorf("wait for MariaDB: %w", err)
 	}
 	fmt.Println()
 
-	// 8. bench init (interactive — streams to terminal)
-	// Remove any pre-existing bench directory so that stale containers from a
-	// previous failed or manually-deleted bench don't cause "already exists" errors.
+	// Clean any pre-existing bench dir (stale container from a previous run)
 	if _, err := runner.ExecSilent("frappe", "bash", "-c",
 		"rm -rf /home/frappe/frappe-bench"); err != nil {
 		return fmt.Errorf("clean pre-existing bench dir: %w", err)
 	}
 
-	step(6, fmt.Sprintf("Initialising bench (frappe-branch: %s) — this takes a few minutes", frappeBranch))
+	// bench init
+	s.step(fmt.Sprintf("Initialising bench (frappe-branch: %s) — this takes a few minutes", frappeBranch))
 	initCmd := fmt.Sprintf(
 		"bench init --frappe-branch %s --skip-redis-config-generation --no-backups --verbose /home/frappe/frappe-bench",
 		frappeBranch,
@@ -115,8 +197,8 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 		return fmt.Errorf("bench init: %w", err)
 	}
 
-	// 9. Configure common_site_config
-	step(7, "Configuring site settings")
+	// Configure common_site_config
+	s.step("Configuring site settings")
 	setConfigs := []string{
 		"bench set-config -g db_host mariadb",
 		"bench set-config -gp db_port 3306",
@@ -132,8 +214,8 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 		}
 	}
 
-	// 10. bench new-site
-	step(8, fmt.Sprintf("Creating site %q", siteName))
+	// bench new-site
+	s.step(fmt.Sprintf("Creating site %q", siteName))
 	newSiteCmd := fmt.Sprintf(
 		"cd /home/frappe/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
 		siteName, dbPassword, adminPassword,
@@ -142,8 +224,8 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 		return fmt.Errorf("bench new-site: %w", err)
 	}
 
-	// 11. Enable developer mode and set default site
-	step(9, "Enabling developer mode")
+	// Enable developer mode
+	s.step("Enabling developer mode")
 	devModeCmd := fmt.Sprintf(
 		"cd /home/frappe/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
 		siteName, siteName,
@@ -152,40 +234,69 @@ func runCreate(name, frappeBranch, adminPassword, dbPassword string) error {
 		return fmt.Errorf("enable developer mode: %w", err)
 	}
 
-	// 12. Start bench dev server in the background via nohup so it survives
-	// after the exec session exits.
-	step(10, "Starting dev server")
+	// Install additional apps
+	for _, app := range apps {
+		ab := appBranch(app, frappeBranch)
+
+		s.step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", app, ab))
+		getCmd := fmt.Sprintf(
+			"bench get-app --branch %s %s",
+			ab, app,
+		)
+		if err := runner.Exec("frappe", "bash", "-c",
+			"cd /home/frappe/frappe-bench && "+getCmd); err != nil {
+			return fmt.Errorf("bench get-app %s: %w", app, err)
+		}
+
+		s.step(fmt.Sprintf("Installing app %q on site %q", app, siteName))
+		installCmd := fmt.Sprintf(
+			"cd /home/frappe/frappe-bench && bench --site %s install-app %s --force",
+			siteName, app,
+		)
+		if _, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
+			return fmt.Errorf("bench install-app %s: %w", app, err)
+		}
+	}
+
+	// Start dev server
+	s.step("Starting dev server")
 	if _, err := runner.ExecSilent("frappe", "bash", "-c",
 		"cd /home/frappe/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
 		return fmt.Errorf("bench start: %w", err)
 	}
 
-	// 13. Wait for HTTP
-	step(11, "Waiting for web server to respond...")
+	// Wait for HTTP
+	s.step("Waiting for web server to respond...")
 	url := fmt.Sprintf("http://localhost:%d", webPort)
 	if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
 		fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
 	}
 
-	// 14. Save to state
+	// Save state
 	rec := state.Bench{
-		Name:          name,
-		Dir:           benchDir,
-		WebPort:       webPort,
-		SocketIOPort:  socketIOPort,
-		FrappeBranch:  frappeBranch,
-		AdminPassword: adminPassword,
-		SiteName:      siteName,
-		CreatedAt:     time.Now(),
+		Name:           name,
+		Dir:            benchDir,
+		WebPort:        webPort,
+		SocketIOPort:   socketIOPort,
+		FrappeBranch:   frappeBranch,
+		AdminPassword:  adminPassword,
+		DBPassword:     dbPassword,
+		SiteName:       siteName,
+		Apps:           apps,
+		StarshipPreset: starshipPreset,
+		CreatedAt:      time.Now(),
 	}
 	if err := store.Add(rec); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 
-	// 15. Print success
 	fmt.Printf("\nBench %q is ready.\n", name)
-	fmt.Printf("  URL:    %s\n", url)
-	fmt.Printf("  Site:   %s\n", siteName)
-	fmt.Printf("  Admin:  administrator / %s\n", adminPassword)
+	fmt.Printf("  URL:      http://localhost:%d\n", webPort)
+	fmt.Printf("  Site:     %s\n", siteName)
+	fmt.Printf("  Admin:    administrator / %s\n", adminPassword)
+	fmt.Printf("  DB root:  %s\n", dbPassword)
+	if len(apps) > 0 {
+		fmt.Printf("  Apps:     %v\n", apps)
+	}
 	return nil
 }
