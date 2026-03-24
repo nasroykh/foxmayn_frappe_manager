@@ -40,16 +40,18 @@ internal/
     shell.go / logs.go    → interactive docker exec (zsh for frappe container) / log streaming
     status.go / version.go
     pick.go               → resolveBenchName() + pickBench() helpers: interactive bench selector shown when name arg is omitted
-    preset.go             → ffm preset: change starship prompt preset on a running bench
+    preset.go             → ffm preset: change starship prompt preset on a running bench; starshipPresets slice shared with create form (Pure is default)
+    ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container; also called as a step in create
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
     compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates
     docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps)
+    frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName): runs bench execute inside container to generate API key/secret for Administrator
     port.go               → port allocation: scans state store + probes host for free port pairs
     templates/
       docker-compose.yml.tmpl  → Go text/template, embedded via //go:embed
-      Dockerfile.tmpl          → Go text/template, embedded via //go:embed; extends frappe/bench:latest with zsh+zinit+starship
+      Dockerfile.tmpl          → Go text/template, embedded via //go:embed; extends frappe/bench:latest with zsh+zinit+starship+Go 1.26+ffc
 
   config/                 → path resolution (bench dirs, state file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars
   state/                  → JSON-file state store (~/.config/ffm/benches.json), tracks bench metadata
@@ -64,8 +66,9 @@ internal/
 - **Compose + Dockerfile templates** are embedded at compile time via `//go:embed`. Changes to either template require rebuild.
 - **Interactive bench picker** — `resolveBenchName(args, title)` in `pick.go` is called by every command that takes an optional bench name. If `args` is empty it calls `pickBench()`, which loads the state store, auto-selects if only one bench exists, and otherwise shows a `huh.Select` list. Escape and ctrl+c both abort via a custom `huh.KeyMap`.
 - **zsh shell** — `ffm shell` execs into `zsh` for the `frappe` container (falls back to `bash` for other services like mariadb). The shell is pre-configured with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and starship, all baked into the image at `ffm create` time.
-- **Starship preset** — chosen during `ffm create` (form or `--starship-preset` flag) and baked into the Docker image. Can be changed at any time on a running bench with `ffm preset` — it execs `starship preset <name> -o ~/.config/starship.toml` inside the container without rebuilding the image.
-- The `create` command is the most complex — it's a 14-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
+- **Starship preset** — chosen during `ffm create` (form or `--starship-preset` flag, default `pure-preset`) and baked into the Docker image. Can be changed at any time on a running bench with `ffm preset` — it execs `starship preset <name> -o ~/.config/starship.toml` inside the container without rebuilding the image.
+- **ffc integration** — every new bench gets Go 1.26 and `ffc` (Foxmayn Frappe CLI) baked into the image. After site creation, `ffm create` calls `Runner.GenerateAdminAPIKeys` which runs `bench execute frappe.core.doctype.user.user.generate_keys` inside the container (no HTTP needed), then writes `~/.config/ffc/config.yaml`. If this step fails, `ffm ffc [name]` can retry it on a running bench.
+- The `create` command is the most complex — it's a 15-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
 
 ### Dependencies
 
@@ -79,7 +82,7 @@ internal/
 ```
 ~/frappe/<bench-name>/
   docker-compose.yml     # generated per bench
-  Dockerfile             # generated per bench; extends frappe/bench:latest with zsh+zinit+starship
+  Dockerfile             # generated per bench; extends frappe/bench:latest with zsh+zinit+starship+Go+ffc
 
 ~/.config/ffm/
   benches.json           # state file (includes starship_preset per bench)

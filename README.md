@@ -56,19 +56,20 @@ Creates and starts a new Frappe development bench end-to-end. When run without `
 
 - Frappe version (v15 stable / v16 latest)
 - Additional apps to install (ERPNext, HRMS)
-- Starship prompt preset for the shell (Default, Tokyo Night, Pastel Powerline, and more)
+- Starship prompt preset for the shell (Pure is the default; Tokyo Night, Pastel Powerline, and more available)
 
 Steps performed:
 
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
 2. Writes `docker-compose.yml` and a `Dockerfile` to `~/frappe/<name>/`
-3. Builds the Docker image — installs **zsh**, **zinit** (with zsh-autosuggestions + zsh-syntax-highlighting), and **starship**, baked into the image layer
+3. Builds the Docker image — installs **zsh**, **zinit** (with zsh-autosuggestions + zsh-syntax-highlighting), **starship**, **Go 1.26**, and **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, baked into the image layer
 4. Starts MariaDB, Redis (cache + queue), and the Frappe container
 5. Runs `bench init` (clones Frappe, installs Python/Node deps)
 6. Configures `common_site_config.json` with DB and Redis connection strings
 7. Creates the site with `bench new-site`
 8. Enables developer mode
 9. Starts the dev server via `nohup bench start`
+10. Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the container
 
 ```
 Flags:
@@ -76,7 +77,7 @@ Flags:
   --apps stringArray          Additional apps to install (e.g. --apps erpnext)
   --admin-password string     Frappe site admin password (default "admin")
   --db-password string        MariaDB root password (default "123")
-  --starship-preset string    Starship prompt preset (e.g. tokyo-night, pastel-powerline)
+  --starship-preset string    Starship prompt preset (default "pure-preset")
   -v, --verbose               Show docker compose output
 ```
 
@@ -121,7 +122,15 @@ Flags:
 
 Changes the starship prompt preset on a running bench without rebuilding the image. Applies the new preset config directly inside the container — takes under a second.
 
-Available presets: Default, Tokyo Night, Pastel Powerline, Gruvbox Rainbow, Nerd Font Symbols, Bracketed Segments, Jetpack.
+Available presets: Default, Pure, Tokyo Night, Pastel Powerline, Gruvbox Rainbow, Nerd Font Symbols, Bracketed Segments, Jetpack.
+
+If `name` is omitted, an interactive picker is shown. The bench must be running.
+
+### `ffm ffc [name]`
+
+Generates Frappe API keys for the Administrator user and writes `~/.config/ffc/config.yaml` inside the bench container so that [ffc](https://github.com/nasroykh/foxmayn_frappe_cli) (Foxmayn Frappe CLI) is ready to use immediately after `ffm create`.
+
+Run this manually if ffc setup was skipped or failed during `ffm create`, or to regenerate keys on an existing bench.
 
 If `name` is omitted, an interactive picker is shown. The bench must be running.
 
@@ -165,7 +174,7 @@ Each bench runs four Docker containers scoped to a Compose project named `ffm-<n
 
 | Service       | Image                              | Purpose                  |
 |---------------|------------------------------------|--------------------------|
-| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship) |
+| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc) |
 | `mariadb`     | `mariadb:11.8`                     | Database                 |
 | `redis-cache` | `redis:alpine`                     | Cache                    |
 | `redis-queue` | `redis:alpine`                     | Background job queue     |
