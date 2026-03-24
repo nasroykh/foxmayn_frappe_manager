@@ -105,6 +105,18 @@ func (r *Runner) ExecInDir(service, workdir string, shellArgs ...string) error {
 	return r.composeWithIO(args...).Run()
 }
 
+// ExecOutputInDir runs a non-interactive command inside a service container at
+// the given workdir, streaming stdout/stderr directly to the terminal.
+// Unlike ExecSilent it does not capture output; unlike Exec it allocates no TTY.
+func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) error {
+	args := append([]string{"exec", "-T", "-w", workdir, service}, shellArgs...)
+	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	cmd := exec.Command("docker", full...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // ExecSilent runs a command inside a service container, capturing output.
 func (r *Runner) ExecSilent(service string, shellArgs ...string) (string, error) {
 	args := append([]string{"exec", "-T", service}, shellArgs...)
