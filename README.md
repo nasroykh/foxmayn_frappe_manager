@@ -9,13 +9,21 @@ A Go CLI that wraps [frappe_docker](https://github.com/frappe/frappe_docker)'s d
 
 ## Installation
 
+The quickest way to install — no clone needed:
+
+```bash
+go install github.com/nasroykh/foxmayn_frappe_manager/cmd/ffm@latest
+```
+
+This downloads, compiles, and places the `ffm` binary in your `$GOPATH/bin` (make sure it's in your `PATH`).
+
+Alternatively, build from source for version metadata (commit hash, build date):
+
 ```bash
 git clone https://github.com/nasroykh/foxmayn_frappe_manager
 cd foxmayn_frappe_manager
 make install
 ```
-
-This builds the binary with version metadata and installs it to `$GOPATH/bin`.
 
 ## Quick start
 

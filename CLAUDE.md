@@ -6,9 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ffm** (Foxmayn Frappe Manager) — a Go CLI that wraps `frappe_docker`'s devcontainer compose pattern to create, manage, and destroy local Frappe development benches. Each bench gets its own Docker Compose project (`ffm-<name>`) with MariaDB, Redis (cache + queue), and a Frappe container.
 
-## Build & Run
+## Install & Build
 
 ```bash
+# Quick install (no clone needed):
+go install github.com/nasroykh/foxmayn_frappe_manager/cmd/ffm@latest
+
+# Or build from source (injects version/commit/date via ldflags):
 make build          # compiles to ./bin/ffm
 make install        # installs to $GOPATH/bin, copies config.example.yaml to ~/.config/ffm/config.yaml
 make vet            # go vet ./...
