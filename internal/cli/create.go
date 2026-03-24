@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -35,7 +36,7 @@ func newCreateCmd() *cobra.Command {
 		apps           []string
 		adminPassword  string
 		dbPassword     string
-		starshipPreset string
+		starshipPreset = "pure-preset"
 	)
 
 	cmd := &cobra.Command{
@@ -60,7 +61,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Additional apps to install (e.g. --apps erpnext)")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
 	cmd.Flags().StringVar(&dbPassword, "db-password", "123", "MariaDB root password")
-	cmd.Flags().StringVar(&starshipPreset, "starship-preset", "", "Starship prompt preset (e.g. tokyo-night, pastel-powerline)")
+	cmd.Flags().StringVar(&starshipPreset, "starship-preset", "pure-preset", "Starship prompt preset (e.g. pure-preset, tokyo-night)")
 
 	return cmd
 }
@@ -272,6 +273,14 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
 	}
 
+	// Generate API keys and write ffc config inside the container
+	s.step("Generating API keys and configuring ffc")
+	ffcConfigured := true
+	if err := setupFfcConfig(runner, name, siteName); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffc init' inside the bench shell to configure manually)\n", err)
+		ffcConfigured = false
+	}
+
 	// Save state
 	rec := state.Bench{
 		Name:           name,
@@ -297,6 +306,34 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	fmt.Printf("  DB root:  %s\n", dbPassword)
 	if len(apps) > 0 {
 		fmt.Printf("  Apps:     %v\n", apps)
+	}
+	if ffcConfigured {
+		fmt.Printf("  ffc:      configured (run 'ffc list-docs DocType' inside the bench)\n")
+	} else {
+		fmt.Printf("  ffc:      run 'ffc init' inside the bench shell to configure\n")
+	}
+	return nil
+}
+
+// setupFfcConfig generates Frappe API keys via Python inside the container and
+// writes ~/.config/ffc/config.yaml. No HTTP server needs to be running.
+func setupFfcConfig(runner *bench.Runner, benchName, siteName string) error {
+	keys, err := runner.GenerateAdminAPIKeys(siteName)
+	if err != nil {
+		return err
+	}
+
+	cfg := fmt.Sprintf(
+		"default_site: %s\nnumber_format: french\ndate_format: yyyy-mm-dd\nsites:\n  %s:\n    url: \"http://localhost:8000\"\n    api_key: \"%s\"\n    api_secret: \"%s\"\n",
+		benchName, benchName, keys.Key, keys.Secret,
+	)
+	encoded := base64.StdEncoding.EncodeToString([]byte(cfg))
+	cmd := fmt.Sprintf(
+		"mkdir -p /home/frappe/.config/ffc && echo '%s' | base64 -d > /home/frappe/.config/ffc/config.yaml",
+		encoded,
+	)
+	if _, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
+		return fmt.Errorf("write ffc config: %w", err)
 	}
 	return nil
 }

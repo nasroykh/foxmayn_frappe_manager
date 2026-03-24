@@ -10,7 +10,17 @@ RUN apt-get update \
 # Install starship (system-wide)
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 
+# Install Go
+RUN curl -fsSL https://go.dev/dl/go1.26.1.linux-amd64.tar.gz -o /tmp/go.tar.gz \
+    && rm -rf /usr/local/go \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+
 USER frappe
+
+# Install ffc (runs as frappe so binary lands in /home/frappe/go/bin)
+RUN GOPATH=/home/frappe/go /usr/local/go/bin/go install github.com/nasroykh/foxmayn_frappe_cli/cmd/ffc@latest
 
 # Install zinit
 RUN git clone --depth=1 https://github.com/zdharma-continuum/zinit.git \
@@ -27,7 +37,9 @@ RUN echo 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh' > /home/fr
     && echo 'zinit light zsh-users/zsh-autosuggestions' >> /home/frappe/.zshrc \
     && echo 'zinit light zsh-users/zsh-syntax-highlighting' >> /home/frappe/.zshrc \
     && echo '' >> /home/frappe/.zshrc \
-    && echo 'eval "$(starship init zsh)"' >> /home/frappe/.zshrc
+    && echo 'eval "$(starship init zsh)"' >> /home/frappe/.zshrc \
+    && echo '' >> /home/frappe/.zshrc \
+    && echo 'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"' >> /home/frappe/.zshrc
 {{- if .StarshipPreset}}
 
 # Apply starship preset: {{.StarshipPreset}}

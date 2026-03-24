@@ -12,6 +12,7 @@ import (
 
 var starshipPresets = []huh.Option[string]{
 	huh.NewOption("Default", ""),
+	huh.NewOption("Pure", "pure-preset"),
 	huh.NewOption("Tokyo Night", "tokyo-night"),
 	huh.NewOption("Pastel Powerline", "pastel-powerline"),
 	huh.NewOption("Gruvbox Rainbow", "gruvbox-rainbow"),
