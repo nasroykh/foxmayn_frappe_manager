@@ -23,6 +23,8 @@ func newCreateCmd() *cobra.Command {
 		adminPassword string
 		dbPassword    string
 		githubToken   string
+		proxyPort     int
+		proxyHost     string
 	)
 
 	cmd := &cobra.Command{
@@ -39,7 +41,7 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost)
 		},
 	}
 
@@ -48,6 +50,8 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
 	cmd.Flags().StringVar(&dbPassword, "db-password", "123", "MariaDB root password")
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos")
+	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)")
+	cmd.Flags().StringVar(&proxyHost, "proxy-host", "", "Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)")
 
 	return cmd
 }
@@ -106,7 +110,7 @@ func (c *counter) step(msg string) {
 	fmt.Printf("  [%d] %s\n", c.n, msg)
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string) error {
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string) error {
 	// 1. Validate name
 	if err := bench.ValidateName(name); err != nil {
 		return err
@@ -191,13 +195,20 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	// Configure common_site_config (single exec to avoid 6 roundtrips)
 	s.step("Configuring site settings")
+	socketIOPortCfg := 9000
+	if proxyPort > 0 {
+		socketIOPortCfg = proxyPort
+	}
 	configCmd := "cd /home/frappe/frappe-bench" +
 		" && bench set-config -g db_host mariadb" +
 		" && bench set-config -gp db_port 3306" +
 		" && bench set-config -g redis_cache redis://redis-cache:6379" +
 		" && bench set-config -g redis_queue redis://redis-queue:6379" +
 		" && bench set-config -g redis_socketio redis://redis-queue:6379" +
-		" && bench set-config -gp socketio_port 9000"
+		fmt.Sprintf(" && bench set-config -gp socketio_port %d", socketIOPortCfg)
+	if proxyPort == 443 {
+		configCmd += " && bench set-config -gp use_ssl 1"
+	}
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", configCmd); err != nil {
 		return fmt.Errorf("configure site settings: %w", err)
 	}
@@ -220,6 +231,26 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	)
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
 		return fmt.Errorf("enable developer mode: %w", err)
+	}
+
+	// Set per-site host_name when a public domain is provided.
+	resolvedProxyHost := ""
+	if proxyHost != "" {
+		scheme := "http"
+		if proxyPort == 443 {
+			scheme = "https"
+		}
+		cleanHost := strings.TrimPrefix(strings.TrimPrefix(proxyHost, "https://"), "http://")
+		resolvedProxyHost = fmt.Sprintf("%s://%s", scheme, cleanHost)
+
+		s.step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
+		hostCmd := fmt.Sprintf(
+			"cd /home/frappe/frappe-bench && bench --site %s set-config host_name %s",
+			siteName, resolvedProxyHost,
+		)
+		if _, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
+			return fmt.Errorf("set host_name: %w", err)
+		}
 	}
 
 	// Configure GitHub credentials if a token was provided (used for private HTTPS repos).
@@ -289,6 +320,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		DBPassword:    dbPassword,
 		SiteName:      siteName,
 		Apps:          apps,
+		ProxyHost:     resolvedProxyHost,
 		CreatedAt:     time.Now(),
 	}
 	if err := store.Add(rec); err != nil {
@@ -297,7 +329,9 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	fmt.Printf("\nBench %q is ready.\n", name)
 	fmt.Printf("  URL (port):    http://localhost:%d\n", webPort)
-	if proxy.IsRunning() {
+	if resolvedProxyHost != "" {
+		fmt.Printf("  URL (proxy):   %s\n", resolvedProxyHost)
+	} else if proxy.IsRunning() {
 		fmt.Printf("  URL (domain):  http://%s  ← proxy is running\n", siteName)
 	} else {
 		fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", siteName)

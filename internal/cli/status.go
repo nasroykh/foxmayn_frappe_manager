@@ -45,7 +45,9 @@ func runStatus(name string) error {
 	fmt.Println(titleStyle.Render(b.Name))
 	label("site", b.SiteName)
 	label("url (port)", fmt.Sprintf("http://localhost:%d", b.WebPort))
-	if proxy.IsRunning() {
+	if b.ProxyHost != "" {
+		label("url (proxy)", b.ProxyHost)
+	} else if proxy.IsRunning() {
 		label("url (domain)", fmt.Sprintf("http://%s", b.SiteName))
 	} else {
 		label("url (domain)", fmt.Sprintf("http://%s  (run 'ffm proxy start')", b.SiteName))

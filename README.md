@@ -95,8 +95,20 @@ Flags:
   --admin-password string     Frappe site admin password (default "admin")
   --db-password string        MariaDB root password (default "123")
   --github-token string       GitHub personal access token for private HTTPS repos
+  --proxy-port int            Configure for reverse proxy: set socketio_port to this value
+                              (e.g. 443 for HTTPS, 80 for HTTP). Omit for local dev.
+  --proxy-host string         Public domain for reverse proxy, e.g. frappe.example.com
+                              Sets per-site host_name for correct link generation.
   -v, --verbose               Show docker compose output
 ```
+
+**VPS one-liner example:**
+
+```bash
+ffm create mysite --proxy-port 443 --proxy-host frappe.example.com
+```
+
+This creates the bench and immediately configures `socketio_port 443`, `use_ssl 1`, and `host_name https://frappe.example.com` so it works correctly behind an HTTPS reverse proxy.
 
 #### `--apps` formats
 
@@ -128,7 +140,7 @@ Lists all managed benches with their live status, port, domain URL, and Frappe b
 
 ### `ffm status [name]`
 
-Shows per-container status for a bench (image, state, ports, uptime) along with its credentials: admin password, MariaDB root password, installed apps, and both the direct port URL and domain URL (indicating whether the proxy is running). If `name` is omitted, an interactive picker is shown.
+Shows per-container status for a bench (image, state, ports, uptime) along with its credentials: admin password, MariaDB root password, installed apps, and URLs. When a bench has been configured with `ffm set-proxy`, a `url (proxy)` line shows the public domain instead of the `.localhost` domain. If `name` is omitted, an interactive picker is shown.
 
 ### `ffm start [name]`
 
@@ -184,6 +196,49 @@ After `ffm proxy start`, every running bench is accessible at `http://<name>.loc
 ```
 127.0.0.1  mybench.localhost
 ```
+
+### `ffm set-proxy [name]`
+
+Configures a running bench to work correctly behind an external reverse proxy (Caddy, Nginx, etc.). Applies the necessary Frappe settings inside the container and restarts the dev server.
+
+```bash
+# HTTPS proxy on port 443 (default)
+ffm set-proxy mybench --host frappe.example.com
+
+# HTTP proxy on port 80
+ffm set-proxy mybench --port 80 --host frappe.example.com
+
+# Restore to local direct-access settings
+ffm set-proxy mybench --reset
+
+# Print a ready-to-paste Caddy config
+ffm set-proxy mybench --host frappe.example.com --print-caddy
+
+# Print a ready-to-paste Nginx config (includes SSL redirect block)
+ffm set-proxy mybench --host frappe.example.com --print-nginx
+```
+
+What it changes inside the Frappe container:
+
+| Setting | Default | Proxy mode |
+|---|---|---|
+| `socketio_port` (global) | `9000` | proxy port (443 or 80) |
+| `use_ssl` (global) | `0` | `1` when port is 443 |
+| `host_name` (per-site) | `http://name.localhost` | `https://frappe.example.com` |
+
+The dev server is restarted automatically so changes take effect immediately. `--reset` reverses all three settings back to direct-access defaults.
+
+```
+Flags:
+  --port int        Public port the reverse proxy listens on (default 443)
+  --host string     Public domain, sets per-site host_name
+  --no-ssl          Disable SSL mode even when --port 443
+  --reset           Restore direct-access settings
+  --print-caddy     Print a Caddy config snippet
+  --print-nginx     Print an Nginx config snippet (includes WebSocket upgrade headers)
+```
+
+If `name` is omitted, an interactive picker is shown. The bench must be running.
 
 ### `ffm ffc [name]`
 

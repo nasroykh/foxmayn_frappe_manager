@@ -42,6 +42,7 @@ internal/
     pick.go               → resolveBenchName() + pickBench() helpers: interactive bench selector shown when name arg is omitted
     ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container; also called as a step in create
     proxy.go              → ffm proxy subcommand group: start / stop / status; bare 'ffm proxy' shows status
+    setproxy.go           → ffm set-proxy: configures socketio_port / use_ssl / per-site host_name inside the container for reverse-proxy deployments; --reset restores direct-access defaults; --print-caddy / --print-nginx emit ready-to-paste config snippets using actual state ports
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
@@ -58,7 +59,7 @@ internal/
     proxy.go              → all Traefik lifecycle logic: EnsureNetwork(), Start(), Stop(), IsRunning(), Status(), containerStatus(); Traefik configured entirely via CLI flags, no config file on disk
 
   config/                 → path resolution (bench dirs, state file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars
-  state/                  → JSON-file state store (~/.config/ffm/benches.json), tracks bench metadata
+  state/                  → JSON-file state store (~/.config/ffm/benches.json), tracks bench metadata; Bench struct includes ProxyHost (omitempty, set by ffm set-proxy / ffm create --proxy-host); Store.Update(name, fn) applies a mutation and saves
   version/                → build-time version variables
 ```
 
@@ -76,6 +77,7 @@ internal/
 - **ffc integration** — every new bench gets Go 1.26 and `ffc` (Foxmayn Frappe CLI) baked into the image. After site creation, `ffm create` calls `Runner.GenerateAdminAPIKeys` which runs `bench execute frappe.core.doctype.user.user.generate_keys` inside the container (no HTTP needed), then writes `~/.config/ffc/config.yaml`. If this step fails, `ffm ffc [name]` can retry it on a running bench.
 - **Private repo support** — `--apps` accepts short names, SSH URLs (`git@github.com:org/app.git`), HTTPS URLs, and `url@branch` or `name@branch` suffix to override the branch. `bench.ParseAppSpec` handles all forms. SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set on the host (`ForwardSSHAgent` in `ComposeData`). For private HTTPS repos, `--github-token` configures a temporary git credential helper inside the container (cleaned up after all `bench get-app` calls via `defer`).
 - **Traefik reverse proxy** — a single `ffm-proxy` Traefik container is shared across all benches, providing `<name>.localhost` routing. The `frappe` service in each bench's compose file is attached to the `ffm-proxy` Docker network and carries Traefik labels. MariaDB and Redis stay on the default project network only. `ffm create` calls `proxy.EnsureNetwork()` before `docker compose up` so the external network always exists (preventing the "network declared as external, but could not be found" error even when the proxy is not running). The Traefik container uses `--providers.docker.network=ffm-proxy` to prevent the multi-NIC ambiguity bug. Container is configured entirely via CLI flags — no config file is written to disk. Uses `--restart=unless-stopped` to survive Docker daemon restarts.
+- **External reverse proxy support** — `ffm set-proxy [name]` (or `ffm create --proxy-port / --proxy-host`) configures the bench for Caddy/Nginx/etc. deployments. It execs into the frappe container and sets three Frappe config values: `socketio_port` (global, must match the proxy's public port so the browser JS connects through the proxy rather than directly to port 9000), `use_ssl` (global, set to 1 for port 443 so Frappe generates https:// links and secure cookies), and per-site `host_name` (the public URL, used for link generation/OAuth/email). Dev server is restarted automatically. `--reset` restores direct-access defaults. `--print-caddy` / `--print-nginx` generate ready-to-paste configs using the actual ports from state.
 - The `create` command is the most complex — it's a multi-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
 
 ### Dependencies

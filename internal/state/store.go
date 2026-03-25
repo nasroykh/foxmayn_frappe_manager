@@ -20,7 +20,10 @@ type Bench struct {
 	DBPassword    string    `json:"db_password"`
 	SiteName      string    `json:"site_name"`
 	Apps          []string  `json:"apps"`
-	CreatedAt     time.Time `json:"created_at"`
+	// ProxyHost is the public URL when the bench is running behind a reverse
+	// proxy (e.g. "https://frappe.example.com"). Empty means direct access.
+	ProxyHost string `json:"proxy_host,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Store is a thin wrapper around the benches.json state file.
@@ -115,6 +118,21 @@ func (s *Store) Exists(name string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// Update applies fn to the bench with the given name and saves.
+func (s *Store) Update(name string, fn func(*Bench)) error {
+	benches, err := s.Load()
+	if err != nil {
+		return err
+	}
+	for i := range benches {
+		if benches[i].Name == name {
+			fn(&benches[i])
+			return s.Save(benches)
+		}
+	}
+	return errors.New("bench not found: " + name)
 }
 
 // UsedPorts returns the set of web and socketio ports already assigned.
