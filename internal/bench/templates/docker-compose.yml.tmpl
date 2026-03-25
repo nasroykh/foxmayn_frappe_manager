@@ -19,7 +19,10 @@ services:
     image: docker.io/redis:alpine
 
   frappe:
-    build: .
+    build:
+      context: .
+      args:
+        FRAPPE_BRANCH: "{{.FrappeBranch}}"
     command: sleep infinity
     environment:
       - SHELL=/bin/zsh
@@ -27,6 +30,7 @@ services:
       - SSH_AUTH_SOCK=/ssh-agent
 {{- end}}
     volumes:
+      - frappe-bench:/home/frappe/frappe-bench
       - {{.BenchDir}}:/workspace:cached
 {{- if .ForwardSSHAgent}}
       - ${SSH_AUTH_SOCK}:/ssh-agent
@@ -35,6 +39,31 @@ services:
     ports:
       - "{{.WebPort}}-{{.WebPortEnd}}:8000-8005"
       - "{{.SocketIOPort}}-{{.SocketIOPortEnd}}:9000-9005"
+    networks:
+      default: {}
+      ffm-proxy: {}
+    labels:
+      # Traefik reverse-proxy labels — enable sitename.localhost routing.
+      # These are harmless when the proxy is not running.
+      - "traefik.enable=true"
+      # Scope routing to the shared ffm-proxy network to prevent Traefik from
+      # randomly selecting the wrong network when a container has multiple NICs.
+      - "traefik.docker.network=ffm-proxy"
+      - "traefik.http.routers.{{.Name}}.rule=Host(`{{.Name}}.localhost`)"
+      - "traefik.http.routers.{{.Name}}.entrypoints=web"
+      - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
 
 volumes:
   mariadb-data:
+  frappe-bench:
+
+networks:
+  # The default network is implicit but must be listed explicitly once the
+  # frappe service declares its own networks block.
+  default: {}
+  # Shared external network managed by 'ffm proxy start'.
+  # The network is created automatically by 'ffm create' (even without the
+  # proxy running) so that docker compose up never fails due to a missing
+  # external network.
+  ffm-proxy:
+    external: true

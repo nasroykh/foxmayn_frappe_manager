@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -54,6 +55,12 @@ func runStart(name string) error {
 		fmt.Printf("warning: %v\n", err)
 	}
 
-	fmt.Printf("Bench %q is running at http://localhost:%d\n", name, b.WebPort)
+	fmt.Printf("Bench %q is running.\n", name)
+	fmt.Printf("  URL (port):    http://localhost:%d\n", b.WebPort)
+	if proxy.IsRunning() {
+		fmt.Printf("  URL (domain):  http://%s\n", b.SiteName)
+	} else {
+		fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", b.SiteName)
+	}
 	return nil
 }

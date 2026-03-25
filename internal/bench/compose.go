@@ -15,12 +15,17 @@ var dockerfileTmpl string
 
 // ComposeData holds the values substituted into the compose and Dockerfile templates.
 type ComposeData struct {
+	// Name is the bench name, used as the Traefik router/service identifier.
+	Name                string
 	BenchDir            string
 	WebPort             int
 	WebPortEnd          int
 	SocketIOPort        int
 	SocketIOPortEnd     int
 	MariaDBRootPassword string
+	// FrappeBranch is the git branch passed as a Docker build arg so that
+	// bench init runs inside the image build (cached across benches).
+	FrappeBranch string
 	// ForwardSSHAgent, when true, mounts the host SSH agent socket into the
 	// frappe container so that SSH-URL private repos work during bench get-app.
 	ForwardSSHAgent bool

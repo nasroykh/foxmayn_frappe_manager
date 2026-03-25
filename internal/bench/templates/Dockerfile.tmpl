@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM docker.io/frappe/bench:latest
 
 USER root
@@ -207,3 +208,13 @@ success_symbol  = "[❯](purple)"
 error_symbol    = "[❯](red)"
 vimcmd_symbol   = "[❮](green)"
 STARSHIP_EOF
+
+# --- Pre-initialize bench (deps cached in Docker layer) -----------------------
+# Declared after all tooling layers so changing FRAPPE_BRANCH only invalidates
+# this layer, not the zsh/starship/Go/ffc layers above.
+ARG FRAPPE_BRANCH=version-15
+RUN --mount=type=cache,target=/home/frappe/.cache/pip,uid=1000,gid=1000 \
+    --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 \
+    bench init --frappe-branch ${FRAPPE_BRANCH} \
+    --skip-redis-config-generation --no-backups --verbose \
+    /home/frappe/frappe-bench

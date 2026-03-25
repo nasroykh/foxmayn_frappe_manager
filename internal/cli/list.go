@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -35,21 +36,25 @@ func runList() error {
 		return nil
 	}
 
+	proxyUp := proxy.IsRunning()
+
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 	runningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	stoppedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	domainStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
 
-	header := fmt.Sprintf("%-20s  %-10s  %-8s  %-20s  %s",
+	header := fmt.Sprintf("%-20s  %-10s  %-8s  %-30s  %s",
 		headerStyle.Render("NAME"),
 		headerStyle.Render("STATUS"),
 		headerStyle.Render("PORT"),
-		headerStyle.Render("SITE"),
+		headerStyle.Render("DOMAIN"),
 		headerStyle.Render("BRANCH"),
 	)
 	fmt.Println(header)
-	fmt.Println(strings.Repeat("─", 80))
+	fmt.Println(strings.Repeat("─", 88))
 
 	for _, b := range benches {
 		status := liveStatus(b)
@@ -59,13 +64,25 @@ func runList() error {
 			statusRendered = stoppedStyle.Render(status)
 		}
 
-		fmt.Printf("%-20s  %-10s  %-8d  %-20s  %s\n",
+		var domainRendered string
+		domain := fmt.Sprintf("http://%s", b.SiteName)
+		if proxyUp {
+			domainRendered = domainStyle.Render(domain)
+		} else {
+			domainRendered = mutedStyle.Render(domain + " (proxy off)")
+		}
+
+		fmt.Printf("%-20s  %-10s  %-8d  %-30s  %s\n",
 			nameStyle.Render(b.Name),
 			statusRendered,
 			b.WebPort,
-			dimStyle.Render(b.SiteName),
+			domainRendered,
 			dimStyle.Render(b.FrappeBranch),
 		)
+	}
+
+	if !proxyUp {
+		fmt.Printf("\n  %s\n", mutedStyle.Render("Run 'ffm proxy start' to enable sitename.localhost routing."))
 	}
 	return nil
 }

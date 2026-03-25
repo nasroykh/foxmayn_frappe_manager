@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -43,7 +44,12 @@ func runStatus(name string) error {
 
 	fmt.Println(titleStyle.Render(b.Name))
 	label("site", b.SiteName)
-	label("url", fmt.Sprintf("http://localhost:%d", b.WebPort))
+	label("url (port)", fmt.Sprintf("http://localhost:%d", b.WebPort))
+	if proxy.IsRunning() {
+		label("url (domain)", fmt.Sprintf("http://%s", b.SiteName))
+	} else {
+		label("url (domain)", fmt.Sprintf("http://%s  (run 'ffm proxy start')", b.SiteName))
+	}
 	label("branch", b.FrappeBranch)
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
 	if b.DBPassword != "" {

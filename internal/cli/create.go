@@ -12,6 +12,7 @@ import (
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -141,15 +142,25 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("create bench dir: %w", err)
 	}
 
+	// Ensure the shared ffm-proxy Docker network exists before rendering the
+	// compose file. The template declares it as external:true, so docker
+	// compose up would fail if the network is absent.
+	s.step("Ensuring ffm-proxy network")
+	if err := proxy.EnsureNetwork(); err != nil {
+		return fmt.Errorf("ensure proxy network: %w", err)
+	}
+
 	// Write compose file and Dockerfile
 	s.step("Writing docker-compose.yml and Dockerfile")
 	data := bench.ComposeData{
+		Name:                name,
 		BenchDir:            benchDir,
 		WebPort:             webPort,
 		WebPortEnd:          webPort + 5,
 		SocketIOPort:        socketIOPort,
 		SocketIOPortEnd:     socketIOPort + 5,
 		MariaDBRootPassword: dbPassword,
+		FrappeBranch:        frappeBranch,
 		ForwardSSHAgent:     os.Getenv("SSH_AUTH_SOCK") != "",
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
@@ -159,8 +170,8 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("render dockerfile: %w", err)
 	}
 
-	// Build the Docker image
-	s.step("Building Docker image (zsh + zinit + starship) — this takes a few minutes")
+	// Build the Docker image (includes bench init — cached across benches with the same branch)
+	s.step(fmt.Sprintf("Building Docker image (frappe %s + deps) — first build takes several minutes, cached after", frappeBranch))
 	if err := runner.Build(); err != nil {
 		return fmt.Errorf("docker compose build: %w", err)
 	}
@@ -178,37 +189,17 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 	fmt.Println()
 
-	// Clean any pre-existing bench dir (stale container from a previous run)
-	if _, err := runner.ExecSilent("frappe", "bash", "-c",
-		"rm -rf /home/frappe/frappe-bench"); err != nil {
-		return fmt.Errorf("clean pre-existing bench dir: %w", err)
-	}
-
-	// bench init
-	s.step(fmt.Sprintf("Initialising bench (frappe-branch: %s) — this takes a few minutes", frappeBranch))
-	initCmd := fmt.Sprintf(
-		"bench init --frappe-branch %s --skip-redis-config-generation --no-backups --verbose /home/frappe/frappe-bench",
-		frappeBranch,
-	)
-	if err := runner.Exec("frappe", "bash", "-c", initCmd); err != nil {
-		return fmt.Errorf("bench init: %w", err)
-	}
-
-	// Configure common_site_config
+	// Configure common_site_config (single exec to avoid 6 roundtrips)
 	s.step("Configuring site settings")
-	setConfigs := []string{
-		"bench set-config -g db_host mariadb",
-		"bench set-config -gp db_port 3306",
-		"bench set-config -g redis_cache redis://redis-cache:6379",
-		"bench set-config -g redis_queue redis://redis-queue:6379",
-		"bench set-config -g redis_socketio redis://redis-queue:6379",
-		"bench set-config -gp socketio_port 9000",
-	}
-	for _, c := range setConfigs {
-		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /home/frappe/frappe-bench && "+c); err != nil {
-			return fmt.Errorf("set-config (%s): %w", c, err)
-		}
+	configCmd := "cd /home/frappe/frappe-bench" +
+		" && bench set-config -g db_host mariadb" +
+		" && bench set-config -gp db_port 3306" +
+		" && bench set-config -g redis_cache redis://redis-cache:6379" +
+		" && bench set-config -g redis_queue redis://redis-queue:6379" +
+		" && bench set-config -g redis_socketio redis://redis-queue:6379" +
+		" && bench set-config -gp socketio_port 9000"
+	if _, err := runner.ExecSilent("frappe", "bash", "-c", configCmd); err != nil {
+		return fmt.Errorf("configure site settings: %w", err)
 	}
 
 	// bench new-site
@@ -305,12 +296,17 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 
 	fmt.Printf("\nBench %q is ready.\n", name)
-	fmt.Printf("  URL:      http://localhost:%d\n", webPort)
-	fmt.Printf("  Site:     %s\n", siteName)
-	fmt.Printf("  Admin:    administrator / %s\n", adminPassword)
-	fmt.Printf("  DB root:  %s\n", dbPassword)
+	fmt.Printf("  URL (port):    http://localhost:%d\n", webPort)
+	if proxy.IsRunning() {
+		fmt.Printf("  URL (domain):  http://%s  ← proxy is running\n", siteName)
+	} else {
+		fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", siteName)
+	}
+	fmt.Printf("  Site:          %s\n", siteName)
+	fmt.Printf("  Admin:         administrator / %s\n", adminPassword)
+	fmt.Printf("  DB root:       %s\n", dbPassword)
 	if len(apps) > 0 {
-		fmt.Printf("  Apps:     %v\n", apps)
+		fmt.Printf("  Apps:          %v\n", apps)
 	}
 	if ffcConfigured {
 		fmt.Printf("  ffc:      configured (run 'ffc list-docs DocType' inside the bench)\n")
