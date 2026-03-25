@@ -32,17 +32,178 @@ RUN zsh -c 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh \
     && zinit light zsh-users/zsh-syntax-highlighting'
 
 # Write .zshrc
-RUN echo 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh' > /home/frappe/.zshrc \
-    && echo '' >> /home/frappe/.zshrc \
-    && echo 'zinit light zsh-users/zsh-autosuggestions' >> /home/frappe/.zshrc \
-    && echo 'zinit light zsh-users/zsh-syntax-highlighting' >> /home/frappe/.zshrc \
-    && echo '' >> /home/frappe/.zshrc \
-    && echo 'eval "$(starship init zsh)"' >> /home/frappe/.zshrc \
-    && echo '' >> /home/frappe/.zshrc \
-    && echo 'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"' >> /home/frappe/.zshrc
-{{- if .StarshipPreset}}
+RUN cat > /home/frappe/.zshrc <<'ZSHRC_EOF'
+# =============================================================================
+# HISTORY
+# =============================================================================
+HISTSIZE=10000
+SAVEHIST=10000
+HISTFILE=~/.zsh_history
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_VERIFY
+setopt SHARE_HISTORY
 
-# Apply starship preset: {{.StarshipPreset}}
-RUN mkdir -p /home/frappe/.config \
-    && starship preset {{.StarshipPreset}} -o /home/frappe/.config/starship.toml
-{{- end}}
+# =============================================================================
+# COMPLETION
+# =============================================================================
+autoload -Uz compinit
+compinit
+
+zstyle ':completion:*' auto-description 'specify: %d'
+zstyle ':completion:*' completer _expand _complete _correct _approximate
+zstyle ':completion:*' format 'Completing %d'
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*' menu select=2
+zstyle ':completion:*' list-colors ''
+zstyle ':completion:*' list-prompt '%SAt %p: Hit TAB for more, or the character to insert%s'
+zstyle ':completion:*' matcher-list '' 'm:{a-z}={A-Z}' 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=* l:|=*'
+zstyle ':completion:*' menu select=long
+zstyle ':completion:*' select-prompt '%SScrolling active: current selection at %p%s'
+zstyle ':completion:*' use-compctl false
+zstyle ':completion:*' verbose true
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
+
+# =============================================================================
+# KEY BINDINGS (emacs-style)
+# =============================================================================
+bindkey -e
+bindkey '^[[A' history-search-backward   # Up arrow: search history by prefix
+bindkey '^[[B' history-search-forward    # Down arrow: search history by prefix
+bindkey '^[[1;5D' backward-word          # Ctrl+Left
+bindkey '^[[1;5C' forward-word           # Ctrl+Right
+bindkey '^[[1;3D' backward-word          # Alt+Left
+bindkey '^[[1;3C' forward-word           # Alt+Right
+bindkey '^[[H'   beginning-of-line       # Home
+bindkey '^[[F'   end-of-line             # End
+bindkey '^[[3~'  delete-char             # Delete
+bindkey '^[[3;5~' kill-word              # Ctrl+Delete
+bindkey '^[[3;3~' kill-word              # Alt+Delete
+bindkey '^[^?'   backward-kill-word      # Alt+Backspace
+
+# =============================================================================
+# PATH
+# =============================================================================
+export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"
+
+# =============================================================================
+# TOOLS
+# =============================================================================
+source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh
+autoload -Uz _zinit
+(( ${+_comps} )) && _comps[zinit]=_zinit
+
+zinit light zsh-users/zsh-autosuggestions
+zinit light zsh-users/zsh-syntax-highlighting
+
+# ffc completions
+if command -v ffc &>/dev/null; then
+  eval "$(ffc completion zsh)"
+fi
+
+# Starship
+eval "$(starship init zsh)"
+ZSHRC_EOF
+
+# Write starship.toml (matches host machine config)
+RUN mkdir -p /home/frappe/.config && cat > /home/frappe/.config/starship.toml <<'STARSHIP_EOF'
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# ── Performance ────────────────────────────────────────────────────────────────
+command_timeout = 500   # ms before a module is skipped (default 500)
+scan_timeout    = 30    # ms for file-system scanning (default 30)
+
+# ── Layout ─────────────────────────────────────────────────────────────────────
+# Line 1:  🐧 frappe  ~/projects/foo  main *(modified)  1m23s ··············· 🕐 25 Mar  14:30
+# Line 2:  venv-name ❯
+format = """
+$os\
+$username\
+$directory\
+$git_branch\
+$git_state\
+$git_status\
+$cmd_duration\
+$fill\
+$time\
+$line_break\
+$python\
+$character"""
+
+# ── OS emoji ───────────────────────────────────────────────────────────────────
+[os]
+disabled = false
+format   = "[$symbol]($style)"
+style    = "bold white"
+
+[os.symbols]
+Ubuntu  = "𝔽 "
+Debian  = "𝔽 "
+Linux   = "𝔽 "
+Windows = "𝔽 "
+Macos   = "𝔽 "
+
+# ── Username ───────────────────────────────────────────────────────────────────
+[username]
+show_always = true
+format      = "[$user]($style) "
+style_user  = "bold cyan"
+style_root  = "bold red"
+
+# ── Directory ──────────────────────────────────────────────────────────────────
+[directory]
+style             = "blue"
+truncation_length = 3
+truncate_to_repo  = true
+
+# ── Git ────────────────────────────────────────────────────────────────────────
+[git_branch]
+format = "[$branch]($style)"
+style  = "bright-black"
+
+[git_status]
+format     = "[[(*$conflicted$untracked$modified$staged$renamed$deleted)](218) ($ahead_behind$stashed)]($style)"
+style      = "cyan"
+conflicted = "​"
+untracked  = "​"
+modified   = "​"
+staged     = "​"
+renamed    = "​"
+deleted    = "​"
+stashed    = "≡"
+
+[git_state]
+format = '\([$state( $progress_current/$progress_total)]($style)\) '
+style  = "bright-black"
+
+# ── Fill (empty space between left and right content on line 1) ────────────────
+[fill]
+symbol = " "
+
+# ── Command duration ───────────────────────────────────────────────────────────
+[cmd_duration]
+format            = "[⏱ $duration]($style) "
+style             = "yellow"
+min_time          = 2_000   # only show when cmd took ≥ 2 s
+
+# ── Python virtualenv ──────────────────────────────────────────────────────────
+[python]
+format            = "[$virtualenv]($style) "
+style             = "bright-black"
+detect_extensions = []
+detect_files      = []
+
+# ── Time (shown on the right) ──────────────────────────────────────────────────
+[time]
+disabled    = false
+format      = "[🕐 $time]($style)"
+time_format = "%d %b  %H:%M"
+style       = "bright-black"
+
+# ── Prompt character ───────────────────────────────────────────────────────────
+[character]
+success_symbol  = "[❯](purple)"
+error_symbol    = "[❯](red)"
+vimcmd_symbol   = "[❮](green)"
+STARSHIP_EOF

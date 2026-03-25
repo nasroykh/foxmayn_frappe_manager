@@ -23,8 +23,14 @@ services:
     command: sleep infinity
     environment:
       - SHELL=/bin/zsh
+{{- if .ForwardSSHAgent}}
+      - SSH_AUTH_SOCK=/ssh-agent
+{{- end}}
     volumes:
       - {{.BenchDir}}:/workspace:cached
+{{- if .ForwardSSHAgent}}
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+{{- end}}
     working_dir: /workspace
     ports:
       - "{{.WebPort}}-{{.WebPortEnd}}:8000-8005"

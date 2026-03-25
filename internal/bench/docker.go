@@ -174,6 +174,24 @@ func (r *Runner) WaitForMariaDB(password string, timeout time.Duration, progress
 	return fmt.Errorf("MariaDB did not become ready within %s", timeout)
 }
 
+// ConfigureGitHubToken sets up a git credential helper inside the frappe
+// container so that HTTPS github.com URLs authenticate with the given token.
+func (r *Runner) ConfigureGitHubToken(token string) error {
+	cmd := fmt.Sprintf(
+		"printf 'https://x-oauth-basic:%s@github.com\\n' > /tmp/.git-credentials"+
+			" && git config --global credential.helper 'store --file /tmp/.git-credentials'",
+		token,
+	)
+	_, err := r.ExecSilent("frappe", "bash", "-c", cmd)
+	return err
+}
+
+// CleanupGitHubToken removes the temporary git credentials set by ConfigureGitHubToken.
+func (r *Runner) CleanupGitHubToken() {
+	_, _ = r.ExecSilent("frappe", "bash", "-c",
+		"rm -f /tmp/.git-credentials && git config --global --unset credential.helper")
+}
+
 // WaitForHTTP polls until the given URL returns a non-error response.
 func WaitForHTTP(url string, timeout time.Duration) error {
 	// We use a TCP probe instead of an HTTP client to avoid importing net/http.

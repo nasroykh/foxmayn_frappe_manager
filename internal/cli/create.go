@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -14,29 +15,13 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
-// knownApps lists apps that follow Frappe's branch naming convention.
-// When installing these, ffm uses the same branch as the Frappe installation.
-var knownApps = map[string]bool{
-	"erpnext":  true,
-	"hrms":     true,
-	"payments": true,
-	"lending":  true,
-}
-
-func appBranch(app, frappeBranch string) string {
-	if knownApps[app] {
-		return frappeBranch
-	}
-	return frappeBranch
-}
-
 func newCreateCmd() *cobra.Command {
 	var (
-		frappeBranch   string
-		apps           []string
-		adminPassword  string
-		dbPassword     string
-		starshipPreset = "pure-preset"
+		frappeBranch  string
+		apps          []string
+		adminPassword string
+		dbPassword    string
+		githubToken   string
 	)
 
 	cmd := &cobra.Command{
@@ -49,25 +34,25 @@ func newCreateCmd() *cobra.Command {
 			branchSet := cmd.Flags().Changed("frappe-branch")
 			appsSet := cmd.Flags().Changed("apps")
 			if !branchSet && !appsSet {
-				if err := runCreateForm(&frappeBranch, &apps, &starshipPreset); err != nil {
+				if err := runCreateForm(&frappeBranch, &apps); err != nil {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, starshipPreset)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken)
 		},
 	}
 
 	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch (version-15 or version-16)")
-	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Additional apps to install (e.g. --apps erpnext)")
+	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
 	cmd.Flags().StringVar(&dbPassword, "db-password", "123", "MariaDB root password")
-	cmd.Flags().StringVar(&starshipPreset, "starship-preset", "pure-preset", "Starship prompt preset (e.g. pure-preset, tokyo-night)")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos")
 
 	return cmd
 }
 
-// runCreateForm shows an interactive TUI to choose Frappe version, apps, and starship preset.
-func runCreateForm(branch *string, apps *[]string, starshipPreset *string) error {
+// runCreateForm shows an interactive TUI to choose Frappe version and apps.
+func runCreateForm(branch *string, apps *[]string) error {
 	versionOptions := []huh.Option[string]{
 		huh.NewOption("Frappe v15 (stable)", "version-15"),
 		huh.NewOption("Frappe v16 (latest)", "version-16"),
@@ -81,7 +66,9 @@ func runCreateForm(branch *string, apps *[]string, starshipPreset *string) error
 	// Defaults
 	*branch = "version-15"
 
-	return huh.NewForm(
+	var customAppsRaw string
+
+	err := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Frappe version").
@@ -92,13 +79,22 @@ func runCreateForm(branch *string, apps *[]string, starshipPreset *string) error
 				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
 				Options(appOptions...).
 				Value(apps),
-			huh.NewSelect[string]().
-				Title("Starship prompt preset").
-				Description("Shell prompt theme inside the bench container.").
-				Options(starshipPresets...).
-				Value(starshipPreset),
+			huh.NewInput().
+				Title("Custom app (optional)").
+				Description("Short name, git URL, or url@branch. Comma-separated for multiple.\nExamples: mypkg, git@github.com:org/app.git@main, https://github.com/org/app").
+				Value(&customAppsRaw),
 		),
 	).Run()
+	if err != nil {
+		return err
+	}
+
+	for raw := range strings.SplitSeq(customAppsRaw, ",") {
+		if raw = strings.TrimSpace(raw); raw != "" {
+			*apps = append(*apps, raw)
+		}
+	}
+	return nil
 }
 
 // counter provides auto-incrementing step numbers for create output.
@@ -109,7 +105,7 @@ func (c *counter) step(msg string) {
 	fmt.Printf("  [%d] %s\n", c.n, msg)
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, starshipPreset string) error {
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string) error {
 	// 1. Validate name
 	if err := bench.ValidateName(name); err != nil {
 		return err
@@ -154,7 +150,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		SocketIOPort:        socketIOPort,
 		SocketIOPortEnd:     socketIOPort + 5,
 		MariaDBRootPassword: dbPassword,
-		StarshipPreset:      starshipPreset,
+		ForwardSSHAgent:     os.Getenv("SSH_AUTH_SOCK") != "",
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
 		return fmt.Errorf("render compose: %w", err)
@@ -163,7 +159,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("render dockerfile: %w", err)
 	}
 
-	// Build the Docker image (installs zsh, zinit, starship)
+	// Build the Docker image
 	s.step("Building Docker image (zsh + zinit + starship) — this takes a few minutes")
 	if err := runner.Build(); err != nil {
 		return fmt.Errorf("docker compose build: %w", err)
@@ -235,27 +231,37 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("enable developer mode: %w", err)
 	}
 
-	// Install additional apps
-	for _, app := range apps {
-		ab := appBranch(app, frappeBranch)
+	// Configure GitHub credentials if a token was provided (used for private HTTPS repos).
+	if githubToken != "" {
+		s.step("Configuring GitHub credentials inside container")
+		if err := runner.ConfigureGitHubToken(githubToken); err != nil {
+			return fmt.Errorf("configure GitHub token: %w", err)
+		}
+		defer runner.CleanupGitHubToken()
+	}
 
-		s.step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", app, ab))
-		getCmd := fmt.Sprintf(
-			"bench get-app --branch %s %s",
-			ab, app,
-		)
-		if err := runner.Exec("frappe", "bash", "-c",
-			"cd /home/frappe/frappe-bench && "+getCmd); err != nil {
-			return fmt.Errorf("bench get-app %s: %w", app, err)
+	// Install additional apps
+	for _, raw := range apps {
+		spec := bench.ParseAppSpec(raw, frappeBranch)
+		displayName := spec.DisplayName()
+		branchDesc := spec.Branch
+		if branchDesc == "" {
+			branchDesc = "default"
 		}
 
-		s.step(fmt.Sprintf("Installing app %q on site %q", app, siteName))
+		s.step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", displayName, branchDesc))
+		if err := runner.Exec("frappe", "bash", "-c",
+			"cd /home/frappe/frappe-bench && "+spec.GetAppCmd()); err != nil {
+			return fmt.Errorf("bench get-app %s: %w", displayName, err)
+		}
+
+		s.step(fmt.Sprintf("Installing app %q on site %q", displayName, siteName))
 		installCmd := fmt.Sprintf(
 			"cd /home/frappe/frappe-bench && bench --site %s install-app %s --force",
-			siteName, app,
+			siteName, displayName,
 		)
 		if _, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
-			return fmt.Errorf("bench install-app %s: %w", app, err)
+			return fmt.Errorf("bench install-app %s: %w", displayName, err)
 		}
 	}
 
@@ -283,17 +289,16 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	// Save state
 	rec := state.Bench{
-		Name:           name,
-		Dir:            benchDir,
-		WebPort:        webPort,
-		SocketIOPort:   socketIOPort,
-		FrappeBranch:   frappeBranch,
-		AdminPassword:  adminPassword,
-		DBPassword:     dbPassword,
-		SiteName:       siteName,
-		Apps:           apps,
-		StarshipPreset: starshipPreset,
-		CreatedAt:      time.Now(),
+		Name:          name,
+		Dir:           benchDir,
+		WebPort:       webPort,
+		SocketIOPort:  socketIOPort,
+		FrappeBranch:  frappeBranch,
+		AdminPassword: adminPassword,
+		DBPassword:    dbPassword,
+		SiteName:      siteName,
+		Apps:          apps,
+		CreatedAt:     time.Now(),
 	}
 	if err := store.Add(rec); err != nil {
 		return fmt.Errorf("save state: %w", err)

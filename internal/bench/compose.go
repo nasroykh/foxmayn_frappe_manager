@@ -21,7 +21,9 @@ type ComposeData struct {
 	SocketIOPort        int
 	SocketIOPortEnd     int
 	MariaDBRootPassword string
-	StarshipPreset      string
+	// ForwardSSHAgent, when true, mounts the host SSH agent socket into the
+	// frappe container so that SSH-URL private repos work during bench get-app.
+	ForwardSSHAgent bool
 }
 
 // WriteCompose renders the compose template into the bench directory.

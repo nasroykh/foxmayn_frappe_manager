@@ -28,7 +28,7 @@ make install
 ## Quick start
 
 ```bash
-# Create a new bench (interactive form: version, apps, starship preset)
+# Create a new bench (interactive form: version + apps)
 ffm create mybench
 
 # Open the site
@@ -56,7 +56,6 @@ Creates and starts a new Frappe development bench end-to-end. When run without `
 
 - Frappe version (v15 stable / v16 latest)
 - Additional apps to install (ERPNext, HRMS)
-- Starship prompt preset for the shell (Pure is the default; Tokyo Night, Pastel Powerline, and more available)
 
 Steps performed:
 
@@ -68,18 +67,43 @@ Steps performed:
 6. Configures `common_site_config.json` with DB and Redis connection strings
 7. Creates the site with `bench new-site`
 8. Enables developer mode
-9. Starts the dev server via `nohup bench start`
-10. Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the container
+9. Installs any additional `--apps` (public or private)
+10. Starts the dev server via `nohup bench start`
+11. Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the container
 
 ```
 Flags:
   --frappe-branch string      Frappe branch to initialise (default "version-15")
-  --apps stringArray          Additional apps to install (e.g. --apps erpnext)
+  --apps stringArray          Apps to install — see formats below
   --admin-password string     Frappe site admin password (default "admin")
   --db-password string        MariaDB root password (default "123")
-  --starship-preset string    Starship prompt preset (default "pure-preset")
+  --github-token string       GitHub personal access token for private HTTPS repos
   -v, --verbose               Show docker compose output
 ```
+
+#### `--apps` formats
+
+```bash
+# Public short name (branch defaults to --frappe-branch):
+ffm create mybench --apps erpnext --apps hrms
+
+# Short name with explicit branch override:
+ffm create mybench --apps erpnext@version-16
+
+# Private SSH repo (requires SSH agent — see below):
+ffm create mybench --apps git@github.com:myorg/myapp.git
+
+# Private SSH repo with explicit branch:
+ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
+
+# HTTPS URL (public or private with --github-token):
+ffm create mybench --apps https://github.com/myorg/myapp
+ffm create mybench --apps "https://github.com/myorg/myapp@develop" --github-token ghp_xxx
+```
+
+#### SSH agent forwarding
+
+When `SSH_AUTH_SOCK` is set in your environment (i.e. you have an SSH agent running), ffm automatically mounts the socket into the frappe container so SSH-URL private repos work without a token. This is written into `docker-compose.yml` at bench creation time and re-evaluated by Docker Compose on every `ffm start`.
 
 ### `ffm list` / `ffm ls`
 
@@ -99,7 +123,7 @@ Stops all containers for a bench. Data is preserved — use `start` to resume. I
 
 ### `ffm shell [name]`
 
-Opens an interactive **zsh** shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and the starship prompt pre-configured.
+Opens an interactive **zsh** shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, history search, fixed key bindings (Ctrl/Alt+Arrow, Home, End, Delete), and a custom starship prompt — all baked into the image.
 
 Use `--exec` to run a single command non-interactively and print its output — the user stays in their own shell. Go and ffc are on the PATH automatically.
 
@@ -125,14 +149,6 @@ Streams container logs. Omit `[service]` to tail all containers. If `name` is om
 Flags:
   -f, --follow   Follow log output (default true)
 ```
-
-### `ffm preset [name]`
-
-Changes the starship prompt preset on a running bench without rebuilding the image. Applies the new preset config directly inside the container — takes under a second.
-
-Available presets: Default, Pure, Tokyo Night, Pastel Powerline, Gruvbox Rainbow, Nerd Font Symbols, Bracketed Segments, Jetpack.
-
-If `name` is omitted, an interactive picker is shown. The bench must be running.
 
 ### `ffm ffc [name]`
 
@@ -163,7 +179,7 @@ Prints the build version, commit hash, and build date.
 ~/frappe/
   <bench-name>/
     docker-compose.yml   # generated per bench
-    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship
+    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship + Go + ffc
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches

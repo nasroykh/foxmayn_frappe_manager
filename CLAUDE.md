@@ -40,18 +40,19 @@ internal/
     shell.go / logs.go    → interactive docker exec (zsh for frappe container) / log streaming; shell.go also supports --exec for non-interactive one-shot commands
     status.go / version.go
     pick.go               → resolveBenchName() + pickBench() helpers: interactive bench selector shown when name arg is omitted
-    preset.go             → ffm preset: change starship prompt preset on a running bench; starshipPresets slice shared with create form (Pure is default)
+    preset.go             → empty (reserved filename, no longer used)
     ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container; also called as a step in create
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
-    compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates
-    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps); ExecOutputInDir for non-interactive streaming exec (used by shell --exec)
+    app.go                → AppSpec type + ParseAppSpec(): parses --apps values supporting short names, SSH URLs, HTTPS URLs, and url@branch syntax
+    compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates; ComposeData includes ForwardSSHAgent bool
+    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps); ExecOutputInDir for non-interactive streaming exec (used by shell --exec); ConfigureGitHubToken/CleanupGitHubToken for private HTTPS repos
     frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName): runs bench execute inside container to generate API key/secret for Administrator
     port.go               → port allocation: scans state store + probes host for free port pairs
     templates/
-      docker-compose.yml.tmpl  → Go text/template, embedded via //go:embed
-      Dockerfile.tmpl          → Go text/template, embedded via //go:embed; extends frappe/bench:latest with zsh+zinit+starship+Go 1.26+ffc
+      docker-compose.yml.tmpl  → Go text/template, embedded via //go:embed; conditionally mounts SSH agent socket when ForwardSSHAgent=true
+      Dockerfile.tmpl          → Go text/template, embedded via //go:embed; extends frappe/bench:latest with zsh+zinit+starship+Go 1.26+ffc; bakes in fixed starship.toml and .zshrc
 
   config/                 → path resolution (bench dirs, state file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars
   state/                  → JSON-file state store (~/.config/ffm/benches.json), tracks bench metadata
@@ -65,16 +66,17 @@ internal/
 - **Port allocation** starts at web=8000 / socketio=9000 and increments by 10 per bench. Each pair is checked against both the state store and a live host port probe.
 - **Compose + Dockerfile templates** are embedded at compile time via `//go:embed`. Changes to either template require rebuild.
 - **Interactive bench picker** — `resolveBenchName(args, title)` in `pick.go` is called by every command that takes an optional bench name. If `args` is empty it calls `pickBench()`, which loads the state store, auto-selects if only one bench exists, and otherwise shows a `huh.Select` list. Escape and ctrl+c both abort via a custom `huh.KeyMap`.
-- **zsh shell** — `ffm shell` execs into `zsh` for the `frappe` container (falls back to `bash` for other services like mariadb). The shell is pre-configured with zinit, zsh-autosuggestions, zsh-syntax-highlighting, and starship, all baked into the image at `ffm create` time.
-- **Starship preset** — chosen during `ffm create` (form or `--starship-preset` flag, default `pure-preset`) and baked into the Docker image. Can be changed at any time on a running bench with `ffm preset` — it execs `starship preset <name> -o ~/.config/starship.toml` inside the container without rebuilding the image.
+- **zsh shell** — `ffm shell` execs into `zsh` for the `frappe` container (falls back to `bash` for other services like mariadb). The shell is pre-configured with zinit, zsh-autosuggestions, zsh-syntax-highlighting, history search, fixed key bindings, and starship — all baked into the image at `ffm create` time via heredocs in `Dockerfile.tmpl`.
+- **Starship config** — the starship prompt and `.zshrc` are fixed and baked into the image at build time via shell heredocs in `Dockerfile.tmpl`. There is no preset selection; the config mirrors the host machine's `~/.config/starship.toml` and `~/.zshrc` (history, completion, key bindings, zinit, ffc completions). To change the prompt, edit `Dockerfile.tmpl` and rebuild.
 - **ffc integration** — every new bench gets Go 1.26 and `ffc` (Foxmayn Frappe CLI) baked into the image. After site creation, `ffm create` calls `Runner.GenerateAdminAPIKeys` which runs `bench execute frappe.core.doctype.user.user.generate_keys` inside the container (no HTTP needed), then writes `~/.config/ffc/config.yaml`. If this step fails, `ffm ffc [name]` can retry it on a running bench.
-- The `create` command is the most complex — it's a 15-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
+- **Private repo support** — `--apps` accepts short names, SSH URLs (`git@github.com:org/app.git`), HTTPS URLs, and `url@branch` or `name@branch` suffix to override the branch. `bench.ParseAppSpec` handles all forms. SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set on the host (`ForwardSSHAgent` in `ComposeData`). For private HTTPS repos, `--github-token` configures a temporary git credential helper inside the container (cleaned up after all `bench get-app` calls via `defer`).
+- The `create` command is the most complex — it's a multi-step sequential pipeline. If it fails mid-way, there's no automatic rollback (state may be partially written).
 
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
 - `charm.land/lipgloss/v2` — terminal styling (list/status output)
-- `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation, preset selector)
+- `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation)
 - `github.com/charmbracelet/bubbles` — key bindings for huh KeyMap (Escape to quit)
 
 ## Runtime layout (on user's machine)
@@ -85,5 +87,5 @@ internal/
   Dockerfile             # generated per bench; extends frappe/bench:latest with zsh+zinit+starship+Go+ffc
 
 ~/.config/ffm/
-  benches.json           # state file (includes starship_preset per bench)
+  benches.json           # state file
 ```
