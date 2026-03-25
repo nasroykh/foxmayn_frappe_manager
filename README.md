@@ -9,15 +9,29 @@ A Go CLI that wraps [frappe_docker](https://github.com/frappe/frappe_docker)'s d
 
 ## Installation
 
-The quickest way to install — no clone needed:
+### Linux / macOS — one-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_manager/main/install.sh | sh
+```
+
+Detects OS and architecture, downloads the latest release binary, verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if the former is not writable).
+
+### Windows — PowerShell one-liner
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_manager/main/install.ps1 | iex"
+```
+
+Installs to `%LOCALAPPDATA%\Programs\ffm` and adds it to your user `PATH` automatically. No admin rights required.
+
+### Go install (requires Go toolchain)
 
 ```bash
 go install github.com/nasroykh/foxmayn_frappe_manager/cmd/ffm@latest
 ```
 
-This downloads, compiles, and places the `ffm` binary in your `$GOPATH/bin` (make sure it's in your `PATH`).
-
-Alternatively, build from source for version metadata (commit hash, build date):
+### Build from source
 
 ```bash
 git clone https://github.com/nasroykh/foxmayn_frappe_manager
@@ -204,6 +218,13 @@ Prints the build version, commit hash, and build date.
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches
+
+# repo root
+install.sh               # curl | sh installer for Linux/macOS
+install.ps1              # irm | iex installer for Windows
+.goreleaser.yaml         # cross-platform release config (linux/darwin/windows, amd64/arm64)
+.github/workflows/
+  release.yml            # GitHub Actions: build + publish on v* tag push
 ```
 
 ## Environment variables

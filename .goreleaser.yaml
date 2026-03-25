@@ -1,0 +1,49 @@
+version: 2
+
+project_name: ffm
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ffm
+    main: ./cmd/ffm
+    binary: ffm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Version={{ .Version }}
+      - -X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Commit={{ .Commit }}
+      - -X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Date={{ .Date }}
+
+archives:
+  - id: ffm
+    name_template: "ffm_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch

@@ -85,6 +85,23 @@ internal/
 - `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation)
 - `github.com/charmbracelet/bubbles` — key bindings for huh KeyMap (Escape to quit)
 
+## Release
+
+Releases are created by pushing a `v*` tag. The GitHub Actions workflow (`.github/workflows/release.yml`) triggers GoReleaser, which cross-compiles for linux/darwin/windows on amd64/arm64, packages archives, and publishes the GitHub release with a `checksums.txt`.
+
+**Tag-to-release flow:**
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+# → GitHub Actions runs GoReleaser → release assets published automatically
+```
+
+**Key files:**
+- `.goreleaser.yaml` — build config: binary `ffm`, cmd `./cmd/ffm`, ldflags for version injection, archives named `ffm_<version>_<os>_<arch>`
+- `.github/workflows/release.yml` — triggered on `v*` tags; uses `goreleaser-action@v6` with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`
+- `install.sh` — `curl | sh` installer for Linux/macOS; detects OS/arch, downloads + verifies SHA256, installs to `/usr/local/bin` or `~/.local/bin`
+- `install.ps1` — `irm | iex` installer for Windows; installs to `%LOCALAPPDATA%\Programs\ffm`, adds to user PATH, no admin rights required
+
 ## Runtime layout (on user's machine)
 
 ```
