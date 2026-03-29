@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +30,14 @@ create, start, stop, and delete Frappe development benches with a single command
 	// --verbose (no -v shorthand; -v is reserved for --version)
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "Show docker compose output")
 
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		// Skip when the user is already running `ffm update` to avoid duplicate output.
+		if cmd.Name() != "update" {
+			runUpdateCheck()
+		}
+		return nil
+	}
+
 	root.AddCommand(
 		newCreateCmd(),
 		newListCmd(),
@@ -41,7 +50,20 @@ create, start, stop, and delete Frappe development benches with a single command
 		newProxyCmd(),
 		newSetProxyCmd(),
 		newFfcCmd(),
+		newUpdateCmd(),
 	)
 
 	return root
+}
+
+// Execute runs the root command and waits for any background update-check
+// goroutine to finish writing its state file before the process exits.
+func Execute() error {
+	err := NewRootCmd().Execute()
+	waitForUpdateCheck()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	return nil
 }

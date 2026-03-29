@@ -289,6 +289,24 @@ Flags:
   --force   Skip confirmation prompt
 ```
 
+### `ffm update`
+
+Checks GitHub for the latest release and replaces the running binary in place. Works regardless of how ffm was installed (curl, `go install`).
+
+```bash
+ffm update           # check and update (asks for confirmation)
+ffm update --check   # only check, do not install
+ffm update --yes     # update without asking for confirmation
+```
+
+ffm also silently checks for updates in the background on every command and prints a one-line notice to stderr when a newer version is available:
+
+```
+Update available: v0.4.0 → v0.5.0  (run: ffm update)
+```
+
+The check result is cached in `~/.config/ffm/.update_check.json` and refreshed at most once every 24 hours, so it never blocks command execution.
+
 ### `ffm --version` / `ffm -v`
 
 Prints the build version, commit hash, and build date.
@@ -306,6 +324,7 @@ Prints the build version, commit hash, and build date.
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches
+  .update_check.json     # cached latest release tag (refreshed every 24 h)
 
 # repo root
 install.sh               # curl | sh installer for Linux/macOS

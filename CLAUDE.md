@@ -28,11 +28,11 @@ There are **no tests** yet. No test framework or test files exist.
 ## Architecture
 
 ```
-cmd/ffm/main.go          → entrypoint, calls cli.NewRootCmd().Execute()
+cmd/ffm/main.go          → entrypoint, calls cli.Execute() (wraps NewRootCmd().Execute() + waitForUpdateCheck)
 
 internal/
   cli/                    → cobra command definitions (one file per subcommand)
-    root.go               → root command, registers all subcommands, global --verbose flag (no -v shorthand); --version/-v flag via cobra root.Version
+    root.go               → root command, registers all subcommands, global --verbose flag (no -v shorthand); --version/-v flag via cobra root.Version; PersistentPreRunE runs update check on every command; Execute() exported function wraps cobra Execute + waitForUpdateCheck
     create.go             → multi-step bench provisioning (port alloc → compose+Dockerfile write → docker build [tools only] → bench init via docker compose run → docker up → site creation → dev server)
     delete.go             → teardown with confirmation prompt (uses charmbracelet/huh)
     list.go               → table output with live docker status (uses lipgloss v2)
@@ -43,6 +43,8 @@ internal/
     ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container; also called as a step in create
     proxy.go              → ffm proxy subcommand group: start / stop / status; bare 'ffm proxy' shows status
     setproxy.go           → ffm set-proxy: configures socketio_port / use_ssl / per-site host_name inside the container for reverse-proxy deployments; --reset restores direct-access defaults; --print-caddy / --print-nginx emit ready-to-paste config snippets using actual state ports
+    update.go             → ffm update: fetches latest release from GitHub API, compares semver, downloads platform-specific archive (tar.gz/zip), atomically replaces running binary; --check (check only) / --yes (skip confirmation); newerThan()/parseSemver() helpers shared with update_check.go
+    update_check.go       → background update notification: reads/writes ~/.config/ffm/.update_check.json (24 h TTL); runUpdateCheck() called via PersistentPreRunE on every command except 'update'; startBackgroundFetch() goroutine; waitForUpdateCheck() blocks up to 2 s before process exit
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, project/container name helpers
@@ -85,7 +87,9 @@ internal/
 - `github.com/spf13/cobra` — CLI framework
 - `charm.land/lipgloss/v2` — terminal styling (list/status output)
 - `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation)
+- `github.com/charmbracelet/huh/spinner` — spinner animation during update download/install (subpackage of huh, no extra go.mod entry)
 - `github.com/charmbracelet/bubbles` — key bindings for huh KeyMap (Escape to quit)
+- `github.com/go-resty/resty/v2` — HTTP client for GitHub releases API (update command + background check)
 
 ## Release
 
@@ -116,4 +120,5 @@ git push origin v0.1.0
 
 ~/.config/ffm/
   benches.json           # state file
+  .update_check.json     # cached latest release tag (refreshed every 24 h by background goroutine)
 ```
