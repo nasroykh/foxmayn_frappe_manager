@@ -1,3 +1,7 @@
+<div align="center">
+  <img width="150" height="150" alt="logo-foxmayn" src="https://github.com/user-attachments/assets/fa9f3727-dd5c-4748-92e9-f527a740366a" />
+</div>
+
 # ffm — Foxmayn Frappe Manager
 
 A Go CLI that wraps [frappe_docker](https://github.com/frappe/frappe_docker)'s devcontainer compose pattern so you can create, manage, and destroy local Frappe development benches with a single command. No YAML to write, no Docker flags to memorize.
@@ -79,14 +83,19 @@ Steps performed:
 
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
 2. Writes `docker-compose.yml` and a `Dockerfile` to `~/frappe/<name>/`
-3. Builds the Docker image — runs `bench init` (clones Frappe, installs Python/Node deps), installs **zsh**, **zinit**, **starship**, **Go 1.26**, and **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, all baked into the image layer. **This step is cached**: the second bench with the same Frappe branch builds in seconds instead of minutes
-4. Starts MariaDB, Redis (cache + queue), and the Frappe container (bench data persisted in a named Docker volume)
-5. Configures `common_site_config.json` with DB and Redis connection strings
-6. Creates the site with `bench new-site`
-7. Enables developer mode
-8. Installs any additional `--apps` (public or private)
-9. Starts the dev server via `nohup bench start`
-10. Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the container
+3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **Go 1.26**, and **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)** into the image. **This step is cached** and runs in seconds after the first build
+4. Runs `bench init` via a one-off container — clones Frappe, installs Python/Node deps, and places the result at `~/frappe/<name>/workspace/frappe-bench/` on your host filesystem. pip and yarn download caches are kept in Docker volumes so repeated bench creation is faster
+5. Starts MariaDB, Redis (cache + queue), and the Frappe container with `~/frappe/<name>/workspace/` bind-mounted at `/workspace` — bench files are live on your host
+6. Configures `common_site_config.json` with DB and Redis connection strings
+7. Creates the site with `bench new-site`
+8. Enables developer mode
+9. Installs any additional `--apps` (public or private)
+10. Starts the dev server via `nohup bench start`
+11. Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the container
+
+Output is minimal by default — only step labels are shown. Add `--verbose` to stream full Docker and bench init output.
+
+If any step fails, ffm automatically tears down all containers, volumes, and the bench directory so the next retry starts clean.
 
 ```
 Flags:
@@ -99,7 +108,7 @@ Flags:
                               (e.g. 443 for HTTPS, 80 for HTTP). Omit for local dev.
   --proxy-host string         Public domain for reverse proxy, e.g. frappe.example.com
                               Sets per-site host_name for correct link generation.
-  -v, --verbose               Show docker compose output
+  --verbose                   Stream full Docker and bench init output
 ```
 
 **VPS one-liner example:**
@@ -152,7 +161,7 @@ Stops all containers for a bench. Data is preserved — use `start` to resume. I
 
 ### `ffm shell [name]`
 
-Opens an interactive **zsh** shell inside the frappe container, landing directly in `/home/frappe/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, history search, fixed key bindings (Ctrl/Alt+Arrow, Home, End, Delete), and a custom starship prompt — all baked into the image.
+Opens an interactive **zsh** shell inside the frappe container, landing directly in `/workspace/frappe-bench`. The shell comes with zinit, zsh-autosuggestions, zsh-syntax-highlighting, history search, fixed key bindings (Ctrl/Alt+Arrow, Home, End, Delete), and a custom starship prompt — all baked into the image.
 
 Use `--exec` to run a single command non-interactively and print its output — the user stays in their own shell. Go and ffc are on the PATH automatically.
 
@@ -169,6 +178,27 @@ Flags:
                      Use "mariadb" to get a DB shell (uses bash), etc.
   --exec string      Run a command non-interactively and print its output
 ```
+
+### VS Code devcontainer
+
+Every bench includes a `.devcontainer/devcontainer.json` so you can open the full Frappe bench inside VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension.
+
+**Option A — native host editing** (bench files are on your host at `~/frappe/<name>/workspace/`):
+```bash
+code ~/frappe/mybench/workspace
+```
+Opens the bench directory directly in VS Code. Full local git, local extensions, normal file access.
+
+**Option B — open in container** (integrated terminal runs bench commands in the right environment):
+```bash
+code ~/frappe/mybench
+# VS Code prompts: "Reopen in Container"
+```
+Opens the bench inside the running container. The terminal lands at `/workspace/frappe-bench`, Python/Node paths are correct, and `bench`, `ffc`, `go` are all on PATH.
+
+Both options work simultaneously — changes made via Option A are immediately visible in Option B because it's the same bind-mounted directory.
+
+The `devcontainer.json` uses `"shutdownAction": "none"` so closing VS Code does not stop the bench containers.
 
 ### `ffm logs [name] [service]`
 
@@ -220,11 +250,11 @@ ffm set-proxy mybench --host frappe.example.com --print-nginx
 
 What it changes inside the Frappe container:
 
-| Setting | Default | Proxy mode |
-|---|---|---|
-| `socketio_port` (global) | `9000` | proxy port (443 or 80) |
-| `use_ssl` (global) | `0` | `1` when port is 443 |
-| `host_name` (per-site) | `http://name.localhost` | `https://frappe.example.com` |
+| Setting                  | Default                 | Proxy mode                   |
+| ------------------------ | ----------------------- | ---------------------------- |
+| `socketio_port` (global) | `9000`                  | proxy port (443 or 80)       |
+| `use_ssl` (global)       | `0`                     | `1` when port is 443         |
+| `host_name` (per-site)   | `http://name.localhost` | `https://frappe.example.com` |
 
 The dev server is restarted automatically so changes take effect immediately. `--reset` reverses all three settings back to direct-access defaults.
 
@@ -259,7 +289,7 @@ Flags:
   --force   Skip confirmation prompt
 ```
 
-### `ffm version`
+### `ffm --version` / `ffm -v`
 
 Prints the build version, commit hash, and build date.
 
@@ -269,7 +299,10 @@ Prints the build version, commit hash, and build date.
 ~/frappe/
   <bench-name>/
     docker-compose.yml   # generated per bench
-    Dockerfile           # extends frappe/bench:latest with bench init + zsh + zinit + starship + Go + ffc
+    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship + Go + ffc (tools only)
+    workspace/           # bind-mounted into container at /workspace; bench at workspace/frappe-bench/
+    .devcontainer/
+      devcontainer.json  # VS Code dev container config
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches
@@ -284,21 +317,21 @@ install.ps1              # irm | iex installer for Windows
 
 ## Environment variables
 
-| Variable          | Default          | Description                        |
-|-------------------|------------------|------------------------------------|
-| `FFM_BENCHES_DIR` | `~/frappe`       | Where bench directories are stored |
-| `FFM_CONFIG_DIR`  | `~/.config/ffm`  | Where the state file is stored     |
+| Variable          | Default         | Description                        |
+| ----------------- | --------------- | ---------------------------------- |
+| `FFM_BENCHES_DIR` | `~/frappe`      | Where bench directories are stored |
+| `FFM_CONFIG_DIR`  | `~/.config/ffm` | Where the state file is stored     |
 
 ## Services per bench
 
 Each bench runs four Docker containers scoped to a Compose project named `ffm-<name>`:
 
-| Service       | Image                               | Purpose                                                      |
-|---------------|-------------------------------------|--------------------------------------------------------------|
-| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc)  |
-| `mariadb`     | `mariadb:11.8`                      | Database                                                     |
-| `redis-cache` | `redis:alpine`                      | Cache                                                        |
-| `redis-queue` | `redis:alpine`                      | Background job queue                                         |
+| Service       | Image                               | Purpose                                                     |
+| ------------- | ----------------------------------- | ----------------------------------------------------------- |
+| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc) |
+| `mariadb`     | `mariadb:11.8`                      | Database                                                    |
+| `redis-cache` | `redis:alpine`                      | Cache                                                       |
+| `redis-queue` | `redis:alpine`                      | Background job queue                                        |
 
 The `frappe` container is also attached to the shared `ffm-proxy` Docker network and carries Traefik labels for `<name>.localhost` routing. MariaDB and Redis remain on the default project network only.
 
@@ -306,9 +339,9 @@ The `frappe` container is also attached to the shared `ffm-proxy` Docker network
 
 A single Traefik container (`ffm-proxy`) is shared across all benches:
 
-| Container   | Image        | Ports                             |
-|-------------|--------------|-----------------------------------|
-| `ffm-proxy` | `traefik:3`  | `0.0.0.0:80` (HTTP), `127.0.0.1:8080` (dashboard) |
+| Container   | Image       | Ports                                             |
+| ----------- | ----------- | ------------------------------------------------- |
+| `ffm-proxy` | `traefik:3` | `0.0.0.0:80` (HTTP), `127.0.0.1:8080` (dashboard) |
 
 The container is configured entirely via CLI flags — no config file is written. It uses `--restart=unless-stopped` so it survives Docker daemon restarts without re-running `ffm proxy start`.
 

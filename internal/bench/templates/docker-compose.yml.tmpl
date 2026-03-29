@@ -21,8 +21,6 @@ services:
   frappe:
     build:
       context: .
-      args:
-        FRAPPE_BRANCH: "{{.FrappeBranch}}"
     command: sleep infinity
     environment:
       - SHELL=/bin/zsh
@@ -30,12 +28,13 @@ services:
       - SSH_AUTH_SOCK=/ssh-agent
 {{- end}}
     volumes:
-      - frappe-bench:/home/frappe/frappe-bench
-      - {{.BenchDir}}:/workspace:cached
+      - ./workspace:/workspace
+      - pip-cache:/home/frappe/.cache/pip
+      - yarn-cache:/home/frappe/.cache/yarn
 {{- if .ForwardSSHAgent}}
       - ${SSH_AUTH_SOCK}:/ssh-agent
 {{- end}}
-    working_dir: /workspace
+    working_dir: /workspace/frappe-bench
     ports:
       - "{{.WebPort}}-{{.WebPortEnd}}:8000-8005"
       - "{{.SocketIOPort}}-{{.SocketIOPortEnd}}:9000-9005"
@@ -43,6 +42,9 @@ services:
       default: {}
       ffm-proxy: {}
     labels:
+      # VS Code Dev Containers — enables "Attach to Running Container" with the
+      # correct remote user without requiring any additional configuration.
+      - "devcontainer.metadata=[{\"remoteUser\": \"frappe\", \"workspaceFolder\": \"/workspace/frappe-bench\"}]"
       # Traefik reverse-proxy labels — enable sitename.localhost routing.
       # These are harmless when the proxy is not running.
       - "traefik.enable=true"
@@ -55,7 +57,8 @@ services:
 
 volumes:
   mariadb-data:
-  frappe-bench:
+  pip-cache:
+  yarn-cache:
 
 networks:
   # The default network is implicit but must be listed explicitly once the

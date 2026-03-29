@@ -45,7 +45,7 @@ func runStart(name string) error {
 	// Start the Frappe dev server in the background via nohup so it survives
 	// after the exec session exits.
 	if _, err := runner.ExecSilent("frappe", "bash", "-c",
-		"cd /home/frappe/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+		"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
 		return fmt.Errorf("bench start: %w", err)
 	}
 

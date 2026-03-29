@@ -74,7 +74,7 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 		sslVal = 1
 	}
 	globalCmd := fmt.Sprintf(
-		"cd /home/frappe/frappe-bench"+
+		"cd /workspace/frappe-bench"+
 			" && bench set-config -gp socketio_port %d"+
 			" && bench set-config -gp use_ssl %d",
 		port, sslVal,
@@ -96,7 +96,7 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 		proxyHost = fmt.Sprintf("%s://%s", scheme, strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://"))
 
 		siteCmd := fmt.Sprintf(
-			"cd /home/frappe/frappe-bench && bench --site %s set-config host_name %s",
+			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
 			b.SiteName, proxyHost,
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
@@ -108,7 +108,7 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 	// Restart dev server so the new config takes effect.
 	fmt.Println("  Restarting dev server...")
 	restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
-		" && cd /home/frappe/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 		// Non-fatal: pkill exits 1 when no process matched, which is fine.
 		fmt.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
@@ -147,7 +147,7 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	fmt.Printf("Resetting bench %q to direct-access settings...\n", b.Name)
 
 	// Restore socketio to the internal port and clear ssl + host_name.
-	globalCmd := "cd /home/frappe/frappe-bench" +
+	globalCmd := "cd /workspace/frappe-bench" +
 		" && bench set-config -gp socketio_port 9000" +
 		" && bench set-config -gp use_ssl 0"
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", globalCmd); err != nil {
@@ -158,7 +158,7 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 
 	// Reset host_name to the .localhost domain.
 	siteCmd := fmt.Sprintf(
-		"cd /home/frappe/frappe-bench && bench --site %s set-config host_name http://%s",
+		"cd /workspace/frappe-bench && bench --site %s set-config host_name http://%s",
 		b.SiteName, b.SiteName,
 	)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
@@ -169,7 +169,7 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	// Restart dev server.
 	fmt.Println("  Restarting dev server...")
 	restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
-		" && cd /home/frappe/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 		fmt.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
 	}

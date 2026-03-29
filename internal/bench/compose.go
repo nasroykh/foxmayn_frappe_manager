@@ -2,6 +2,7 @@ package bench
 
 import (
 	_ "embed"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -23,9 +24,6 @@ type ComposeData struct {
 	SocketIOPort        int
 	SocketIOPortEnd     int
 	MariaDBRootPassword string
-	// FrappeBranch is the git branch passed as a Docker build arg so that
-	// bench init runs inside the image build (cached across benches).
-	FrappeBranch string
 	// ForwardSSHAgent, when true, mounts the host SSH agent socket into the
 	// frappe container so that SSH-URL private repos work during bench get-app.
 	ForwardSSHAgent bool
@@ -71,4 +69,40 @@ func WriteDockerfile(benchDir string, data ComposeData) error {
 	defer f.Close()
 
 	return tmpl.Execute(f, data)
+}
+
+// WriteDevcontainer writes .devcontainer/devcontainer.json into the bench
+// directory so that VS Code can open the full frappe-bench inside the container
+// ("Dev Containers: Reopen in Container" or "Attach to Running Container").
+func WriteDevcontainer(benchDir string, data ComposeData) error {
+	dir := filepath.Join(benchDir, ".devcontainer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	type devcontainer struct {
+		Name              string `json:"name"`
+		DockerComposeFile string `json:"dockerComposeFile"`
+		Service           string `json:"service"`
+		WorkspaceFolder   string `json:"workspaceFolder"`
+		RemoteUser        string `json:"remoteUser"`
+		ShutdownAction    string `json:"shutdownAction"`
+	}
+
+	cfg := devcontainer{
+		Name:              data.Name,
+		DockerComposeFile: "../docker-compose.yml",
+		Service:           "frappe",
+		WorkspaceFolder:   "/workspace/frappe-bench",
+		RemoteUser:        "frappe",
+		ShutdownAction:    "none",
+	}
+
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	dest := filepath.Join(dir, "devcontainer.json")
+	return os.WriteFile(dest, append(b, '\n'), 0o644)
 }

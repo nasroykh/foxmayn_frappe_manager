@@ -65,8 +65,7 @@ func runFfcSetup(name string) error {
 
 	// 3. Verify ffc can reach the site (non-fatal — dev server may not be running)
 	fmt.Println("  [3] Verifying ffc connectivity (ffc ping)")
-	out, pingErr := runner.ExecSilent("frappe", "bash", "-c",
-		"export PATH=\"$HOME/go/bin:/usr/local/go/bin:$PATH\"; ffc ping")
+	out, pingErr := runner.ExecSilent("frappe", "bash", "-c", "ffc ping")
 
 	fmt.Printf("\nffc configured on bench %q.\n", name)
 	fmt.Printf("  api_key:    %s\n", keys.Key)

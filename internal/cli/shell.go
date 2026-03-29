@@ -7,7 +7,7 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
-const frappeBenchDir = "/home/frappe/frappe-bench"
+const frappeBenchDir = "/workspace/frappe-bench"
 
 func newShellCmd() *cobra.Command {
 	var service, execCmd string
@@ -19,7 +19,7 @@ func newShellCmd() *cobra.Command {
 landing directly in the frappe-bench directory.
 
 Use --exec to run a single command and return its output without opening an
-interactive shell. The command runs with the bench PATH already set (Go, ffc, etc.).
+interactive shell.
 
 Use --service to target a different container (e.g. mariadb).`,
 		Args: cobra.MaximumNArgs(1),
@@ -47,9 +47,7 @@ func runShell(name, service, execCmd string) error {
 	runner := bench.NewRunner(b.Name, b.Dir, false)
 
 	if execCmd != "" {
-		// Non-interactive: run the command with PATH set, stream output to terminal.
-		script := `export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"; ` + execCmd
-		return runner.ExecOutputInDir(service, frappeBenchDir, "bash", "-c", script)
+		return runner.ExecOutputInDir(service, frappeBenchDir, "bash", "-c", execCmd)
 	}
 
 	// Interactive shell.

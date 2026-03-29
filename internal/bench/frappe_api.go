@@ -17,7 +17,7 @@ type APIKeys struct {
 // dict, so we pipe through ast.literal_eval to convert it to JSON.
 func (r *Runner) GenerateAdminAPIKeys(siteName string) (APIKeys, error) {
 	cmd := fmt.Sprintf(
-		`cd /home/frappe/frappe-bench && bench --site %s execute frappe.core.doctype.user.user.generate_keys --args "['Administrator']" 2>/dev/null | python3 -c "import sys,json,ast; print(json.dumps(ast.literal_eval(sys.stdin.read().strip())))"`,
+		`cd /workspace/frappe-bench && bench --site %s execute frappe.core.doctype.user.user.generate_keys --args "['Administrator']" 2>/dev/null | python3 -c "import sys,json,ast; print(json.dumps(ast.literal_eval(sys.stdin.read().strip())))"`,
 		siteName,
 	)
 	out, err := r.ExecSilent("frappe", "bash", "-c", cmd)

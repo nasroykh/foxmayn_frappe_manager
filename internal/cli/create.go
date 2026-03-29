@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -110,7 +111,7 @@ func (c *counter) step(msg string) {
 	fmt.Printf("  [%d] %s\n", c.n, msg)
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string) error {
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string) (createErr error) {
 	// 1. Validate name
 	if err := bench.ValidateName(name); err != nil {
 		return err
@@ -140,6 +141,29 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	runner := bench.NewRunner(name, benchDir, verbose)
 	siteName := name + ".localhost"
 
+	// Automatic cleanup on failure. Named return (createErr) means the defer
+	// sees whatever error the function returns without any extra assignment at
+	// each return site. It tears down containers/volumes and removes the bench
+	// directory so the next retry starts from a clean state. The compose file
+	// is checked before calling Down because docker compose requires it to
+	// exist; if failure happened before templates were written, there is nothing
+	// to bring down.
+	defer func() {
+		if createErr == nil {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "\nCreate failed — cleaning up...")
+		composePath := filepath.Join(benchDir, "docker-compose.yml")
+		if _, statErr := os.Stat(composePath); statErr == nil {
+			if downErr := runner.Down(true); downErr != nil && verbose {
+				fmt.Fprintf(os.Stderr, "  cleanup: docker compose down: %v\n", downErr)
+			}
+		}
+		if rmErr := os.RemoveAll(benchDir); rmErr != nil && verbose {
+			fmt.Fprintf(os.Stderr, "  cleanup: remove bench dir: %v\n", rmErr)
+		}
+	}()
+
 	// Create bench directory
 	s.step("Creating bench directory")
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
@@ -154,8 +178,8 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("ensure proxy network: %w", err)
 	}
 
-	// Write compose file and Dockerfile
-	s.step("Writing docker-compose.yml and Dockerfile")
+	// Write compose file, Dockerfile, and devcontainer config
+	s.step("Writing docker-compose.yml, Dockerfile, and .devcontainer/devcontainer.json")
 	data := bench.ComposeData{
 		Name:                name,
 		BenchDir:            benchDir,
@@ -164,7 +188,6 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		SocketIOPort:        socketIOPort,
 		SocketIOPortEnd:     socketIOPort + 5,
 		MariaDBRootPassword: dbPassword,
-		FrappeBranch:        frappeBranch,
 		ForwardSSHAgent:     os.Getenv("SSH_AUTH_SOCK") != "",
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
@@ -173,11 +196,59 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if err := bench.WriteDockerfile(benchDir, data); err != nil {
 		return fmt.Errorf("render dockerfile: %w", err)
 	}
+	if err := bench.WriteDevcontainer(benchDir, data); err != nil {
+		return fmt.Errorf("render devcontainer: %w", err)
+	}
 
-	// Build the Docker image (includes bench init — cached across benches with the same branch)
-	s.step(fmt.Sprintf("Building Docker image (frappe %s + deps) — first build takes several minutes, cached after", frappeBranch))
+	// Build the Docker image (tools only: zsh, starship, Go, ffc — no bench init)
+	s.step("Building Docker image (tools only) — first build takes a few minutes, cached after")
 	if err := runner.Build(); err != nil {
 		return fmt.Errorf("docker compose build: %w", err)
+	}
+
+	// Create workspace directory on host (bind-mounted into the container).
+	// Remove any leftover frappe-bench from a previous partial run so bench init
+	// doesn't fail with "Bench instance already exists".
+	s.step("Creating workspace directory")
+	workspaceDir := filepath.Join(benchDir, "workspace")
+	if err := os.RemoveAll(filepath.Join(workspaceDir, "frappe-bench")); err != nil {
+		return fmt.Errorf("clean workspace: %w", err)
+	}
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		return fmt.Errorf("create workspace dir: %w", err)
+	}
+
+	// Run bench init at runtime — populates the bind-mounted workspace on host.
+	// pip/yarn download caches are persisted in named Docker volumes for speed.
+	//
+	// bench init is run to /tmp/ffm-bench-init (a path that never exists) to
+	// avoid "Bench instance already exists" errors: the image may carry content
+	// at /workspace/frappe-bench (via VOLUME or image layers) which makes that
+	// path appear non-empty even when the host bind-mount directory is empty.
+	// After init succeeds we copy the result into the bind-mounted location.
+	//
+	// bench init also exits 0 on failure, so we verify apps/ was created.
+	s.step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeBranch))
+	// After copying the bench from /tmp to /workspace/frappe-bench we must
+	// patch every text file in the virtualenv that still contains the old
+	// absolute path. The venv was created with egg-links, direct_url.json,
+	// and activate scripts that all reference /tmp/ffm-bench-init. Leaving
+	// them intact causes "No module named 'frappe'" at runtime.
+	// grep -rIl skips binary files; xargs -r is a no-op when grep finds nothing.
+	benchInitCmd := fmt.Sprintf(
+		`bench init --frappe-branch %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
+			` && rm -rf /workspace/frappe-bench`+
+			` && cp -a /tmp/ffm-bench-init /workspace/frappe-bench`+
+			` && grep -rIl '/tmp/ffm-bench-init' /workspace/frappe-bench 2>/dev/null | xargs -r sed -i 's|/tmp/ffm-bench-init|/workspace/frappe-bench|g'`+
+			` && rm -rf /tmp/ffm-bench-init`,
+		frappeBranch,
+	)
+	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
+		return fmt.Errorf("bench init: %w", err)
+	}
+	// bench init exits 0 even on failure; verify the bench was actually created.
+	if _, err := os.Stat(filepath.Join(workspaceDir, "frappe-bench", "apps")); err != nil {
+		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s/frappe-bench", workspaceDir)
 	}
 
 	// Start containers
@@ -199,7 +270,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if proxyPort > 0 {
 		socketIOPortCfg = proxyPort
 	}
-	configCmd := "cd /home/frappe/frappe-bench" +
+	configCmd := "cd /workspace/frappe-bench" +
 		" && bench set-config -g db_host mariadb" +
 		" && bench set-config -gp db_port 3306" +
 		" && bench set-config -g redis_cache redis://redis-cache:6379" +
@@ -209,28 +280,28 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if proxyPort == 443 {
 		configCmd += " && bench set-config -gp use_ssl 1"
 	}
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", configCmd); err != nil {
-		return fmt.Errorf("configure site settings: %w", err)
+	if out, err := runner.ExecSilent("frappe", "bash", "-c", configCmd); err != nil {
+		return fmt.Errorf("configure site settings: %w\n%s", err, out)
 	}
 
 	// bench new-site
 	s.step(fmt.Sprintf("Creating site %q", siteName))
 	newSiteCmd := fmt.Sprintf(
-		"cd /home/frappe/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
+		"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
 		siteName, dbPassword, adminPassword,
 	)
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {
-		return fmt.Errorf("bench new-site: %w", err)
+	if out, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {
+		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}
 
 	// Enable developer mode
 	s.step("Enabling developer mode")
 	devModeCmd := fmt.Sprintf(
-		"cd /home/frappe/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
+		"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
 		siteName, siteName,
 	)
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
-		return fmt.Errorf("enable developer mode: %w", err)
+	if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
+		return fmt.Errorf("enable developer mode: %w\n%s", err, out)
 	}
 
 	// Set per-site host_name when a public domain is provided.
@@ -245,11 +316,11 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 		s.step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
 		hostCmd := fmt.Sprintf(
-			"cd /home/frappe/frappe-bench && bench --site %s set-config host_name %s",
+			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
 			siteName, resolvedProxyHost,
 		)
-		if _, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
-			return fmt.Errorf("set host_name: %w", err)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
+			return fmt.Errorf("set host_name: %w\n%s", err, out)
 		}
 	}
 
@@ -272,25 +343,25 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 
 		s.step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", displayName, branchDesc))
-		if err := runner.Exec("frappe", "bash", "-c",
-			"cd /home/frappe/frappe-bench && "+spec.GetAppCmd()); err != nil {
-			return fmt.Errorf("bench get-app %s: %w", displayName, err)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c",
+			"cd /workspace/frappe-bench && "+spec.GetAppCmd()); err != nil {
+			return fmt.Errorf("bench get-app %s: %w\n%s", displayName, err, out)
 		}
 
 		s.step(fmt.Sprintf("Installing app %q on site %q", displayName, siteName))
 		installCmd := fmt.Sprintf(
-			"cd /home/frappe/frappe-bench && bench --site %s install-app %s --force",
+			"cd /workspace/frappe-bench && bench --site %s install-app %s --force",
 			siteName, displayName,
 		)
-		if _, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
-			return fmt.Errorf("bench install-app %s: %w", displayName, err)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
+			return fmt.Errorf("bench install-app %s: %w\n%s", displayName, err, out)
 		}
 	}
 
 	// Start dev server
 	s.step("Starting dev server")
 	if _, err := runner.ExecSilent("frappe", "bash", "-c",
-		"cd /home/frappe/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+		"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
 		return fmt.Errorf("bench start: %w", err)
 	}
 
@@ -347,6 +418,8 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	} else {
 		fmt.Printf("  ffc:      run 'ffc init' inside the bench shell to configure\n")
 	}
+	fmt.Printf("  Workspace: %s/workspace\n", benchDir)
+	fmt.Printf("  VS Code:   code %s  (Reopen in Container for integrated terminal)\n", benchDir)
 	return nil
 }
 

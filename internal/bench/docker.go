@@ -57,14 +57,40 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 	return cmd
 }
 
-// Build builds the Docker image for the compose project, always streaming
-// output so the user can see progress (the build takes several minutes).
+// Build builds the Docker image for the compose project. In verbose mode it
+// streams output to the terminal; otherwise output is captured and only printed
+// to stderr if the build fails, keeping create output minimal.
 func (r *Runner) Build() error {
 	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "build"}
 	cmd := exec.Command("docker", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if r.Verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		os.Stderr.Write(out)
+		return err
+	}
+	return nil
+}
+
+// Run executes a one-off command via docker compose run --rm. In verbose mode
+// it streams stdout/stderr to the terminal; otherwise output is captured and
+// only printed to stderr on failure. The container is removed after exit.
+func (r *Runner) Run(service string, args ...string) error {
+	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "run", "--rm", service}, args...)
+	cmd := exec.Command("docker", full...)
+	if r.Verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		os.Stderr.Write(out)
+		return err
+	}
+	return nil
 }
 
 // Up starts all services detached.
