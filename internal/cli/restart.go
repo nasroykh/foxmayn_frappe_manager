@@ -31,7 +31,7 @@ func newRestartCmd() *cobra.Command {
 					return err
 				}
 				fmt.Printf("Updating Dockerfile for bench %q...\n", name)
-				if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{}); err != nil {
+				if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{Mode: b.Mode}); err != nil {
 					return fmt.Errorf("write Dockerfile: %w", err)
 				}
 				runner := bench.NewRunner(b.Name, b.Dir, verbose)

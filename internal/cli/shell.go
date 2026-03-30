@@ -50,9 +50,13 @@ func runShell(name, service, execCmd string) error {
 		return runner.ExecOutputInDir(service, frappeBenchDir, "bash", "-c", execCmd)
 	}
 
-	// Interactive shell.
+	// Interactive shell: zsh for dev (baked into the image), bash for prod.
 	if service == "frappe" {
-		return runner.ExecInDir(service, frappeBenchDir, "zsh")
+		shell := "zsh"
+		if b.IsProd() {
+			shell = "bash"
+		}
+		return runner.ExecInDir(service, frappeBenchDir, shell)
 	}
 	return runner.Exec(service, "bash")
 }

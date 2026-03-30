@@ -34,6 +34,12 @@ func StateFile() string {
 	return filepath.Join(ConfigDir(), "benches.json")
 }
 
+// AcmeEmailFile returns the path to the file storing the Let's Encrypt ACME
+// email, so users only need to supply it once across all production benches.
+func AcmeEmailFile() string {
+	return filepath.Join(ConfigDir(), ".acme_email")
+}
+
 // EnsureDataDir creates both the benches dir and config dir if they don't exist.
 func EnsureDataDir() error {
 	if err := os.MkdirAll(BenchesDir(), 0o755); err != nil {

@@ -35,9 +35,15 @@ const (
 	// WebPort is the host port Traefik binds for HTTP traffic.
 	WebPort = 80
 
+	// HTTPSPort is the host port Traefik binds for HTTPS traffic (production).
+	HTTPSPort = 443
+
 	// DashboardPort is the host port for the Traefik read-only dashboard.
 	// Bound to 127.0.0.1 only — not exposed publicly.
 	DashboardPort = 8080
+
+	// LetsEncryptVolume is the Docker named volume for persisting ACME certs.
+	LetsEncryptVolume = "ffm-letsencrypt"
 )
 
 // DashboardURL returns the local URL for the Traefik dashboard.
@@ -156,6 +162,62 @@ func Stop() error {
 	return nil
 }
 
+// SupportsHTTPS reports whether the running Traefik container has port 443
+// bound, indicating it was started with Let's Encrypt support.
+func SupportsHTTPS() bool {
+	out, err := exec.Command(
+		"docker", "inspect", ContainerName,
+		"--format", `{{range $p, $conf := .HostConfig.PortBindings}}{{$p}} {{end}}`,
+	).CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "443")
+}
+
+// EnsureHTTPS ensures the proxy is running with HTTPS (port 443) and Let's
+// Encrypt configured. If the proxy is not running it is created with HTTPS
+// support. If it is running without HTTPS it is stopped, removed, and
+// recreated with HTTPS. If it already supports HTTPS this is a no-op.
+//
+// Note: recreating the proxy causes a brief routing interruption for all
+// benches during the container restart (~1 second).
+func EnsureHTTPS(acmeEmail string) error {
+	if err := EnsureNetwork(); err != nil {
+		return err
+	}
+
+	switch s := containerStatus(); s {
+	case "running":
+		if SupportsHTTPS() {
+			return nil // already supports HTTPS — no-op
+		}
+		// Running but HTTP-only: stop, remove, recreate with HTTPS.
+		fmt.Println("  Upgrading proxy to HTTPS (brief routing interruption)...")
+		if out, err := exec.Command("docker", "stop", ContainerName).CombinedOutput(); err != nil {
+			return fmt.Errorf("stop proxy for HTTPS upgrade: %w\n%s", err, strings.TrimSpace(string(out)))
+		}
+		if out, err := exec.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
+			return fmt.Errorf("remove proxy for HTTPS upgrade: %w\n%s", err, strings.TrimSpace(string(out)))
+		}
+		return createContainerHTTPS(acmeEmail)
+
+	case "exited", "created":
+		// Stopped container exists: remove and recreate with HTTPS.
+		if out, err := exec.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
+			return fmt.Errorf("remove stopped proxy: %w\n%s", err, strings.TrimSpace(string(out)))
+		}
+		return createContainerHTTPS(acmeEmail)
+
+	case "":
+		// No container: create fresh with HTTPS.
+		return createContainerHTTPS(acmeEmail)
+
+	default:
+		return fmt.Errorf("proxy container in unexpected state %q — run 'docker rm %s' and retry", s, ContainerName)
+	}
+}
+
 // createContainer runs a brand-new Traefik container attached to ffm-proxy.
 // All Traefik configuration is passed as CLI flags — no file is written.
 func createContainer() error {
@@ -203,6 +265,57 @@ func createContainer() error {
 			)
 		}
 		return fmt.Errorf("start Traefik: %w\n%s", err, msg)
+	}
+	return nil
+}
+
+// createContainerHTTPS runs a Traefik container with HTTPS support and
+// Let's Encrypt ACME HTTP-01 challenge. Port 443 is bound in addition to 80.
+// Certs are persisted in the ffm-letsencrypt named Docker volume.
+//
+// Dev benches route on the "web" entrypoint (:80) and are unaffected by the
+// addition of the "websecure" entrypoint. Per-bench HTTP→HTTPS redirects are
+// handled via compose labels so no global redirect is configured here (which
+// would break dev benches).
+func createContainerHTTPS(acmeEmail string) error {
+	args := []string{
+		"run", "-d",
+		"--name", ContainerName,
+		"--restart=unless-stopped",
+		"-p", fmt.Sprintf("0.0.0.0:%d:80", WebPort),
+		"-p", fmt.Sprintf("0.0.0.0:%d:443", HTTPSPort),
+		"-p", fmt.Sprintf("127.0.0.1:%d:%d", DashboardPort, DashboardPort),
+		"--network", NetworkName,
+		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
+		"-v", fmt.Sprintf("%s:/letsencrypt", LetsEncryptVolume),
+		"--label", "traefik.enable=false",
+		Image,
+		"--api.dashboard=true",
+		"--api.insecure=true",
+		"--providers.docker=true",
+		"--providers.docker.exposedByDefault=false",
+		"--providers.docker.network=" + NetworkName,
+		"--entrypoints.web.address=:80",
+		"--entrypoints.websecure.address=:443",
+		"--certificatesresolvers.letsencrypt.acme.httpchallenge=true",
+		"--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",
+		"--certificatesresolvers.letsencrypt.acme.email=" + acmeEmail,
+		"--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json",
+		"--log.level=INFO",
+	}
+
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "address already in use") || strings.Contains(msg, "bind:") {
+			return fmt.Errorf(
+				"start Traefik (HTTPS): port 80 or 443 is already in use on this host.\n"+
+					"Stop the conflicting process and try again.\n"+
+					"Original error: %w\n%s",
+				err, msg,
+			)
+		}
+		return fmt.Errorf("start Traefik (HTTPS): %w\n%s", err, msg)
 	}
 	return nil
 }

@@ -43,14 +43,23 @@ func runStatus(name string) error {
 	}
 
 	fmt.Println(titleStyle.Render(b.Name))
+	label("mode", b.Mode)
 	label("site", b.SiteName)
-	label("url (port)", fmt.Sprintf("http://localhost:%d", b.WebPort))
-	if b.ProxyHost != "" {
-		label("url (proxy)", b.ProxyHost)
-	} else if proxy.IsRunning() {
-		label("url (domain)", fmt.Sprintf("http://%s", b.SiteName))
+	if b.IsProd() {
+		if b.ProxyHost != "" {
+			label("url", b.ProxyHost)
+		} else if b.Domain != "" {
+			label("url", fmt.Sprintf("https://%s", b.Domain))
+		}
 	} else {
-		label("url (domain)", fmt.Sprintf("http://%s  (run 'ffm proxy start')", b.SiteName))
+		label("url (port)", fmt.Sprintf("http://localhost:%d", b.WebPort))
+		if b.ProxyHost != "" {
+			label("url (proxy)", b.ProxyHost)
+		} else if proxy.IsRunning() {
+			label("url (domain)", fmt.Sprintf("http://%s", b.SiteName))
+		} else {
+			label("url (domain)", fmt.Sprintf("http://%s  (run 'ffm proxy start')", b.SiteName))
+		}
 	}
 	label("branch", b.FrappeBranch)
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))

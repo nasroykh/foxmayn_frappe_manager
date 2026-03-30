@@ -15,18 +15,18 @@ description: >
 
 # ffm Development Guide
 
-Build and extend the ffm CLI — a Go tool for provisioning and managing Dockerized Frappe development benches.
+Build and extend the ffm CLI — a Go tool for provisioning and managing Dockerized Frappe development and production benches.
 
 ## Tech Stack
 
-| Component        | Library     | Import                                                    |
-| ---------------- | ----------- | --------------------------------------------------------- |
-| CLI framework    | cobra       | `github.com/spf13/cobra`                                  |
-| Terminal styling | lipgloss v2 | `charm.land/lipgloss/v2`                                  |
-| Forms & prompts  | huh v1.0.0  | `github.com/charmbracelet/huh`                            |
-| Spinner          | huh/spinner | `github.com/charmbracelet/huh/spinner`                    |
-| Key bindings     | bubbles     | `github.com/charmbracelet/bubbles/key`                    |
-| HTTP client      | resty v2    | `github.com/go-resty/resty/v2` (update command only)      |
+| Component        | Library     | Import                                               |
+| ---------------- | ----------- | ---------------------------------------------------- |
+| CLI framework    | cobra       | `github.com/spf13/cobra`                             |
+| Terminal styling | lipgloss v2 | `charm.land/lipgloss/v2`                             |
+| Forms & prompts  | huh v1.0.0  | `github.com/charmbracelet/huh`                       |
+| Spinner          | huh/spinner | `github.com/charmbracelet/huh/spinner`               |
+| Key bindings     | bubbles     | `github.com/charmbracelet/bubbles/key`               |
+| HTTP client      | resty v2    | `github.com/go-resty/resty/v2` (update command only) |
 
 ## Project Layout
 
@@ -39,20 +39,26 @@ internal/
                                 registers all subcommands; global --verbose flag
                                 (no -v shorthand; -v reserved for --version);
                                 PersistentPreRunE runs update check on every command
-    create.go                 → multi-step bench provisioning pipeline with auto-rollback
+    create.go                 → multi-step bench provisioning pipeline with auto-rollback;
+                                supports --mode dev (default) and --mode prod;
+                                interactive form (runCreateFormFull) asks mode first,
+                                then shows dev or prod follow-up fields
     delete.go                 → teardown with huh confirmation prompt (aliases: rm, remove)
-    list.go                   → table output with live docker status via lipgloss
-    start.go                  → docker compose up + skill install + dev server start
+    list.go                   → table output with live docker status via lipgloss;
+                                shows MODE column (dev/prod) and domain for prod benches
+    start.go                  → docker compose up + (dev only) skill install + dev server start;
+                                prod: compose command: entries run services automatically
     stop.go                   → docker compose stop
     restart.go                → delegates to runStop + runStart; --rebuild flag rewrites
-                                Dockerfile from template + rebuilds image
-    shell.go                  → interactive docker exec (zsh) + --exec for non-interactive
+                                Dockerfile from template (mode-aware) + rebuilds image
+    shell.go                  → interactive docker exec: zsh for dev, bash for prod;
+                                --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming
-    status.go                 → per-container status + credentials display
-    ffc.go                    → generate API keys + write ffc config inside container
+    status.go                 → per-container status + credentials display; shows mode + domain
+    ffc.go                    → generate API keys + write ffc config inside container (dev only)
     proxy.go                  → ffm proxy subcommand group: start / stop / status
-    setproxy.go               → configure socketio_port / use_ssl / host_name for reverse
-                                proxy deployments; --print-caddy / --print-nginx snippets
+    setproxy.go               → configure socketio_port / use_ssl / host_name for dev reverse
+                                proxy deployments; blocked for prod benches
     pick.go                   → resolveBenchName() + benchNameFromCWD() + pickBench()
                                 CWD auto-detection: if inside ~/frappe/<name>/, returns name
                                 without UI; falls back to interactive picker otherwise
@@ -63,26 +69,37 @@ internal/
     bench.go                  → ValidateName(), ProjectName(), ContainerName()
     app.go                    → AppSpec type + ParseAppSpec(): parses --apps values
     compose.go                → renders docker-compose.yml and Dockerfile from //go:embed
-                                templates; also writes .devcontainer/devcontainer.json
+                                templates (dev/ or prod/ based on Mode); also writes
+                                .devcontainer/devcontainer.json (dev only)
     docker.go                 → Runner: all docker compose interactions (Build, Run, Up,
                                 Down, Exec, ExecSilent, ExecOutputInDir, PS, Logs, etc.)
     frappe_api.go             → Runner.GenerateAdminAPIKeys(): bench execute + JSON parse
     port.go                   → port allocation: webBase=8000, socketIOBase=9000, step=10
     templates/
-      docker-compose.yml.tmpl → Go text/template, embedded via //go:embed
-      Dockerfile.tmpl         → Go text/template, embedded via //go:embed
+      dev/
+        docker-compose.yml.tmpl → 4-service dev compose (frappe+honcho, mariadb, redis×2)
+        Dockerfile.tmpl         → full dev image: zsh+zinit+starship+Go+ffc+pnpm+Claude Code
+      prod/
+        docker-compose.yml.tmpl → 7-service prod compose (gunicorn, socketio, workers,
+                                   scheduler, mariadb, redis×2); Traefik labels for domain
+                                   routing + Let's Encrypt; per-bench HTTP→HTTPS redirect
+        Dockerfile.tmpl         → minimal prod image (no dev tools)
 
   proxy/
     proxy.go                  → all Traefik lifecycle: EnsureNetwork(), Start(), Stop(),
-                                IsRunning(), Status(); createContainer() with docker run
+                                IsRunning(), Status(), SupportsHTTPS(), EnsureHTTPS();
+                                createContainer() for HTTP-only; createContainerHTTPS()
+                                adds port 443, letsencrypt volume, ACME resolver flags
 
   config/
     paths.go                  → BenchesDir(), ConfigDir(), BenchDir(), StateFile(),
-                                EnsureDataDir(); respects FFM_BENCHES_DIR, FFM_CONFIG_DIR
+                                AcmeEmailFile(), EnsureDataDir();
+                                respects FFM_BENCHES_DIR, FFM_CONFIG_DIR
 
   state/
     store.go                  → JSON-file state store (~/.config/ffm/benches.json);
-                                Bench struct; Store with Load/Save/Add/Remove/Get/Update
+                                Bench struct with Mode/Domain/IsProd()/IsDev();
+                                Store with Load/Save/Add/Remove/Get/Update
 
   version/
     version.go                → build-time ldflags: Version, Commit, Date
@@ -119,7 +136,7 @@ func newMyCmd() *cobra.Command {
         Long:  `Longer description with usage notes.`,
         Args:  cobra.MaximumNArgs(1),
         RunE: func(cmd *cobra.Command, args []string) error {
-            // 1. Resolve bench name (interactive picker if omitted)
+            // 1. Resolve bench name (CWD auto-detect or interactive picker if omitted)
             name, err := resolveBenchName(args, "Select a bench")
             if err != nil {
                 return err
@@ -140,10 +157,15 @@ func runMyCommand(name, someFlag string) error {
         return err
     }
 
-    // 3. Create runner for docker compose operations
+    // 3. Check mode if behavior differs
+    if b.IsProd() {
+        // prod-specific behavior
+    }
+
+    // 4. Create runner for docker compose operations
     runner := bench.NewRunner(b.Name, b.Dir, verbose)
 
-    // 4. Do work (exec into container, update state, etc.)
+    // 5. Do work (exec into container, update state, etc.)
     out, err := runner.ExecSilent("frappe", "bash", "-c", "some command")
     if err != nil {
         return fmt.Errorf("my-command: %w\n%s", err, out)
@@ -172,6 +194,7 @@ root.AddCommand(
 - **`resolveBenchName(args, title)`** — call this in every command that takes an optional `[name]` argument. Resolution order: (1) `args[0]` if provided; (2) `benchNameFromCWD()` — silently returns the bench name if CWD is under `~/frappe/<name>/` and that name is in the state store; (3) `pickBench()` — auto-selects if only one bench exists, otherwise shows a `huh.Select` list.
 - **`RunE`, not `Run`**: Always return errors; cobra handles printing and exit code 1.
 - **`bench.Runner`** wraps all docker compose operations. Always construct via `bench.NewRunner(b.Name, b.Dir, verbose)`.
+- **Mode-aware behavior**: Load state with `store.Get(name)`, then use `b.IsProd()` / `b.IsDev()` to branch. Examples: `shell.go` uses `bash` for prod, `zsh` for dev; `start.go` skips bench start for prod; `setproxy.go` blocks for prod.
 
 ## bench.Runner — Docker Compose Abstraction
 
@@ -179,12 +202,12 @@ The `Runner` type in `internal/bench/docker.go` is the central abstraction for a
 
 ### Four output modes
 
-| Method | IO | Use case |
-|--------|-----|----------|
-| `ExecSilent(service, args...)` | Captures output, returns `(string, error)` | Commands that need to parse output or should be quiet |
-| `ExecOutputInDir(service, workdir, args...)` | Streams stdout/stderr to terminal, no TTY | `ffm shell --exec` (non-interactive, show output) |
-| `ExecInDir(service, workdir, args...)` | Full stdin/stdout/stderr + TTY | `ffm shell` (interactive shell) |
-| `Exec(service, args...)` | Full IO, no workdir override | Interactive exec without workdir |
+| Method                                       | IO                                         | Use case                                              |
+| -------------------------------------------- | ------------------------------------------ | ----------------------------------------------------- |
+| `ExecSilent(service, args...)`               | Captures output, returns `(string, error)` | Commands that need to parse output or should be quiet |
+| `ExecOutputInDir(service, workdir, args...)` | Streams stdout/stderr to terminal, no TTY  | `ffm shell --exec` (non-interactive, show output)     |
+| `ExecInDir(service, workdir, args...)`       | Full stdin/stdout/stderr + TTY             | `ffm shell` (interactive shell)                       |
+| `Exec(service, args...)`                     | Full IO, no workdir override               | Interactive exec without workdir                      |
 
 ### Quiet-with-error-dump pattern
 
@@ -209,17 +232,17 @@ func (r *Runner) Build() error {
 
 ### Other Runner methods
 
-| Method | Description |
-|--------|-------------|
-| `Up()` | `docker compose up -d` |
-| `Down(removeVolumes)` | `docker compose down --remove-orphans [-v]` |
-| `Start()` | `docker compose start` (existing stopped containers) |
-| `Stop()` | `docker compose stop` |
-| `Logs(follow, service)` | `docker compose logs [-f] [service]` |
-| `PS(format)` | `docker compose ps [--format X]` |
-| `WaitForMariaDB(pw, timeout, writer)` | Polls until MariaDB accepts connections |
-| `ConfigureGitHubToken(token)` / `CleanupGitHubToken()` | Temp git credential helper |
-| `GenerateAdminAPIKeys(siteName)` | Runs bench execute + parses JSON API keys |
+| Method                                                 | Description                                          |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| `Up()`                                                 | `docker compose up -d`                               |
+| `Down(removeVolumes)`                                  | `docker compose down --remove-orphans [-v]`          |
+| `Start()`                                              | `docker compose start` (existing stopped containers) |
+| `Stop()`                                               | `docker compose stop`                                |
+| `Logs(follow, service)`                                | `docker compose logs [-f] [service]`                 |
+| `PS(format)`                                           | `docker compose ps [--format X]`                     |
+| `WaitForMariaDB(pw, timeout, writer)`                  | Polls until MariaDB accepts connections              |
+| `ConfigureGitHubToken(token)` / `CleanupGitHubToken()` | Temp git credential helper                           |
+| `GenerateAdminAPIKeys(siteName)`                       | Runs bench execute + parses JSON API keys            |
 
 ## State Store
 
@@ -239,9 +262,18 @@ type Bench struct {
     SiteName      string    `json:"site_name"`
     Apps          []string  `json:"apps"`
     ProxyHost     string    `json:"proxy_host,omitempty"`
+    // Mode is "dev" or "prod". Empty is treated as "dev" (backward compatibility).
+    Mode          string    `json:"mode,omitempty"`
+    // Domain is the public domain for production benches (e.g. "erp.example.com").
+    Domain        string    `json:"domain,omitempty"`
     CreatedAt     time.Time `json:"created_at"`
 }
+
+func (b Bench) IsProd() bool { return b.Mode == "prod" }
+func (b Bench) IsDev() bool  { return b.Mode != "prod" }
 ```
+
+Empty `Mode` is treated as `"dev"` for backward compatibility with existing state files.
 
 ### Store operations
 
@@ -263,59 +295,73 @@ Not concurrency-safe across processes — fine for a CLI.
 
 Templates live at `internal/bench/templates/` and are embedded at compile time via `//go:embed`. Changes require rebuild.
 
+### Template layout
+
+```
+internal/bench/templates/
+  dev/
+    docker-compose.yml.tmpl   // 4-service dev compose
+    Dockerfile.tmpl           // full image: zsh+zinit+starship+Go+ffc+pnpm+Claude Code
+  prod/
+    docker-compose.yml.tmpl   // 7-service prod compose with Traefik labels
+    Dockerfile.tmpl           // minimal image (no dev tools)
+```
+
 ### ComposeData (template input)
 
 ```go
 type ComposeData struct {
     Name                string   // bench name, used as Traefik router ID
+    Mode                string   // "dev" or "prod"
     BenchDir            string
     WebPort             int      // first port in the range (e.g. 8000)
-    WebPortEnd          int      // last port in range (WebPort + 5)
+    WebPortEnd          int      // last port in range (WebPort + 5); dev only
     SocketIOPort        int      // first port (e.g. 9000)
-    SocketIOPortEnd     int      // SocketIOPort + 5
+    SocketIOPortEnd     int      // SocketIOPort + 5; dev only
     MariaDBRootPassword string
-    ForwardSSHAgent     bool     // mount SSH_AUTH_SOCK into container
+    ForwardSSHAgent     bool     // dev only: mount SSH_AUTH_SOCK into container
+    Domain              string   // prod only: public domain for Traefik routing
+    NoSSL               bool     // prod only: skip TLS labels, route on HTTP entrypoint
 }
 ```
 
 ### Rendering
 
 ```go
-bench.WriteCompose(benchDir, data)       // → docker-compose.yml
-bench.WriteDockerfile(benchDir, data)     // → Dockerfile
-bench.WriteDevcontainer(benchDir, data)   // → .devcontainer/devcontainer.json
+bench.WriteCompose(benchDir, data)       // → docker-compose.yml (selects dev or prod template)
+bench.WriteDockerfile(benchDir, data)     // → Dockerfile (selects dev or prod template)
+bench.WriteDevcontainer(benchDir, data)   // → .devcontainer/devcontainer.json (dev only)
 ```
 
-`WriteDevcontainer` uses `json.MarshalIndent` (not a template); the other two use `text/template`.
+`WriteCompose` and `WriteDockerfile` select the template based on `data.Mode`. `WriteDevcontainer` uses `json.MarshalIndent` (not a template).
 
-When modifying templates, test by creating a new bench with `ffm create testbench --verbose` and inspecting the generated files at `~/frappe/testbench/`.
+### Prod compose services
 
-## Port Allocation
+| Service        | Command                        | Notes                                                  |
+| -------------- | ------------------------------ | ------------------------------------------------------ |
+| `mariadb`      | default entrypoint             | Has healthcheck                                        |
+| `redis-cache`  | default                        |                                                        |
+| `redis-queue`  | default                        |                                                        |
+| `frappe`       | `bench serve --port 8000`      | gunicorn; depends_on mariadb (healthy); Traefik labels |
+| `socketio`     | `node apps/frappe/socketio.js` | Traefik labels for `/socket.io` path                   |
+| `worker-long`  | `bench worker --queue long`    | No ports                                               |
+| `worker-short` | `bench worker --queue short`   | No ports                                               |
+| `scheduler`    | `bench schedule`               | No ports                                               |
 
-`internal/bench/port.go` — sequential scan with host probe.
-
-```
-webBase      = 8000
-socketIOBase = 9000
-portStep     = 10
-maxBenches   = 50
-```
-
-Each bench gets a port pair: (8000, 9000), (8010, 9010), (8020, 9020), etc. Each pair allocates a *range* of 6 ports (e.g. 8000–8005) in the compose file for Frappe's multi-process dev server.
-
-`AllocatePorts()` checks both the state store and probes the host via `net.Listen` to detect external conflicts.
+Traefik labels on `frappe` and `socketio` route `{{.Domain}}` on `websecure` (HTTPS) by default, or `web` (HTTP) when `{{.NoSSL}}` is true. Per-bench HTTP→HTTPS redirect is applied via labels (no global redirect, which would break dev benches).
 
 ## Config Paths
 
 `internal/config/paths.go` — all path resolution is here.
 
-| Function | Default | Env override |
-|----------|---------|--------------|
-| `BenchesDir()` | `~/frappe` | `FFM_BENCHES_DIR` |
-| `ConfigDir()` | `~/.config/ffm` | `FFM_CONFIG_DIR` |
-| `BenchDir(name)` | `~/frappe/<name>` | inherits from BenchesDir |
-| `StateFile()` | `~/.config/ffm/benches.json` | inherits from ConfigDir |
-| `EnsureDataDir()` | creates both dirs | — |
+| Function          | Default                      | Env override             |
+| ----------------- | ---------------------------- | ------------------------ |
+| `BenchesDir()`    | `~/frappe`                   | `FFM_BENCHES_DIR`        |
+| `ConfigDir()`     | `~/.config/ffm`              | `FFM_CONFIG_DIR`         |
+| `BenchDir(name)`  | `~/frappe/<name>`            | inherits from BenchesDir |
+| `StateFile()`     | `~/.config/ffm/benches.json` | inherits from ConfigDir  |
+| `AcmeEmailFile()` | `~/.config/ffm/.acme_email`  | inherits from ConfigDir  |
+| `EnsureDataDir()` | creates both dirs            | —                        |
 
 ## Proxy Package
 
@@ -324,20 +370,49 @@ Each bench gets a port pair: (8000, 9000), (8010, 9010), (8020, 9020), etc. Each
 The proxy is a standalone `docker run` container (not compose). Key constants:
 
 ```go
-NetworkName   = "ffm-proxy"   // shared Docker bridge network
-ContainerName = "ffm-proxy"   // Traefik container name
-Image         = "traefik:3"
-WebPort       = 80
-DashboardPort = 8080           // bound to 127.0.0.1 only
+NetworkName      = "ffm-proxy"         // shared Docker bridge network
+ContainerName    = "ffm-proxy"         // Traefik container name
+Image            = "traefik:3"
+WebPort          = 80
+HTTPSPort        = 443
+DashboardPort    = 8080                // bound to 127.0.0.1 only
+LetsEncryptVolume = "ffm-letsencrypt"  // named volume for ACME state
 ```
 
-All Traefik configuration is CLI flags — no config file on disk. The `createContainer()` function in proxy.go is the single source of truth for the Traefik setup.
+All Traefik configuration is CLI flags — no config file on disk.
 
-Each bench's compose template declares the frappe service as attached to the `ffm-proxy` network with Traefik labels for `<name>.localhost` routing. `proxy.EnsureNetwork()` is called before `docker compose up` during `ffm create` so the external network always exists (even if the proxy container isn't running).
+### Key functions
+
+| Function             | Description                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EnsureNetwork()`    | Creates the `ffm-proxy` Docker network if missing                                                                                                                                                             |
+| `Start()`            | Starts Traefik on HTTP only (dev benches)                                                                                                                                                                     |
+| `Stop()`             | Stops and removes the Traefik container                                                                                                                                                                       |
+| `IsRunning()`        | Returns true if the proxy container is running                                                                                                                                                                |
+| `SupportsHTTPS()`    | Inspects container port bindings for :443                                                                                                                                                                     |
+| `EnsureHTTPS(email)` | State machine: ensures proxy supports HTTPS + ACME. Creates with HTTPS if not running; recreates (stop→rm→create) if running without port 443. No-op if already supports HTTPS. Also calls `EnsureNetwork()`. |
+
+`EnsureHTTPS` is called by `ffm create --mode prod` (unless `--no-ssl`). It does not add a global HTTP→HTTPS redirect so dev benches on port 80 are unaffected. Each prod bench applies its own per-bench redirect via compose Traefik labels.
+
+`createContainerHTTPS(email)` extends the standard container flags with:
+- `-p 0.0.0.0:443:443`
+- `-v ffm-letsencrypt:/letsencrypt`
+- `--entrypoints.websecure.address=:443`
+- `--certificatesresolvers.letsencrypt.acme.httpchallenge=true`
+- ACME email and storage flags
 
 ## The `create` Command — Pipeline Architecture
 
 `create.go` is the most complex command: a multi-step sequential pipeline with **automatic rollback on failure**. Understanding it is essential.
+
+### Interactive form flow
+
+`RunE` checks `cmd.Flags().Changed("mode")`:
+- No `--mode` → `runCreateFormFull()`: asks mode first (dev/prod), then shows relevant follow-up fields
+- `--mode dev` without `--frappe-branch`/`--apps` → `runCreateForm()`: dev-only form (branch + apps)
+- Any other combination: skip forms, use flags directly
+
+`runCreateFormFull()` for prod shows: domain, admin password (password echo mode), ACME email (empty = no-ssl), Frappe version, apps.
 
 ### Rollback mechanism
 
@@ -349,36 +424,52 @@ func runCreate(...) (createErr error) {
         // 1. docker compose down -v (if compose file exists)
         // 2. os.RemoveAll(benchDir)
     }()
-    // ... 11+ steps that may return error ...
+    // ... steps that may return error ...
 }
 ```
 
-The named-return pattern (`createErr error`) means the defer sees whatever error the function returns without any extra assignment at each `return` site. The compose file existence is checked before calling `Down` because docker compose requires it.
+### Step sequence (dev vs prod differences)
 
-### Step sequence
-
-1. Validate name + check for duplicates
-2. Allocate ports (`bench.AllocatePorts`)
-3. Create bench directory
-4. Ensure ffm-proxy network (`proxy.EnsureNetwork`)
-5. Write compose + Dockerfile + devcontainer templates
-6. Build Docker image (tools only — cached after first build)
-7. Create workspace directory
-8. `docker compose run --rm` bench init (to `/tmp`, copy to bind-mount, patch venv paths)
-9. `docker compose up -d`
-10. Wait for MariaDB
-11. Configure common_site_config
-12. `bench new-site`
-13. Enable developer mode
-14. (Optional) Set host_name for proxy mode
-15. (Optional) Configure GitHub token for private repos
-16. Install apps (loop: `bench get-app` + `bench install-app`)
-17. Start dev server via nohup
-18. Wait for HTTP
-19. Generate API keys + write ffc config
-20. Save state
+| Step                  | Dev                  | Prod                                                     |
+| --------------------- | -------------------- | -------------------------------------------------------- |
+| Validate + port alloc | same                 | same                                                     |
+| Create bench dir      | same                 | same                                                     |
+| **Proxy**             | `EnsureNetwork()`    | `EnsureHTTPS(email)` if SSL; `EnsureNetwork()` if no-ssl |
+| Site name             | `<name>.localhost`   | `<domain>`                                               |
+| Write templates       | Mode: "dev"          | Mode: "prod", Domain, NoSSL                              |
+| **devcontainer**      | written              | skipped                                                  |
+| Build image           | same                 | same (smaller)                                           |
+| Bench init            | + skills copy        | base only (no skills in prod image)                      |
+| Up                    | same                 | same                                                     |
+| Wait MariaDB          | same                 | same                                                     |
+| Configure site        | socketio_port=9000   | socketio_port=443 (ssl) or 80 (no-ssl)                   |
+| New site              | same                 | same                                                     |
+| **Developer mode**    | enabled              | skipped                                                  |
+| **Host name**         | only if --proxy-host | always set to https/http://domain                        |
+| Install apps          | same                 | same                                                     |
+| **Build assets**      | skipped              | `bench build`                                            |
+| **Dev server**        | nohup bench start    | skipped (compose handles it)                             |
+| **HTTP wait**         | polls localhost:port | skipped                                                  |
+| **ffc setup**         | runs                 | skipped                                                  |
+| Save state            | + Mode, Domain       | same                                                     |
 
 State is saved **only on success** (last step before the success message).
+
+### Production with an existing reverse proxy (Caddy/Nginx already on 80/443)
+
+Use `--no-ssl`. `EnsureNetwork()` is called instead of `EnsureHTTPS()`, so Traefik does not try to bind port 443. The prod compose exposes `WebPort` and `SocketIOPort` on the host. The user then points their existing Caddy/Nginx at those ports.
+
+After creation, `socketio_port` is set to `80` (the `--no-ssl` default). If the user's proxy handles HTTPS, they need to manually correct this:
+
+```bash
+ffm shell kb --exec "cd /workspace/frappe-bench && bench set-config -gp socketio_port 443 && bench set-config -gp use_ssl 1"
+```
+
+**Known limitation:** `ffm set-proxy` is blocked for prod benches (`setproxy.go` returns early with an error). There is no ffm command that applies this correction automatically for prod. Future work: extend `set-proxy` to work with prod benches (or add `ffm configure-proxy` for prod).
+
+### ACME email persistence
+
+`saveAcmeEmail(email)` writes to `~/.config/ffm/.acme_email`. `readSavedAcmeEmail()` reads it. First prod+SSL bench requires `--acme-email`; subsequent ones auto-read the saved email. Interactive form pre-fills from saved email.
 
 ## Interactive Forms (huh v1.0.0)
 
@@ -405,18 +496,28 @@ if errors.Is(err, huh.ErrUserAborted) { ... }
 
 `pickBench()` in `pick.go` loads the state store, auto-selects if only one bench exists, and shows a `huh.Select` list otherwise. The keymap includes Escape via a custom `huh.KeyMap`.
 
+### CWD auto-detection
+
+`benchNameFromCWD()` in `pick.go`:
+1. Gets `os.Getwd()`
+2. Computes `filepath.Rel(config.BenchesDir(), cwd)` — the path relative to `~/frappe/`
+3. Extracts the first component (bench name) via `strings.SplitN(rel, string(filepath.Separator), 2)[0]`
+4. Validates it is not empty, not `.`, not `..`, and exists in the state store
+
+Called by `resolveBenchName()` when `args` is empty, before showing the interactive picker.
+
 ## AppSpec — `--apps` Value Parsing
 
 `internal/bench/app.go` — the `ParseAppSpec(raw, frappeBranch)` function handles all `--apps` formats:
 
-| Input | Source | Branch |
-|-------|--------|--------|
-| `erpnext` | `erpnext` | `frappeBranch` (default) |
-| `erpnext@version-16` | `erpnext` | `version-16` |
-| `git@github.com:org/app.git` | full SSH URL | `""` (git default) |
-| `git@github.com:org/app.git@main` | SSH URL without `@main` | `main` |
-| `https://github.com/org/app` | full HTTPS URL | `""` |
-| `https://github.com/org/app@main` | HTTPS URL without `@main` | `main` |
+| Input                             | Source                    | Branch                   |
+| --------------------------------- | ------------------------- | ------------------------ |
+| `erpnext`                         | `erpnext`                 | `frappeBranch` (default) |
+| `erpnext@version-16`              | `erpnext`                 | `version-16`             |
+| `git@github.com:org/app.git`      | full SSH URL              | `""` (git default)       |
+| `git@github.com:org/app.git@main` | SSH URL without `@main`   | `main`                   |
+| `https://github.com/org/app`      | full HTTPS URL            | `""`                     |
+| `https://github.com/org/app@main` | HTTPS URL without `@main` | `main`                   |
 
 `GetAppCmd()` returns the `bench get-app` shell command. `DisplayName()` extracts the repo name for log output.
 
@@ -477,11 +578,12 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 2. Register in `root.go` via `root.AddCommand(newXxxCmd())`
 3. If it needs docker compose operations, use `bench.Runner` methods
 4. If it needs persistent state, use `state.Store` (Load/Save/Add/Remove/Get/Update)
-5. If it modifies compose or Dockerfile templates, edit `internal/bench/templates/*.tmpl`
-6. If it touches config paths, update `internal/config/paths.go`
-7. Run `make vet && make fmt && make build` to verify
-8. Update README.md, CLAUDE.md, and the skill files under `.agents/skills/`
-9. Run `make skills-init` to sync skills across agent directories
+5. If behavior differs by mode, check `b.IsProd()` / `b.IsDev()` after `store.Get(name)`
+6. If it modifies compose or Dockerfile templates, edit `internal/bench/templates/dev/` or `prod/`
+7. If it touches config paths, update `internal/config/paths.go`
+8. Run `make vet && make fmt && make build` to verify
+9. Update CLAUDE.md and the skill files under `.agents/skills/`
+10. Run `make skills-init` to sync skills across agent directories
 
 ## Testing
 

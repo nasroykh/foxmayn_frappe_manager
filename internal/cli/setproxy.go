@@ -56,6 +56,10 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 		return err
 	}
 
+	if b.IsProd() {
+		return fmt.Errorf("set-proxy is not supported for production benches — proxy settings are configured at creation time via --domain")
+	}
+
 	runner := bench.NewRunner(b.Name, b.Dir, verbose)
 
 	if reset {

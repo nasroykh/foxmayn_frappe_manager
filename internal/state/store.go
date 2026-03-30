@@ -11,20 +11,31 @@ import (
 
 // Bench holds the persisted state for a single managed bench.
 type Bench struct {
-	Name          string    `json:"name"`
-	Dir           string    `json:"dir"`
-	WebPort       int       `json:"web_port"`
-	SocketIOPort  int       `json:"socketio_port"`
-	FrappeBranch  string    `json:"frappe_branch"`
-	AdminPassword string    `json:"admin_password"`
-	DBPassword    string    `json:"db_password"`
-	SiteName      string    `json:"site_name"`
-	Apps          []string  `json:"apps"`
+	Name          string   `json:"name"`
+	Dir           string   `json:"dir"`
+	WebPort       int      `json:"web_port"`
+	SocketIOPort  int      `json:"socketio_port"`
+	FrappeBranch  string   `json:"frappe_branch"`
+	AdminPassword string   `json:"admin_password"`
+	DBPassword    string   `json:"db_password"`
+	SiteName      string   `json:"site_name"`
+	Apps          []string `json:"apps"`
 	// ProxyHost is the public URL when the bench is running behind a reverse
 	// proxy (e.g. "https://frappe.example.com"). Empty means direct access.
 	ProxyHost string `json:"proxy_host,omitempty"`
+	// Mode is "dev" or "prod". Empty is treated as "dev" for backward compatibility.
+	Mode string `json:"mode,omitempty"`
+	// Domain is the public domain for production benches (e.g. "erp.example.com").
+	Domain    string    `json:"domain,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// IsProd reports whether the bench was created in production mode.
+func (b Bench) IsProd() bool { return b.Mode == "prod" }
+
+// IsDev reports whether the bench was created in development mode.
+// Empty Mode is treated as dev for backward compatibility.
+func (b Bench) IsDev() bool { return b.Mode != "prod" }
 
 // Store is a thin wrapper around the benches.json state file.
 // It is not concurrency-safe across processes; we rely on short-lived CLI

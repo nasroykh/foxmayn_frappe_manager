@@ -26,6 +26,10 @@ func newCreateCmd() *cobra.Command {
 		githubToken   string
 		proxyPort     int
 		proxyHost     string
+		mode          string
+		domain        string
+		noSSL         bool
+		acmeEmail     string
 	)
 
 	cmd := &cobra.Command{
@@ -33,16 +37,22 @@ func newCreateCmd() *cobra.Command {
 		Short: "Create and start a new Frappe bench",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Show interactive form only when the user didn't pass
-			// --frappe-branch or --apps explicitly.
+			modeSet := cmd.Flags().Changed("mode")
 			branchSet := cmd.Flags().Changed("frappe-branch")
 			appsSet := cmd.Flags().Changed("apps")
-			if !branchSet && !appsSet {
+
+			if !modeSet {
+				// No --mode flag: show full interactive form (asks dev or prod first).
+				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword); err != nil {
+					return err
+				}
+			} else if mode == "dev" && !branchSet && !appsSet {
+				// Explicit --mode dev but no branch/apps: show dev-only form.
 				if err := runCreateForm(&frappeBranch, &apps); err != nil {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail)
 		},
 	}
 
@@ -53,6 +63,10 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos")
 	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)")
 	cmd.Flags().StringVar(&proxyHost, "proxy-host", "", "Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)")
+	cmd.Flags().StringVar(&mode, "mode", "dev", "Bench mode: dev or prod")
+	cmd.Flags().StringVar(&domain, "domain", "", "Public domain for production (required for --mode prod), e.g. erp.example.com")
+	cmd.Flags().BoolVar(&noSSL, "no-ssl", false, "Skip Let's Encrypt SSL in production (handle TLS externally via Caddy/Nginx)")
+	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Email for Let's Encrypt certificates (required on first --mode prod bench with SSL)")
 
 	return cmd
 }
@@ -103,6 +117,94 @@ func runCreateForm(branch *string, apps *[]string) error {
 	return nil
 }
 
+// runCreateFormFull is the interactive form shown when --mode is not passed.
+// It asks dev or prod first, then shows the relevant follow-up fields.
+func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword *string) error {
+	*mode = "dev"
+	*branch = "version-15"
+
+	// Step 1: choose mode
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Bench mode").
+				Options(
+					huh.NewOption("Development  (local bench, dev server, Claude skills)", "dev"),
+					huh.NewOption("Production   (gunicorn + workers, Traefik + Let's Encrypt)", "prod"),
+				).
+				Value(mode),
+		),
+	).Run()
+	if err != nil {
+		return err
+	}
+
+	if *mode == "dev" {
+		return runCreateForm(branch, apps)
+	}
+
+	// Step 2 (prod): domain, SSL, branch, apps
+	versionOptions := []huh.Option[string]{
+		huh.NewOption("Frappe v15 (stable)", "version-15"),
+		huh.NewOption("Frappe v16 (latest)", "version-16"),
+	}
+	appOptions := []huh.Option[string]{
+		huh.NewOption("ERPNext", "erpnext"),
+		huh.NewOption("HRMS", "hrms"),
+	}
+	var customAppsRaw string
+	savedEmail := readSavedAcmeEmail()
+	if savedEmail != "" {
+		*acmeEmail = savedEmail
+	}
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Public domain").
+				Description("The domain this site will be served on, e.g. erp.example.com").
+				Value(domain),
+			huh.NewInput().
+				Title("Admin password").
+				Description("Strong password for the Administrator account. Cannot be 'admin'.").
+				EchoMode(huh.EchoModePassword).
+				Value(adminPassword),
+			huh.NewInput().
+				Title("Let's Encrypt email").
+				Description("Required for automatic SSL certificates. Leave empty to skip SSL (--no-ssl).").
+				Value(acmeEmail),
+			huh.NewSelect[string]().
+				Title("Frappe version").
+				Options(versionOptions...).
+				Value(branch),
+			huh.NewMultiSelect[string]().
+				Title("Additional apps to install").
+				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
+				Options(appOptions...).
+				Value(apps),
+			huh.NewInput().
+				Title("Custom app (optional)").
+				Description("Short name, git URL, or url@branch. Comma-separated for multiple.").
+				Value(&customAppsRaw),
+		),
+	).Run()
+	if err != nil {
+		return err
+	}
+
+	// Empty acmeEmail means --no-ssl
+	if *acmeEmail == "" {
+		*noSSL = true
+	}
+
+	for raw := range strings.SplitSeq(customAppsRaw, ",") {
+		if raw = strings.TrimSpace(raw); raw != "" {
+			*apps = append(*apps, raw)
+		}
+	}
+	return nil
+}
+
 // counter provides auto-incrementing step numbers for create output.
 type counter struct{ n int }
 
@@ -111,7 +213,46 @@ func (c *counter) step(msg string) {
 	fmt.Printf("  [%d] %s\n", c.n, msg)
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string) (createErr error) {
+// readSavedAcmeEmail reads the stored ACME email from ~/.config/ffm/.acme_email.
+// Returns empty string if the file does not exist.
+func readSavedAcmeEmail() string {
+	data, err := os.ReadFile(config.AcmeEmailFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// saveAcmeEmail persists the ACME email to ~/.config/ffm/.acme_email.
+func saveAcmeEmail(email string) {
+	_ = os.WriteFile(config.AcmeEmailFile(), []byte(email+"\n"), 0o600)
+}
+
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string) (createErr error) {
+	// Validate mode
+	if mode != "dev" && mode != "prod" {
+		return fmt.Errorf("invalid --mode %q: must be 'dev' or 'prod'", mode)
+	}
+
+	// Prod-specific validation
+	if mode == "prod" {
+		if domain == "" {
+			return fmt.Errorf("--domain is required for production mode (e.g. --domain erp.example.com)")
+		}
+		if adminPassword == "admin" {
+			return fmt.Errorf("default admin password is not allowed in production — set --admin-password to a strong password")
+		}
+		if !noSSL {
+			if acmeEmail == "" {
+				acmeEmail = readSavedAcmeEmail()
+			}
+			if acmeEmail == "" {
+				return fmt.Errorf("--acme-email is required for the first production bench with SSL\n" +
+					"  (use --no-ssl to skip Let's Encrypt and handle TLS externally)")
+			}
+		}
+	}
+
 	// 1. Validate name
 	if err := bench.ValidateName(name); err != nil {
 		return err
@@ -122,7 +263,10 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("bench %q already exists", name)
 	}
 
-	fmt.Printf("Creating bench %q  (frappe: %s", name, frappeBranch)
+	fmt.Printf("Creating bench %q  (frappe: %s  mode: %s", name, frappeBranch, mode)
+	if mode == "prod" {
+		fmt.Printf("  domain: %s", domain)
+	}
 	if len(apps) > 0 {
 		fmt.Printf("  apps: %v", apps)
 	}
@@ -139,15 +283,14 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	benchDir := config.BenchDir(name)
 	runner := bench.NewRunner(name, benchDir, verbose)
-	siteName := name + ".localhost"
 
-	// Automatic cleanup on failure. Named return (createErr) means the defer
-	// sees whatever error the function returns without any extra assignment at
-	// each return site. It tears down containers/volumes and removes the bench
-	// directory so the next retry starts from a clean state. The compose file
-	// is checked before calling Down because docker compose requires it to
-	// exist; if failure happened before templates were written, there is nothing
-	// to bring down.
+	// Site name: domain for prod, <name>.localhost for dev
+	siteName := name + ".localhost"
+	if mode == "prod" {
+		siteName = domain
+	}
+
+	// Automatic cleanup on failure.
 	defer func() {
 		if createErr == nil {
 			return
@@ -170,25 +313,34 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("create bench dir: %w", err)
 	}
 
-	// Ensure the shared ffm-proxy Docker network exists before rendering the
-	// compose file. The template declares it as external:true, so docker
-	// compose up would fail if the network is absent.
-	s.step("Ensuring ffm-proxy network")
-	if err := proxy.EnsureNetwork(); err != nil {
-		return fmt.Errorf("ensure proxy network: %w", err)
+	// Ensure shared ffm-proxy Docker network (and HTTPS support for prod+SSL)
+	if mode == "prod" && !noSSL {
+		s.step("Ensuring HTTPS proxy (Let's Encrypt)")
+		if err := proxy.EnsureHTTPS(acmeEmail); err != nil {
+			return fmt.Errorf("ensure HTTPS proxy: %w", err)
+		}
+		saveAcmeEmail(acmeEmail)
+	} else {
+		s.step("Ensuring ffm-proxy network")
+		if err := proxy.EnsureNetwork(); err != nil {
+			return fmt.Errorf("ensure proxy network: %w", err)
+		}
 	}
 
-	// Write compose file, Dockerfile, and devcontainer config
-	s.step("Writing docker-compose.yml, Dockerfile, and .devcontainer/devcontainer.json")
+	// Write compose file, Dockerfile, and (dev only) devcontainer config
+	s.step("Writing docker-compose.yml and Dockerfile")
 	data := bench.ComposeData{
 		Name:                name,
+		Mode:                mode,
 		BenchDir:            benchDir,
 		WebPort:             webPort,
 		WebPortEnd:          webPort + 5,
 		SocketIOPort:        socketIOPort,
 		SocketIOPortEnd:     socketIOPort + 5,
 		MariaDBRootPassword: dbPassword,
-		ForwardSSHAgent:     os.Getenv("SSH_AUTH_SOCK") != "",
+		ForwardSSHAgent:     mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
+		Domain:              domain,
+		NoSSL:               noSSL,
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
 		return fmt.Errorf("render compose: %w", err)
@@ -196,19 +348,19 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if err := bench.WriteDockerfile(benchDir, data); err != nil {
 		return fmt.Errorf("render dockerfile: %w", err)
 	}
-	if err := bench.WriteDevcontainer(benchDir, data); err != nil {
-		return fmt.Errorf("render devcontainer: %w", err)
+	if mode == "dev" {
+		if err := bench.WriteDevcontainer(benchDir, data); err != nil {
+			return fmt.Errorf("render devcontainer: %w", err)
+		}
 	}
 
-	// Build the Docker image (tools only: zsh, starship, Go, ffc — no bench init)
-	s.step("Building Docker image (tools only) — first build takes a few minutes, cached after")
+	// Build the Docker image
+	s.step("Building Docker image — first build takes a few minutes, cached after")
 	if err := runner.Build(); err != nil {
 		return fmt.Errorf("docker compose build: %w", err)
 	}
 
-	// Create workspace directory on host (bind-mounted into the container).
-	// Remove any leftover frappe-bench from a previous partial run so bench init
-	// doesn't fail with "Bench instance already exists".
+	// Create workspace directory
 	s.step("Creating workspace directory")
 	workspaceDir := filepath.Join(benchDir, "workspace")
 	if err := os.RemoveAll(filepath.Join(workspaceDir, "frappe-bench")); err != nil {
@@ -218,41 +370,31 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("create workspace dir: %w", err)
 	}
 
-	// Run bench init at runtime — populates the bind-mounted workspace on host.
-	// pip/yarn download caches are persisted in named Docker volumes for speed.
-	//
-	// bench init is run to /tmp/ffm-bench-init (a path that never exists) to
-	// avoid "Bench instance already exists" errors: the image may carry content
-	// at /workspace/frappe-bench (via VOLUME or image layers) which makes that
-	// path appear non-empty even when the host bind-mount directory is empty.
-	// After init succeeds we copy the result into the bind-mounted location.
-	//
-	// bench init also exits 0 on failure, so we verify apps/ was created.
+	// Run bench init — dev mode also installs Claude/agent skills
 	s.step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeBranch))
-	// After copying the bench from /tmp to /workspace/frappe-bench we must
-	// patch every text file in the virtualenv that still contains the old
-	// absolute path. The venv was created with egg-links, direct_url.json,
-	// and activate scripts that all reference /tmp/ffm-bench-init. Leaving
-	// them intact causes "No module named 'frappe'" at runtime.
-	// grep -rIl skips binary files; xargs -r is a no-op when grep finds nothing.
-	benchInitCmd := fmt.Sprintf(
+	var benchInitCmd string
+	baseInit := fmt.Sprintf(
 		`bench init --frappe-branch %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
 			` && rm -rf /workspace/frappe-bench`+
 			` && cp -a /tmp/ffm-bench-init /workspace/frappe-bench`+
 			` && grep -rIl '/tmp/ffm-bench-init' /workspace/frappe-bench 2>/dev/null | xargs -r sed -i 's|/tmp/ffm-bench-init|/workspace/frappe-bench|g'`+
-			` && rm -rf /tmp/ffm-bench-init`+
-			` && mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills`+
-			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/`+
-			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/`+
-			` && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli`+
-			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/`+
-			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/`,
+			` && rm -rf /tmp/ffm-bench-init`,
 		frappeBranch,
 	)
+	if mode == "dev" {
+		benchInitCmd = baseInit +
+			` && mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills` +
+			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/` +
+			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/` +
+			` && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli` +
+			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/` +
+			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/`
+	} else {
+		benchInitCmd = baseInit
+	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
 		return fmt.Errorf("bench init: %w", err)
 	}
-	// bench init exits 0 even on failure; verify the bench was actually created.
 	if _, err := os.Stat(filepath.Join(workspaceDir, "frappe-bench", "apps")); err != nil {
 		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s/frappe-bench", workspaceDir)
 	}
@@ -270,10 +412,16 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 	fmt.Println()
 
-	// Configure common_site_config (single exec to avoid 6 roundtrips)
+	// Configure common_site_config
 	s.step("Configuring site settings")
 	socketIOPortCfg := 9000
-	if proxyPort > 0 {
+	if mode == "prod" {
+		if noSSL {
+			socketIOPortCfg = 80 // Traefik public HTTP port
+		} else {
+			socketIOPortCfg = 443 // Traefik public HTTPS port
+		}
+	} else if proxyPort > 0 {
 		socketIOPortCfg = proxyPort
 	}
 	configCmd := "cd /workspace/frappe-bench" +
@@ -283,7 +431,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		" && bench set-config -g redis_queue redis://redis-queue:6379" +
 		" && bench set-config -g redis_socketio redis://redis-queue:6379" +
 		fmt.Sprintf(" && bench set-config -gp socketio_port %d", socketIOPortCfg)
-	if proxyPort == 443 {
+	if (mode == "prod" && !noSSL) || proxyPort == 443 {
 		configCmd += " && bench set-config -gp use_ssl 1"
 	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", configCmd); err != nil {
@@ -300,19 +448,35 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}
 
-	// Enable developer mode
-	s.step("Enabling developer mode")
-	devModeCmd := fmt.Sprintf(
-		"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
-		siteName, siteName,
-	)
-	if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
-		return fmt.Errorf("enable developer mode: %w\n%s", err, out)
+	// Developer mode (dev only)
+	if mode == "dev" {
+		s.step("Enabling developer mode")
+		devModeCmd := fmt.Sprintf(
+			"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
+			siteName, siteName,
+		)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
+			return fmt.Errorf("enable developer mode: %w\n%s", err, out)
+		}
 	}
 
-	// Set per-site host_name when a public domain is provided.
+	// Set host_name: always for prod, optional for dev (when --proxy-host provided)
 	resolvedProxyHost := ""
-	if proxyHost != "" {
+	if mode == "prod" {
+		scheme := "https"
+		if noSSL {
+			scheme = "http"
+		}
+		resolvedProxyHost = fmt.Sprintf("%s://%s", scheme, domain)
+		s.step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
+		hostCmd := fmt.Sprintf(
+			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
+			siteName, resolvedProxyHost,
+		)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
+			return fmt.Errorf("set host_name: %w\n%s", err, out)
+		}
+	} else if proxyHost != "" {
 		scheme := "http"
 		if proxyPort == 443 {
 			scheme = "https"
@@ -330,7 +494,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 	}
 
-	// Configure GitHub credentials if a token was provided (used for private HTTPS repos).
+	// Configure GitHub credentials if provided
 	if githubToken != "" {
 		s.step("Configuring GitHub credentials inside container")
 		if err := runner.ConfigureGitHubToken(githubToken); err != nil {
@@ -364,26 +528,36 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 	}
 
-	// Start dev server
-	s.step("Starting dev server")
-	if _, err := runner.ExecSilent("frappe", "bash", "-c",
-		"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
-		return fmt.Errorf("bench start: %w", err)
+	// Prod: build production assets
+	if mode == "prod" {
+		s.step("Building production assets (bench build) — this may take a few minutes")
+		if out, err := runner.ExecSilent("frappe", "bash", "-c",
+			"cd /workspace/frappe-bench && bench build"); err != nil {
+			return fmt.Errorf("bench build: %w\n%s", err, out)
+		}
 	}
 
-	// Wait for HTTP
-	s.step("Waiting for web server to respond...")
-	url := fmt.Sprintf("http://localhost:%d", webPort)
-	if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
-	}
+	// Dev only: start dev server + wait for HTTP + setup ffc
+	ffcConfigured := false
+	if mode == "dev" {
+		s.step("Starting dev server")
+		if _, err := runner.ExecSilent("frappe", "bash", "-c",
+			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+			return fmt.Errorf("bench start: %w", err)
+		}
 
-	// Generate API keys and write ffc config inside the container
-	s.step("Generating API keys and configuring ffc")
-	ffcConfigured := true
-	if err := setupFfcConfig(runner, name, siteName); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffc init' inside the bench shell to configure manually)\n", err)
-		ffcConfigured = false
+		s.step("Waiting for web server to respond...")
+		url := fmt.Sprintf("http://localhost:%d", webPort)
+		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
+		}
+
+		s.step("Generating API keys and configuring ffc")
+		ffcConfigured = true
+		if err := setupFfcConfig(runner, name, siteName); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffc init' inside the bench shell to configure manually)\n", err)
+			ffcConfigured = false
+		}
 	}
 
 	// Save state
@@ -398,6 +572,8 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		SiteName:      siteName,
 		Apps:          apps,
 		ProxyHost:     resolvedProxyHost,
+		Mode:          mode,
+		Domain:        domain,
 		CreatedAt:     time.Now(),
 	}
 	if err := store.Add(rec); err != nil {
@@ -405,27 +581,40 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 
 	fmt.Printf("\nBench %q is ready.\n", name)
-	fmt.Printf("  URL (port):    http://localhost:%d\n", webPort)
-	if resolvedProxyHost != "" {
-		fmt.Printf("  URL (proxy):   %s\n", resolvedProxyHost)
-	} else if proxy.IsRunning() {
-		fmt.Printf("  URL (domain):  http://%s  ← proxy is running\n", siteName)
+	if mode == "prod" {
+		scheme := "https"
+		if noSSL {
+			scheme = "http"
+		}
+		fmt.Printf("  URL:           %s://%s\n", scheme, domain)
+		fmt.Printf("  Site:          %s\n", siteName)
 	} else {
-		fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", siteName)
+		fmt.Printf("  URL (port):    http://localhost:%d\n", webPort)
+		if resolvedProxyHost != "" {
+			fmt.Printf("  URL (proxy):   %s\n", resolvedProxyHost)
+		} else if proxy.IsRunning() {
+			fmt.Printf("  URL (domain):  http://%s  ← proxy is running\n", siteName)
+		} else {
+			fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", siteName)
+		}
+		fmt.Printf("  Site:          %s\n", siteName)
 	}
-	fmt.Printf("  Site:          %s\n", siteName)
 	fmt.Printf("  Admin:         administrator / %s\n", adminPassword)
 	fmt.Printf("  DB root:       %s\n", dbPassword)
 	if len(apps) > 0 {
 		fmt.Printf("  Apps:          %v\n", apps)
 	}
-	if ffcConfigured {
-		fmt.Printf("  ffc:      configured (run 'ffc list-docs DocType' inside the bench)\n")
+	if mode == "dev" {
+		if ffcConfigured {
+			fmt.Printf("  ffc:           configured (run 'ffc list-docs DocType' inside the bench)\n")
+		} else {
+			fmt.Printf("  ffc:           run 'ffc init' inside the bench shell to configure\n")
+		}
+		fmt.Printf("  Workspace:     %s/workspace\n", benchDir)
+		fmt.Printf("  VS Code:       code %s  (Reopen in Container for integrated terminal)\n", benchDir)
 	} else {
-		fmt.Printf("  ffc:      run 'ffc init' inside the bench shell to configure\n")
+		fmt.Printf("  Workspace:     %s/workspace\n", benchDir)
 	}
-	fmt.Printf("  Workspace: %s/workspace\n", benchDir)
-	fmt.Printf("  VS Code:   code %s  (Reopen in Container for integrated terminal)\n", benchDir)
 	return nil
 }
 

@@ -46,17 +46,23 @@ func runList() error {
 	domainStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
 
-	header := fmt.Sprintf("%-20s  %-10s  %-8s  %-30s  %s",
+	header := fmt.Sprintf("%-20s  %-5s  %-10s  %-8s  %-30s  %s",
 		headerStyle.Render("NAME"),
+		headerStyle.Render("MODE"),
 		headerStyle.Render("STATUS"),
 		headerStyle.Render("PORT"),
 		headerStyle.Render("DOMAIN"),
 		headerStyle.Render("BRANCH"),
 	)
 	fmt.Println(header)
-	fmt.Println(strings.Repeat("─", 88))
+	fmt.Println(strings.Repeat("─", 96))
 
+	devBenchExists := false
 	for _, b := range benches {
+		if b.IsDev() {
+			devBenchExists = true
+		}
+
 		status := liveStatus(b)
 
 		statusRendered := runningStyle.Render(status)
@@ -64,16 +70,30 @@ func runList() error {
 			statusRendered = stoppedStyle.Render(status)
 		}
 
-		var domainRendered string
-		domain := fmt.Sprintf("http://%s", b.SiteName)
-		if proxyUp {
-			domainRendered = domainStyle.Render(domain)
-		} else {
-			domainRendered = mutedStyle.Render(domain + " (proxy off)")
+		modeStr := "dev"
+		if b.IsProd() {
+			modeStr = "prod"
 		}
 
-		fmt.Printf("%-20s  %-10s  %-8d  %-30s  %s\n",
+		var domainRendered string
+		if b.IsProd() {
+			d := b.ProxyHost
+			if d == "" && b.Domain != "" {
+				d = "https://" + b.Domain
+			}
+			domainRendered = domainStyle.Render(d)
+		} else {
+			domain := fmt.Sprintf("http://%s", b.SiteName)
+			if proxyUp {
+				domainRendered = domainStyle.Render(domain)
+			} else {
+				domainRendered = mutedStyle.Render(domain + " (proxy off)")
+			}
+		}
+
+		fmt.Printf("%-20s  %-5s  %-10s  %-8d  %-30s  %s\n",
 			nameStyle.Render(b.Name),
+			dimStyle.Render(modeStr),
 			statusRendered,
 			b.WebPort,
 			domainRendered,
@@ -81,7 +101,7 @@ func runList() error {
 		)
 	}
 
-	if !proxyUp {
+	if !proxyUp && devBenchExists {
 		fmt.Printf("\n  %s\n", mutedStyle.Render("Run 'ffm proxy start' to enable sitename.localhost routing."))
 	}
 	return nil

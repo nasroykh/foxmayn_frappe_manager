@@ -2,24 +2,25 @@
 name: foxmayn-frappe-manager
 description: >
   How to use ffm (Foxmayn Frappe Manager) to create, manage, and operate
-  Dockerized Frappe/ERPNext development benches. Use this skill whenever the
-  user mentions "ffm", "frappe manager", "frappe bench", "bench docker",
-  "create a bench", "create a frappe site", "start frappe", "stop frappe",
-  "delete bench", "frappe proxy", "reverse proxy for frappe",
-  "set-proxy", "bench shell", "frappe container", or any task involving
-  provisioning, starting, stopping, restarting, deleting, or debugging
-  Dockerized Frappe development environments. Also trigger when the user
-  wants to run bench commands inside a Docker container, list existing
-  benches, configure domain routing, deploy Frappe behind Caddy/Nginx, open
-  a shell inside a Frappe container, check bench status, view container logs,
-  rebuild a bench image, or use ffc inside a bench. Even if the user doesn't
-  say "ffm" directly — if they want to spin up a local Frappe dev environment
-  or interact with one, this is the skill to use.
+  Dockerized Frappe/ERPNext development and production benches. Use this skill
+  whenever the user mentions "ffm", "frappe manager", "frappe bench",
+  "bench docker", "create a bench", "create a frappe site", "start frappe",
+  "stop frappe", "delete bench", "frappe proxy", "reverse proxy for frappe",
+  "set-proxy", "bench shell", "frappe container", "prod mode", "production
+  frappe", "let's encrypt frappe", or any task involving provisioning, starting,
+  stopping, restarting, deleting, or debugging Dockerized Frappe environments.
+  Also trigger when the user wants to run bench commands inside a Docker
+  container, list existing benches, configure domain routing, deploy Frappe
+  behind Traefik with Let's Encrypt, open a shell inside a Frappe container,
+  check bench status, view container logs, rebuild a bench image, or use ffc
+  inside a bench. Even if the user doesn't say "ffm" directly — if they want
+  to spin up a local Frappe dev environment or a production Frappe site, this
+  is the skill to use.
 ---
 
 # ffm — Foxmayn Frappe Manager
 
-A Go CLI that wraps Docker Compose to create, manage, and destroy local Frappe development benches with a single command. Each bench gets its own isolated Docker Compose project with MariaDB, Redis, and a fully configured Frappe container.
+A Go CLI that wraps Docker Compose to create, manage, and destroy Frappe benches with a single command. Supports both **development** and **production** modes.
 
 ## Prerequisites
 
@@ -43,16 +44,29 @@ ffm update
 
 ## Core Concepts
 
-**Bench** = a self-contained Frappe development environment running in Docker. Each bench has:
-- A directory at `~/frappe/<name>/` with `docker-compose.yml`, `Dockerfile`, and `workspace/`
-- 4 Docker containers: `frappe` (app + dev server), `mariadb`, `redis-cache`, `redis-queue`
-- The site name is always `<name>.localhost`
-- The admin user is `administrator` with password `admin` (default)
-- Bench files live on the host at `~/frappe/<name>/workspace/frappe-bench/` (bind-mounted)
+### Development mode (default)
 
-**Proxy** = a shared Traefik container (`ffm-proxy`) that routes `<name>.localhost` to the correct bench.
+Each dev bench has:
+- A directory at `~/frappe/<name>/` with `docker-compose.yml`, `Dockerfile`, `workspace/`, and `.devcontainer/`
+- 4 Docker containers: `frappe` (app + honcho dev server), `mariadb`, `redis-cache`, `redis-queue`
+- Site name: `<name>.localhost` (routed via shared Traefik proxy)
+- Admin: `administrator / admin` (default)
+- Tools in container: zsh + zinit + starship + Go + ffc + pnpm + Claude Code + 60 Frappe skills
+- Bench files on host at `~/frappe/<name>/workspace/frappe-bench/` (bind-mounted)
 
-**ffc** = Foxmayn Frappe CLI, a separate tool pre-installed inside every bench container for querying the Frappe REST API from the command line.
+### Production mode (`--mode prod`)
+
+Each prod bench has:
+- 7+ Docker containers: `frappe` (gunicorn via `bench serve`), `socketio`, `worker-long`, `worker-short`, `scheduler`, `mariadb`, `redis-cache`, `redis-queue`
+- Minimal Docker image (no dev tools)
+- Site name = public domain (e.g. `erp.example.com`)
+- Automatic Let's Encrypt SSL via Traefik (`websecure` entrypoint + ACME HTTP-01)
+- HTTP → HTTPS redirect per bench (does not affect dev benches)
+- `--no-ssl` flag to skip Let's Encrypt when TLS is handled externally
+
+**Proxy** = a shared Traefik container (`ffm-proxy`) that routes all benches. For dev: `<name>.localhost` on port 80. For prod: public domain on ports 80/443 with Let's Encrypt.
+
+**ffc** = Foxmayn Frappe CLI, pre-installed inside every dev bench container.
 
 ---
 
@@ -61,20 +75,30 @@ ffm update
 ### Creating a bench
 
 ```bash
-# Interactive form (choose version + apps)
+# Interactive form (choose mode, version + apps)
 ffm create mybench
 
-# Non-interactive with explicit options
+# Dev bench — explicit flags
 ffm create mybench --frappe-branch version-16 --apps erpnext --apps hrms
 
-# With a custom/private app
-ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
+# Production bench — basic
+ffm create myprod --mode prod --domain erp.example.com \
+    --admin-password MyStr0ngPass --acme-email admin@example.com
 
-# For VPS deployment behind a reverse proxy
-ffm create mybench --proxy-port 443 --proxy-host frappe.example.com
+# Production bench — no SSL (handle TLS externally)
+ffm create myprod --mode prod --domain erp.example.com \
+    --admin-password MyStr0ngPass --no-ssl
+
+# Dev bench with a custom/private app
+ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
 ```
 
-`ffm create` performs ~11 steps automatically: port allocation → compose/Dockerfile generation → Docker build → bench init → container start → site creation → developer mode → app installation → dev server start → ffc API key generation. If any step fails, it automatically tears down everything for a clean retry.
+`ffm create` performs the full pipeline automatically: port allocation → compose/Dockerfile generation → Docker build → bench init → container start → site creation → app installation → (dev: dev server + ffc setup) (prod: asset build). Auto-rolls back everything on failure.
+
+**Production requirements:**
+- `--domain` is required
+- `--admin-password` must not be `admin`
+- `--acme-email` required for the first SSL bench (saved to `~/.config/ffm/.acme_email` for subsequent benches)
 
 ### Listing benches
 
@@ -82,7 +106,7 @@ ffm create mybench --proxy-port 443 --proxy-host frappe.example.com
 ffm list          # or: ffm ls
 ```
 
-Shows all benches with live status (running/stopped), port, domain URL, and Frappe branch.
+Shows all benches with live status (running/stopped), mode (dev/prod), port, domain URL, and Frappe branch.
 
 ### Bench status
 
@@ -90,7 +114,7 @@ Shows all benches with live status (running/stopped), port, domain URL, and Frap
 ffm status mybench
 ```
 
-Shows per-container status, credentials, ports, URLs, and installed apps.
+Shows mode, per-container status, credentials, ports, URLs, and installed apps.
 
 ### Lifecycle (start / stop / restart)
 
@@ -101,7 +125,9 @@ ffm restart mybench
 ffm restart mybench --rebuild   # rebuild Docker image first (picks up new tool versions)
 ```
 
-If the bench name is omitted, ffm resolves it automatically: if your working directory is inside `~/frappe/<name>/`, that bench is selected silently. Otherwise an interactive picker appears (auto-selects when only one bench exists).
+**CWD auto-detection:** If your current working directory is inside `~/frappe/<name>/`, the bench name is resolved automatically — no interactive picker needed.
+
+For production benches, `ffm start` runs `docker compose up -d` only — services start automatically via their compose `command:` entries.
 
 ### Deleting a bench
 
@@ -117,23 +143,17 @@ Removes all containers, volumes, and the bench directory. **Irreversible.**
 
 ## Running Commands Inside the Bench Container
 
-This is the most important capability for an LLM. The `ffm shell` command with `--exec` lets you run any command inside the Frappe Docker container without needing to enter an interactive shell.
+The `ffm shell` command with `--exec` lets you run any command inside the Frappe Docker container.
 
 ### `ffm shell <name> --exec "<command>"`
 
-Runs a command non-interactively inside the `frappe` container at `/workspace/frappe-bench/` and prints the output. You stay in your host shell.
+Runs a command non-interactively inside the `frappe` container at `/workspace/frappe-bench/` and prints the output.
 
 ```bash
 # List installed apps
 ffm shell mybench --exec "bench list-apps"
 
-# Check Frappe version
-ffm shell mybench --exec "bench version"
-
-# Run a bench console command
-ffm shell mybench --exec "bench --site mybench.localhost console"
-
-# Execute bench migrate
+# Run bench migrate
 ffm shell mybench --exec "bench --site mybench.localhost migrate"
 
 # Clear cache
@@ -143,55 +163,74 @@ ffm shell mybench --exec "bench --site mybench.localhost clear-cache"
 ffm shell mybench --exec "bench get-app erpnext --branch version-15"
 ffm shell mybench --exec "bench --site mybench.localhost install-app erpnext"
 
-# Run a Frappe Python expression
-ffm shell mybench --exec "bench --site mybench.localhost execute frappe.client.get_count --args '{\"doctype\":\"ToDo\"}'"
-
-# Use ffc (pre-installed inside the container)
+# Use ffc (dev benches only)
 ffm shell mybench --exec "ffc list-docs -d Customer --json"
-ffm shell mybench --exec "ffc get-doc -d 'Sales Invoice' -n 'SINV-0001' --json"
-ffm shell mybench --exec "ffc ping --json"
 
-# Run arbitrary shell commands
-ffm shell mybench --exec "ls apps/"
-ffm shell mybench --exec "cat sites/mybench.localhost/site_config.json"
-ffm shell mybench --exec "pip list | grep frappe"
-
-# Access the MariaDB shell
-ffm shell mybench --service mariadb --exec "mysql -u root -p123 -e 'SHOW DATABASES;'"
+# Production: rebuild assets after code changes
+ffm shell myprod --exec "bench build"
+ffm shell myprod --exec "bench --site erp.example.com migrate"
 ```
 
 ### Interactive shell
 
 ```bash
-ffm shell mybench              # drops into zsh at /workspace/frappe-bench
+ffm shell mybench              # dev: drops into zsh at /workspace/frappe-bench
+ffm shell myprod               # prod: drops into bash at /workspace/frappe-bench
 ffm shell mybench --service mariadb   # bash shell in the MariaDB container
 ```
-
-The frappe container has a pre-configured zsh with autosuggestions, syntax highlighting, starship prompt, and Go/ffc/pnpm on PATH.
 
 ---
 
 ## Proxy (Domain Routing)
 
 ```bash
-ffm proxy start    # start Traefik → enables http://<bench>.localhost
+ffm proxy start    # start Traefik → enables http://<bench>.localhost (dev) / https://<domain> (prod)
 ffm proxy stop     # stop Traefik (benches still reachable on direct ports)
 ffm proxy status   # show status + dashboard URL
 ```
 
-After `ffm proxy start`, every running bench is accessible at `http://<name>.localhost`. The Traefik dashboard runs at `http://localhost:8080/dashboard/`.
+For dev benches, Traefik routes `<name>.localhost` on port 80. For prod benches, Traefik also handles port 443 with Let's Encrypt certificates (added automatically on first prod bench creation).
 
 ---
 
-## Reverse Proxy for VPS Deployments
+## Production with an Existing Reverse Proxy (Caddy/Nginx already on 80/443)
 
-### Configure at creation time
+If Caddy, Nginx, or another proxy is already running on the VPS and occupying ports 80/443, Traefik cannot bind there. Use `--no-ssl` to skip Let's Encrypt and expose the bench ports directly on the host so your existing proxy can forward to them.
 
 ```bash
-ffm create mysite --proxy-port 443 --proxy-host frappe.example.com
+# 1. Create without SSL (no Traefik on 80/443)
+ffm create kb --mode prod --domain kb.co --no-ssl --admin-password StrongPass
+
+# 2. Check the allocated ports
+ffm status kb
+#    → note web port (e.g. 8000) and socketio port (e.g. 9000)
+
+# 3. Fix Frappe's SSL config so it knows the browser connects via HTTPS through Caddy
+ffm shell kb --exec "cd /workspace/frappe-bench \
+  && bench set-config -gp socketio_port 443 \
+  && bench set-config -gp use_ssl 1"
 ```
 
-### Configure an existing bench
+Then add to your **Caddyfile**:
+
+```caddy
+kb.co {
+    reverse_proxy /socket.io/* localhost:9000
+    reverse_proxy localhost:8000
+}
+```
+
+Run `caddy reload` and the site is live.
+
+> **Note:** `--no-ssl` sets `socketio_port=80` by default. Step 3 overrides it to 443 because Caddy is handling HTTPS and the browser connects on that port. Skip step 3 if your Caddy site is HTTP-only (`socketio_port` should stay at 80 in that case, and omit `use_ssl`).
+
+> **Limitation:** `ffm set-proxy` is currently blocked for production benches. The manual `bench set-config` above is the workaround.
+
+---
+
+## Reverse Proxy for Dev VPS Deployments
+
+For dev benches that need to be accessed via a reverse proxy (Caddy/Nginx), use `ffm set-proxy`. This is **not applicable** to production benches (which use Traefik directly via `--mode prod`).
 
 ```bash
 # HTTPS proxy (default port 443)
@@ -208,16 +247,6 @@ ffm set-proxy mybench --host frappe.example.com --print-caddy
 ffm set-proxy mybench --host frappe.example.com --print-nginx
 ```
 
-What `set-proxy` changes inside the container:
-
-| Setting | Default | Proxy mode |
-|---------|---------|------------|
-| `socketio_port` (global) | `9000` | proxy port (443 or 80) |
-| `use_ssl` (global) | `0` | `1` when port is 443 |
-| `host_name` (per-site) | `http://name.localhost` | `https://frappe.example.com` |
-
-The dev server restarts automatically.
-
 ---
 
 ## Container Logs
@@ -225,35 +254,31 @@ The dev server restarts automatically.
 ```bash
 ffm logs mybench               # tail all container logs (follows by default)
 ffm logs mybench frappe         # tail only the frappe container
-ffm logs mybench mariadb        # tail only MariaDB
+ffm logs myprod worker-long    # tail a specific prod worker
 ```
 
 ---
 
-## ffc Setup
+## ffc Setup (Dev only)
 
-Every bench has [ffc](https://github.com/nasroykh/foxmayn_frappe_cli) (Foxmayn Frappe CLI) pre-installed with API keys auto-generated during `ffm create`. If setup failed or you need to regenerate keys:
+Every dev bench has [ffc](https://github.com/nasroykh/foxmayn_frappe_cli) pre-installed with API keys auto-generated during `ffm create`. If setup failed or you need to regenerate keys:
 
 ```bash
 ffm ffc mybench
 ```
 
-This generates new API keys for the Administrator user and writes the ffc config inside the container.
-
 ---
 
-## VS Code Integration
+## VS Code Integration (Dev only)
 
 ```bash
 # Option A: edit bench files directly on host
 code ~/frappe/mybench/workspace
 
-# Option B: open inside the container (integrated terminal with bench/ffc/go on PATH)
+# Option B: open inside the container (integrated terminal)
 code ~/frappe/mybench
 # → VS Code prompts "Reopen in Container"
 ```
-
-Both work simultaneously — same bind-mounted files.
 
 ---
 
@@ -261,79 +286,86 @@ Both work simultaneously — same bind-mounted files.
 
 ```
 ~/frappe/<bench-name>/
-  docker-compose.yml       # generated per bench
-  Dockerfile               # extends frappe/bench:latest + tools
+  docker-compose.yml       # generated per bench (dev: 4 services, prod: 7+ services)
+  Dockerfile               # dev: extends frappe/bench with tools; prod: minimal
   workspace/               # bind-mounted at /workspace in container
-    frappe-bench/           # ← actual Frappe bench (apps/, sites/, etc.)
-      .agents/skills/      # 60 Frappe skills + ffc skill
-  .devcontainer/
-    devcontainer.json       # VS Code dev container config
+    frappe-bench/          # actual Frappe bench (apps/, sites/, etc.)
+      .agents/skills/      # dev only: 60 Frappe skills + ffc skill
+  .devcontainer/           # dev only: VS Code dev container config
+    devcontainer.json
 
 ~/.config/ffm/
-  benches.json              # tracks all managed benches
+  benches.json             # tracks all managed benches
+  .acme_email              # saved Let's Encrypt email (auto-used on subsequent prod benches)
 ```
 
 ---
 
 ## Common Tasks Reference
 
-| Task | Command |
-|------|---------|
-| Create a bench | `ffm create mybench` |
-| List all benches | `ffm list` |
-| Check bench status | `ffm status mybench` |
-| Start a bench | `ffm start mybench` |
-| Stop a bench | `ffm stop mybench` |
-| Restart a bench | `ffm restart mybench` |
-| Rebuild + restart | `ffm restart mybench --rebuild` |
-| Delete a bench | `ffm delete mybench --force` |
-| Interactive shell | `ffm shell mybench` |
-| Run command in container | `ffm shell mybench --exec "..."` |
-| List installed apps | `ffm shell mybench --exec "bench list-apps"` |
-| Install an app | `ffm shell mybench --exec "bench get-app <app> && bench --site mybench.localhost install-app <app>"` |
-| Run bench migrate | `ffm shell mybench --exec "bench --site mybench.localhost migrate"` |
-| Clear cache | `ffm shell mybench --exec "bench --site mybench.localhost clear-cache"` |
-| Check site config | `ffm shell mybench --exec "cat sites/mybench.localhost/site_config.json"` |
-| Query Frappe data (via ffc) | `ffm shell mybench --exec "ffc list-docs -d Customer --json"` |
-| Start the proxy | `ffm proxy start` |
-| Setup for VPS | `ffm set-proxy mybench --host frappe.example.com` |
-| Generate Caddy config | `ffm set-proxy mybench --host frappe.example.com --print-caddy` |
-| View container logs | `ffm logs mybench` |
-| Regenerate ffc keys | `ffm ffc mybench` |
-| Update ffm itself | `ffm update` |
+| Task                                       | Command                                                                                              |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Create a dev bench                         | `ffm create mybench`                                                                                 |
+| Create a prod bench (Let's Encrypt)        | `ffm create myprod --mode prod --domain erp.example.com --admin-password X --acme-email y@z.com`     |
+| Create a prod bench (existing Caddy/Nginx) | `ffm create myprod --mode prod --domain erp.example.com --no-ssl --admin-password X`                 |
+| List all benches                           | `ffm list`                                                                                           |
+| Check bench status                         | `ffm status mybench`                                                                                 |
+| Start a bench                              | `ffm start mybench`                                                                                  |
+| Stop a bench                               | `ffm stop mybench`                                                                                   |
+| Restart a bench                            | `ffm restart mybench`                                                                                |
+| Rebuild + restart                          | `ffm restart mybench --rebuild`                                                                      |
+| Delete a bench                             | `ffm delete mybench --force`                                                                         |
+| Interactive shell (dev)                    | `ffm shell mybench` (zsh)                                                                            |
+| Interactive shell (prod)                   | `ffm shell myprod` (bash)                                                                            |
+| Run command in container                   | `ffm shell mybench --exec "..."`                                                                     |
+| Bench migrate                              | `ffm shell mybench --exec "bench --site mybench.localhost migrate"`                                  |
+| Clear cache                                | `ffm shell mybench --exec "bench --site mybench.localhost clear-cache"`                              |
+| Install an app                             | `ffm shell mybench --exec "bench get-app <app> && bench --site mybench.localhost install-app <app>"` |
+| Query data (ffc)                           | `ffm shell mybench --exec "ffc list-docs -d Customer --json"`                                        |
+| Start the proxy                            | `ffm proxy start`                                                                                    |
+| Setup dev for VPS                          | `ffm set-proxy mybench --host frappe.example.com`                                                    |
+| View logs                                  | `ffm logs mybench`                                                                                   |
+| Regenerate ffc keys                        | `ffm ffc mybench`                                                                                    |
+| Update ffm itself                          | `ffm update`                                                                                         |
 
 ---
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FFM_BENCHES_DIR` | `~/frappe` | Where bench directories are stored |
-| `FFM_CONFIG_DIR` | `~/.config/ffm` | Where the state file is stored |
+| Variable          | Default         | Description                        |
+| ----------------- | --------------- | ---------------------------------- |
+| `FFM_BENCHES_DIR` | `~/frappe`      | Where bench directories are stored |
+| `FFM_CONFIG_DIR`  | `~/.config/ffm` | Where the state file is stored     |
 
 ---
 
-## Credentials (Defaults)
+## Credentials (Defaults — Dev)
 
-| What | Value |
-|------|-------|
-| Site admin | `administrator` / `admin` |
-| MariaDB root | `root` / `123` |
-| Site name | `<bench-name>.localhost` |
+| What         | Value                     |
+| ------------ | ------------------------- |
+| Site admin   | `administrator` / `admin` |
+| MariaDB root | `root` / `ffm123456`      |
+| Site name    | `<bench-name>.localhost`  |
 
 Override during creation with `--admin-password` and `--db-password`.
+
+**Production:** `--admin-password` is required and must not be `admin`.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Bench stuck during creation | Ctrl+C and retry — `ffm create` auto-cleans on failure |
-| "bench already exists" | The previous attempt didn't clean up; `rm -rf ~/frappe/<name>` and retry |
-| Port conflict | ffm auto-allocates ports, but if Docker left orphans: `docker ps -a` and clean up |
-| Proxy domain doesn't work | Run `ffm proxy start`; on WSL2, add to Windows `hosts` file |
-| ffc not working | Run `ffm ffc mybench` to regenerate API keys |
-| Need to update tools in image | `ffm restart mybench --rebuild` |
-| "No module named frappe" | The venv path patching may have failed; recreate the bench |
-| Container won't start | Check `ffm logs mybench` and `ffm status mybench` |
+| Problem                                   | Solution                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| Bench stuck during creation               | Ctrl+C and retry — `ffm create` auto-cleans on failure                               |
+| "bench already exists"                    | The previous attempt didn't clean up; `rm -rf ~/frappe/<name>` and retry             |
+| Port conflict                             | ffm auto-allocates ports; if Docker left orphans: `docker ps -a` and clean up        |
+| Proxy domain doesn't work                 | Run `ffm proxy start`; on WSL2, add to Windows `hosts` file                          |
+| ffc not working                           | Run `ffm ffc mybench` to regenerate API keys                                         |
+| Need to update tools in image             | `ffm restart mybench --rebuild`                                                      |
+| Prod site not responding                  | Check `ffm logs myprod frappe` and `ffm status myprod`                               |
+| Let's Encrypt cert failing                | Ensure DNS points to server, port 80 is open, domain is public                       |
+| Already have Caddy/Nginx on 80/443        | Use `--no-ssl`; proxy the allocated web/socketio ports from Caddy                    |
+| Prod site shows wrong URL / broken assets | Run step 3 from "Production with existing proxy" — fix `socketio_port` and `use_ssl` |
+| "No module named frappe"                  | The venv path patching may have failed; recreate the bench                           |
+| Container won't start                     | Check `ffm logs mybench` and `ffm status mybench`                                    |

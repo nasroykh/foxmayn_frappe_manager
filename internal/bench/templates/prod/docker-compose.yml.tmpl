@@ -1,0 +1,141 @@
+services:
+  mariadb:
+    image: docker.io/mariadb:11.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: "{{.MariaDBRootPassword}}"
+      MARIADB_AUTO_UPGRADE: 1
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "root", "-p{{.MariaDBRootPassword}}", "-e", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis-cache:
+    image: docker.io/redis:alpine
+
+  redis-queue:
+    image: docker.io/redis:alpine
+
+  frappe:
+    build:
+      context: .
+    command: ["bash", "-c", "cd /workspace/frappe-bench && bench serve --port 8000"]
+    working_dir: /workspace/frappe-bench
+    volumes:
+      - ./workspace:/workspace
+      - pip-cache:/home/frappe/.cache/pip
+      - yarn-cache:/home/frappe/.cache/yarn
+    ports:
+      - "{{.WebPort}}:8000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      default: {}
+      ffm-proxy: {}
+    labels:
+{{- if .NoSSL}}
+      - "traefik.enable=true"
+      - "traefik.docker.network=ffm-proxy"
+      - "traefik.http.routers.{{.Name}}.rule=Host(`{{.Domain}}`)"
+      - "traefik.http.routers.{{.Name}}.entrypoints=web"
+      - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
+{{- else}}
+      - "traefik.enable=true"
+      - "traefik.docker.network=ffm-proxy"
+      # HTTPS router
+      - "traefik.http.routers.{{.Name}}.rule=Host(`{{.Domain}}`)"
+      - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
+      - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
+      # HTTP → HTTPS redirect (per-bench, leaves dev benches on :80 untouched)
+      - "traefik.http.routers.{{.Name}}-redirect.rule=Host(`{{.Domain}}`)"
+      - "traefik.http.routers.{{.Name}}-redirect.entrypoints=web"
+      - "traefik.http.middlewares.{{.Name}}-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.{{.Name}}-redirect.middlewares={{.Name}}-redirect"
+{{- end}}
+
+  socketio:
+    build:
+      context: .
+    command: ["bash", "-c", "cd /workspace/frappe-bench && node apps/frappe/socketio.js"]
+    working_dir: /workspace/frappe-bench
+    volumes:
+      - ./workspace:/workspace
+    ports:
+      - "{{.SocketIOPort}}:9000"
+    depends_on:
+      - frappe
+    restart: unless-stopped
+    networks:
+      default: {}
+      ffm-proxy: {}
+    labels:
+{{- if .NoSSL}}
+      - "traefik.enable=true"
+      - "traefik.docker.network=ffm-proxy"
+      - "traefik.http.routers.{{.Name}}-socketio.rule=Host(`{{.Domain}}`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.{{.Name}}-socketio.entrypoints=web"
+      - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
+{{- else}}
+      - "traefik.enable=true"
+      - "traefik.docker.network=ffm-proxy"
+      - "traefik.http.routers.{{.Name}}-socketio.rule=Host(`{{.Domain}}`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.{{.Name}}-socketio.entrypoints=websecure"
+      - "traefik.http.routers.{{.Name}}-socketio.tls.certresolver=letsencrypt"
+      - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
+{{- end}}
+
+  worker-long:
+    build:
+      context: .
+    command: ["bash", "-c", "cd /workspace/frappe-bench && bench worker --queue long"]
+    working_dir: /workspace/frappe-bench
+    volumes:
+      - ./workspace:/workspace
+      - pip-cache:/home/frappe/.cache/pip
+    depends_on:
+      - frappe
+    restart: unless-stopped
+
+  worker-short:
+    build:
+      context: .
+    command: ["bash", "-c", "cd /workspace/frappe-bench && bench worker --queue short"]
+    working_dir: /workspace/frappe-bench
+    volumes:
+      - ./workspace:/workspace
+      - pip-cache:/home/frappe/.cache/pip
+    depends_on:
+      - frappe
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+    command: ["bash", "-c", "cd /workspace/frappe-bench && bench schedule"]
+    working_dir: /workspace/frappe-bench
+    volumes:
+      - ./workspace:/workspace
+      - pip-cache:/home/frappe/.cache/pip
+    depends_on:
+      - frappe
+    restart: unless-stopped
+
+volumes:
+  mariadb-data:
+  pip-cache:
+  yarn-cache:
+
+networks:
+  default: {}
+  ffm-proxy:
+    external: true

@@ -1,0 +1,5 @@
+FROM docker.io/frappe/bench:latest
+
+USER root
+RUN corepack enable pnpm
+USER frappe
