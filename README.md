@@ -59,9 +59,10 @@ ffm proxy start
 # Shell into the bench container (drops you into zsh inside frappe-bench/)
 ffm shell
 
-# Stop and start
+# Stop and start (or restart in one step)
 ffm stop
 ffm start
+ffm restart
 
 # Tear it all down
 ffm delete
@@ -83,8 +84,8 @@ Steps performed:
 
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
 2. Writes `docker-compose.yml` and a `Dockerfile` to `~/frappe/<name>/`
-3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **Go 1.26**, and **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)** into the image. **This step is cached** and runs in seconds after the first build
-4. Runs `bench init` via a one-off container — clones Frappe, installs Python/Node deps, and places the result at `~/frappe/<name>/workspace/frappe-bench/` on your host filesystem. pip and yarn download caches are kept in Docker volumes so repeated bench creation is faster
+3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **Go 1.26**, **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, **pnpm**, and **Claude Code** into the image; also pre-fetches the [Frappe Claude Skill Package](https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package) (60 skills) and the ffc skill to `/opt/` for use at bench init time. **This step is cached** and runs in seconds after the first build
+4. Runs `bench init` via a one-off container — clones Frappe, installs Python/Node deps, and places the result at `~/frappe/<name>/workspace/frappe-bench/` on your host filesystem. pip and yarn download caches are kept in Docker volumes so repeated bench creation is faster. Also installs the 60 Frappe Claude skills and the ffc skill into `frappe-bench/.agents/skills/` and `frappe-bench/.claude/skills/`
 5. Starts MariaDB, Redis (cache + queue), and the Frappe container with `~/frappe/<name>/workspace/` bind-mounted at `/workspace` — bench files are live on your host
 6. Configures `common_site_config.json` with DB and Redis connection strings
 7. Creates the site with `bench new-site`
@@ -153,11 +154,22 @@ Shows per-container status for a bench (image, state, ports, uptime) along with 
 
 ### `ffm start [name]`
 
-Starts a stopped bench and re-launches the dev server. If `name` is omitted, an interactive picker is shown.
+Starts a stopped bench and re-launches the dev server. If Claude/agent skills are missing from the bench (e.g. a bench created before this feature), they are automatically installed from the pre-fetched image layer on first start. If `name` is omitted, an interactive picker is shown.
 
 ### `ffm stop [name]`
 
 Stops all containers for a bench. Data is preserved — use `start` to resume. If `name` is omitted, an interactive picker is shown.
+
+### `ffm restart [name]`
+
+Stops then starts a bench in one step — equivalent to `ffm stop` followed by `ffm start`. Useful after config changes that require a full container cycle. If `name` is omitted, an interactive picker is shown.
+
+```
+Flags:
+  --rebuild   Rebuild the Docker image before starting (pulls latest tool versions)
+```
+
+`--rebuild` rewrites the bench `Dockerfile` from the current template and runs `docker compose build`, then starts. Useful when a new ffm release has updated the image (newer Claude Code, ffc, skills, etc.).
 
 ### `ffm shell [name]`
 
@@ -317,8 +329,11 @@ Prints the build version, commit hash, and build date.
 ~/frappe/
   <bench-name>/
     docker-compose.yml   # generated per bench
-    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship + Go + ffc (tools only)
+    Dockerfile           # extends frappe/bench:latest with zsh + zinit + starship + Go + ffc + pnpm + Claude Code (tools only)
     workspace/           # bind-mounted into container at /workspace; bench at workspace/frappe-bench/
+      frappe-bench/
+        .agents/skills/  # 60 Frappe Claude skills + ffc skill (installed at bench init time)
+        .claude/skills/  # same skills, for Claude Code's skill discovery
     .devcontainer/
       devcontainer.json  # VS Code dev container config
 
@@ -347,7 +362,7 @@ Each bench runs four Docker containers scoped to a Compose project named `ffm-<n
 
 | Service       | Image                               | Purpose                                                     |
 | ------------- | ----------------------------------- | ----------------------------------------------------------- |
-| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc) |
+| `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc + pnpm + Claude Code) |
 | `mariadb`     | `mariadb:11.8`                      | Database                                                    |
 | `redis-cache` | `redis:alpine`                      | Cache                                                       |
 | `redis-queue` | `redis:alpine`                      | Background job queue                                        |

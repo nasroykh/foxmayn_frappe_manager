@@ -42,6 +42,20 @@ func runStart(name string) error {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
 
+	// Ensure Claude/agent skills are present (missing on benches created before this feature).
+	// Check for the ffc skill specifically — it's the last one added, so its absence
+	// means either all skills are missing or only the ffc skill needs to be added.
+	if _, err := runner.ExecSilent("frappe", "bash", "-c",
+		"[ -f /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/SKILL.md ] ||"+
+			" (mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills"+
+			" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/"+
+			" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/"+
+			" && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli"+
+			" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/"+
+			" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/)"); err != nil && verbose {
+		fmt.Printf("warning: could not install frappe skills: %v\n", err)
+	}
+
 	// Start the Frappe dev server in the background via nohup so it survives
 	// after the exec session exits.
 	if _, err := runner.ExecSilent("frappe", "bash", "-c",

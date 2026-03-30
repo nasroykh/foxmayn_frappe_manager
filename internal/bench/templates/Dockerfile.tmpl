@@ -14,6 +14,21 @@ RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 # Install ffc (system-wide, to /usr/local/bin)
 RUN curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/main/install.sh | sh
 
+# Pre-fetch Frappe Claude Skill Package (skills are copied into each bench at create time)
+RUN git clone --depth=1 https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package.git /opt/frappe-skills \
+    && chmod -R a+rX /opt/frappe-skills
+
+# Pre-fetch ffc skill
+RUN mkdir -p /opt/ffc-skill \
+    && curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/main/skills/foxmayn-frappe-cli/SKILL.md \
+       -o /opt/ffc-skill/SKILL.md
+
+# Install pnpm via corepack (system-wide)
+RUN corepack enable pnpm
+
+# Install Claude Code (system-wide)
+RUN npm install -g @anthropic-ai/claude-code
+
 USER frappe
 
 # Install zinit
@@ -21,9 +36,9 @@ RUN git clone --depth=1 https://github.com/zdharma-continuum/zinit.git \
     /home/frappe/.local/share/zinit/zinit.git
 
 # Pre-fetch plugins into the image layer (no network needed at shell startup)
-RUN zsh -c 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh \
-    && zinit light zsh-users/zsh-autosuggestions \
-    && zinit light zsh-users/zsh-syntax-highlighting'
+RUN zsh -c 'source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh'
+    # && zinit light zsh-users/zsh-autosuggestions \
+    # && zinit light zsh-users/zsh-syntax-highlighting'
 
 # Write .zshrc
 RUN cat > /home/frappe/.zshrc <<'ZSHRC_EOF'
@@ -83,8 +98,13 @@ source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh
 autoload -Uz _zinit
 (( ${+_comps} )) && _comps[zinit]=_zinit
 
-zinit light zsh-users/zsh-autosuggestions
-zinit light zsh-users/zsh-syntax-highlighting
+# zinit light zsh-users/zsh-autosuggestions
+# zinit light zsh-users/zsh-syntax-highlighting
+
+# Aliases
+alias pn="pnpm"
+alias br="bench migrate && bench clear-cache && bench restart"
+alias bench-restart="bench migrate && bench clear-cache && bench restart"
 
 # ffc completions
 if command -v ffc &>/dev/null; then
