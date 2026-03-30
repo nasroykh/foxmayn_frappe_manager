@@ -101,7 +101,7 @@ ffm restart mybench
 ffm restart mybench --rebuild   # rebuild Docker image first (picks up new tool versions)
 ```
 
-If bench name is omitted from any of these, an interactive picker appears.
+If the bench name is omitted, ffm resolves it automatically: if your working directory is inside `~/frappe/<name>/`, that bench is selected silently. Otherwise an interactive picker appears (auto-selects when only one bench exists).
 
 ### Deleting a bench
 

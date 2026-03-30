@@ -103,7 +103,7 @@ Flags:
   --frappe-branch string      Frappe branch to initialise (default "version-15")
   --apps stringArray          Apps to install — see formats below
   --admin-password string     Frappe site admin password (default "admin")
-  --db-password string        MariaDB root password (default "123")
+  --db-password string        MariaDB root password (default "ffm123456")
   --github-token string       GitHub personal access token for private HTTPS repos
   --proxy-port int            Configure for reverse proxy: set socketio_port to this value
                               (e.g. 443 for HTTPS, 80 for HTTP). Omit for local dev.
@@ -360,12 +360,12 @@ install.ps1              # irm | iex installer for Windows
 
 Each bench runs four Docker containers scoped to a Compose project named `ffm-<name>`:
 
-| Service       | Image                               | Purpose                                                     |
-| ------------- | ----------------------------------- | ----------------------------------------------------------- |
+| Service       | Image                               | Purpose                                                                          |
+| ------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
 | `frappe`      | Built locally from bench Dockerfile | Frappe app + dev server (zsh + zinit + starship + Go + ffc + pnpm + Claude Code) |
-| `mariadb`     | `mariadb:11.8`                      | Database                                                    |
-| `redis-cache` | `redis:alpine`                      | Cache                                                       |
-| `redis-queue` | `redis:alpine`                      | Background job queue                                        |
+| `mariadb`     | `mariadb:11.8`                      | Database                                                                         |
+| `redis-cache` | `redis:alpine`                      | Cache                                                                            |
+| `redis-queue` | `redis:alpine`                      | Background job queue                                                             |
 
 The `frappe` container is also attached to the shared `ffm-proxy` Docker network and carries Traefik labels for `<name>.localhost` routing. MariaDB and Redis remain on the default project network only.
 

@@ -53,7 +53,9 @@ internal/
     proxy.go                  → ffm proxy subcommand group: start / stop / status
     setproxy.go               → configure socketio_port / use_ssl / host_name for reverse
                                 proxy deployments; --print-caddy / --print-nginx snippets
-    pick.go                   → resolveBenchName() + pickBench() interactive bench selector
+    pick.go                   → resolveBenchName() + benchNameFromCWD() + pickBench()
+                                CWD auto-detection: if inside ~/frappe/<name>/, returns name
+                                without UI; falls back to interactive picker otherwise
     update.go                 → self-update via GitHub Releases API
     update_check.go           → background update notification (24h TTL cache)
 
@@ -167,7 +169,7 @@ root.AddCommand(
 
 - **Factory functions, not `init()`**: Commands use `newXxxCmd()` factory functions, registered manually in `root.go`. This is different from the ffc codebase which uses `init()` — do NOT use `init()` here.
 - **`verbose`** is the package-level flag in `root.go` — use it directly in any command file. Controls docker compose output visibility.
-- **`resolveBenchName(args, title)`** — call this in every command that takes an optional `[name]` argument. It auto-selects if only one bench exists, or shows an interactive picker via `pickBench()`.
+- **`resolveBenchName(args, title)`** — call this in every command that takes an optional `[name]` argument. Resolution order: (1) `args[0]` if provided; (2) `benchNameFromCWD()` — silently returns the bench name if CWD is under `~/frappe/<name>/` and that name is in the state store; (3) `pickBench()` — auto-selects if only one bench exists, otherwise shows a `huh.Select` list.
 - **`RunE`, not `Run`**: Always return errors; cobra handles printing and exit code 1.
 - **`bench.Runner`** wraps all docker compose operations. Always construct via `bench.NewRunner(b.Name, b.Dir, verbose)`.
 
