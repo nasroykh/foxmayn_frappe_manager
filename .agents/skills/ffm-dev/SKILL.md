@@ -57,8 +57,10 @@ internal/
     status.go                 → per-container status + credentials display; shows mode + domain
     ffc.go                    → generate API keys + write ffc config inside container (dev only)
     proxy.go                  → ffm proxy subcommand group: start / stop / status
-    setproxy.go               → configure socketio_port / use_ssl / host_name for dev reverse
-                                proxy deployments; blocked for prod benches
+    setproxy.go               → configure socketio_port / use_ssl / host_name inside the
+                                container for reverse-proxy deployments; works for dev and prod;
+                                dev: restarts bench start automatically; prod: prints ffm restart hint;
+                                --reset uses mode-aware defaults (dev: 9000/no-ssl; prod: 443/ssl)
     pick.go                   → resolveBenchName() + benchNameFromCWD() + pickBench()
                                 CWD auto-detection: if inside ~/frappe/<name>/, returns name
                                 without UI; falls back to interactive picker otherwise
@@ -459,13 +461,14 @@ State is saved **only on success** (last step before the success message).
 
 Use `--no-ssl`. `EnsureNetwork()` is called instead of `EnsureHTTPS()`, so Traefik does not try to bind port 443. The prod compose exposes `WebPort` and `SocketIOPort` on the host. The user then points their existing Caddy/Nginx at those ports.
 
-After creation, `socketio_port` is set to `80` (the `--no-ssl` default). If the user's proxy handles HTTPS, they need to manually correct this:
+After creation, `socketio_port` is set to `80` (the `--no-ssl` default). If the user's proxy handles HTTPS, run:
 
 ```bash
-ffm shell kb --exec "cd /workspace/frappe-bench && bench set-config -gp socketio_port 443 && bench set-config -gp use_ssl 1"
+ffm set-proxy <name> --host <domain>   # sets socketio_port 443, use_ssl 1, host_name https://<domain>
+ffm restart <name>                     # apply to all prod services
 ```
 
-**Known limitation:** `ffm set-proxy` is blocked for prod benches (`setproxy.go` returns early with an error). There is no ffm command that applies this correction automatically for prod. Future work: extend `set-proxy` to work with prod benches (or add `ffm configure-proxy` for prod).
+`ffm set-proxy` works for both dev and prod benches. See the `set-proxy` section below.
 
 ### ACME email persistence
 

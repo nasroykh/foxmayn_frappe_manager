@@ -26,9 +26,10 @@ func newSetProxyCmd() *cobra.Command {
 		Long: `Configure Frappe's socket.io and SSL settings for reverse-proxy deployments.
 
 By default applies settings for an HTTPS proxy on port 443. Use --reset to
-restore direct-access settings (socketio_port 9000, ssl off).
+restore creation-time defaults.
 
-The bench must be running. The dev server is restarted automatically.`,
+The bench must be running. For dev benches the dev server restarts automatically;
+for prod benches run 'ffm restart <name>' to apply changes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := resolveBenchName(args, "Select a bench to configure")
@@ -42,7 +43,7 @@ The bench must be running. The dev server is restarted automatically.`,
 	cmd.Flags().IntVar(&port, "port", 443, "Public port the reverse proxy listens on (sets socketio_port)")
 	cmd.Flags().StringVar(&host, "host", "", "Public domain, e.g. frappe.example.com (sets per-site host_name)")
 	cmd.Flags().BoolVar(&noSSL, "no-ssl", false, "Disable SSL mode even when --port 443 is used")
-	cmd.Flags().BoolVar(&reset, "reset", false, "Restore direct-access settings (socketio_port 9000, ssl off)")
+	cmd.Flags().BoolVar(&reset, "reset", false, "Restore creation-time defaults (dev: port 9000, no ssl; prod: port 443, ssl on)")
 	cmd.Flags().BoolVar(&printCaddy, "print-caddy", false, "Print a Caddy config snippet for this bench")
 	cmd.Flags().BoolVar(&printNginx, "print-nginx", false, "Print an Nginx config snippet for this bench")
 
@@ -54,10 +55,6 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 	b, err := store.Get(name)
 	if err != nil {
 		return err
-	}
-
-	if b.IsProd() {
-		return fmt.Errorf("set-proxy is not supported for production benches — proxy settings are configured at creation time via --domain")
 	}
 
 	runner := bench.NewRunner(b.Name, b.Dir, verbose)
@@ -109,15 +106,19 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 		fmt.Printf("  ✓ host_name     = %s\n", proxyHost)
 	}
 
-	// Restart dev server so the new config takes effect.
-	fmt.Println("  Restarting dev server...")
-	restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
-		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
-		// Non-fatal: pkill exits 1 when no process matched, which is fine.
-		fmt.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
+	// Dev: restart bench start in background. Prod: instruct user to restart.
+	if b.IsDev() {
+		fmt.Println("  Restarting dev server...")
+		restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
+			" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+		if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
+			// Non-fatal: pkill exits 1 when no process matched, which is fine.
+			fmt.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
+		}
+		fmt.Println("  ✓ Dev server restarting in background")
+	} else {
+		fmt.Printf("  → Run 'ffm restart %s' to apply changes to all services\n", name)
 	}
-	fmt.Println("  ✓ Dev server restarting in background")
 
 	// Persist proxy host in state
 	if err := store.Update(name, func(rec *state.Bench) {
@@ -150,7 +151,39 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) error {
 	fmt.Printf("Resetting bench %q to direct-access settings...\n", b.Name)
 
-	// Restore socketio to the internal port and clear ssl + host_name.
+	if b.IsProd() {
+		// Prod: restore to creation-time defaults (socketio on 443, SSL on, host_name = https://<domain>).
+		globalCmd := "cd /workspace/frappe-bench" +
+			" && bench set-config -gp socketio_port 443" +
+			" && bench set-config -gp use_ssl 1"
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", globalCmd); err != nil {
+			return fmt.Errorf("reset global config: %w\n%s", err, out)
+		}
+		fmt.Println("  ✓ socketio_port = 443")
+		fmt.Println("  ✓ use_ssl       = 1")
+
+		hostName := "https://" + b.Domain
+		siteCmd := fmt.Sprintf(
+			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
+			b.SiteName, hostName,
+		)
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
+			return fmt.Errorf("reset host_name: %w\n%s", err, out)
+		}
+		fmt.Printf("  ✓ host_name     = %s\n", hostName)
+
+		if err := store.Update(b.Name, func(rec *state.Bench) {
+			rec.ProxyHost = hostName
+		}); err != nil {
+			fmt.Printf("  warning: could not update state: %v\n", err)
+		}
+
+		fmt.Printf("\nBench %q restored to production defaults.\n", b.Name)
+		fmt.Printf("  → Run 'ffm restart %s' to apply changes to all services\n", b.Name)
+		return nil
+	}
+
+	// Dev: restore socketio to internal port, clear ssl + host_name.
 	globalCmd := "cd /workspace/frappe-bench" +
 		" && bench set-config -gp socketio_port 9000" +
 		" && bench set-config -gp use_ssl 0"
@@ -160,7 +193,6 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	fmt.Println("  ✓ socketio_port = 9000")
 	fmt.Println("  ✓ use_ssl       = 0")
 
-	// Reset host_name to the .localhost domain.
 	siteCmd := fmt.Sprintf(
 		"cd /workspace/frappe-bench && bench --site %s set-config host_name http://%s",
 		b.SiteName, b.SiteName,
@@ -170,7 +202,6 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	}
 	fmt.Printf("  ✓ host_name     = http://%s\n", b.SiteName)
 
-	// Restart dev server.
 	fmt.Println("  Restarting dev server...")
 	restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
 		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"

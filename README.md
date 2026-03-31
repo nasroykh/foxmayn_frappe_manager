@@ -102,17 +102,12 @@ ffm create mysite \
 # --no-ssl: skip Traefik on 443, expose ports directly for Caddy to proxy
 ffm create mysite --mode prod --domain erp.example.com --no-ssl --admin-password StrongPassword
 
-# Check allocated ports
-ffm status mysite    # note web port and socketio port
+# Configure Frappe to know the browser connects via Caddy's HTTPS
+ffm set-proxy mysite --host erp.example.com   # sets socketio_port 443, use_ssl 1, host_name
+ffm restart mysite                             # apply to all services
 
-# Tell Frappe the browser connects via Caddy's HTTPS
-ffm shell mysite --exec "cd /workspace/frappe-bench && bench set-config -gp socketio_port 443 && bench set-config -gp use_ssl 1"
-
-# Add to your Caddyfile (replace 8000/9000 with actual ports from ffm status):
-# erp.example.com {
-#     reverse_proxy /socket.io/* localhost:9000
-#     reverse_proxy localhost:8000
-# }
+# Get a ready-to-paste Caddy snippet (uses actual allocated ports)
+ffm set-proxy mysite --host erp.example.com --print-caddy
 ```
 
 ## Commands
@@ -269,14 +264,28 @@ ffm proxy status   # show status + dashboard URL
 
 ### `ffm set-proxy [name]`
 
-Configures a **dev** bench for an external reverse proxy (Caddy, Nginx, etc.). **Not available for prod benches** (prod uses `--domain` + Traefik labels at creation time; or `--no-ssl` + manual `bench set-config` for existing proxies).
+Configures a bench (dev or prod) for an external reverse proxy (Caddy, Nginx, etc.). Sets `socketio_port`, `use_ssl`, and `host_name` inside the Frappe container.
+
+- **Dev**: dev server restarts automatically
+- **Prod**: prints a reminder to run `ffm restart <name>` to apply changes to all services
 
 ```bash
-ffm set-proxy mybench --host frappe.example.com          # HTTPS (port 443)
-ffm set-proxy mybench --port 80 --host frappe.example.com  # HTTP (port 80)
-ffm set-proxy mybench --reset                             # restore direct-access defaults
+# HTTPS proxy on port 443 (default)
+ffm set-proxy mybench --host frappe.example.com
+ffm set-proxy myprod  --host erp.example.com
+
+# HTTP proxy on port 80
+ffm set-proxy mybench --port 80 --host frappe.example.com
+
+# Reset to direct-access defaults
+#   dev  → socketio_port 9000, use_ssl 0, host_name http://<name>.localhost
+#   prod → socketio_port 443,  use_ssl 1, host_name https://<domain>
+ffm set-proxy mybench --reset
+ffm set-proxy myprod  --reset
+
+# Print a ready-to-paste config snippet
 ffm set-proxy mybench --host frappe.example.com --print-caddy
-ffm set-proxy mybench --host frappe.example.com --print-nginx
+ffm set-proxy myprod  --host erp.example.com    --print-nginx
 ```
 
 ### `ffm ffc [name]`
