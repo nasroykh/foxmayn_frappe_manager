@@ -24,6 +24,7 @@ services:
     command: sleep infinity
     environment:
       - SHELL=/bin/zsh
+      - FRAPPE_SOCKETIO_PORT=9000
 {{- if .ForwardSSHAgent}}
       - SSH_AUTH_SOCK=/ssh-agent
 {{- end}}

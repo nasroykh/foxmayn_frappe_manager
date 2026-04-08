@@ -414,7 +414,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	// Configure common_site_config
 	s.step("Configuring site settings")
-	socketIOPortCfg := 9000
+	var socketIOPortCfg int
 	if mode == "prod" {
 		if noSSL {
 			socketIOPortCfg = 80 // Traefik public HTTP port
@@ -423,6 +423,10 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 	} else if proxyPort > 0 {
 		socketIOPortCfg = proxyPort
+	} else {
+		// Dev: clients must use the host-published port (9000, 9010, …), not
+		// container-internal 9000 — otherwise the 2nd+ bench breaks Socket.IO.
+		socketIOPortCfg = socketIOPort
 	}
 	configCmd := "cd /workspace/frappe-bench" +
 		" && bench set-config -g db_host mariadb" +

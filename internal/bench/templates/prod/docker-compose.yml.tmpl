@@ -67,6 +67,8 @@ services:
     build:
       context: .
     command: ["bash", "-c", "cd /workspace/frappe-bench && node apps/frappe/socketio.js"]
+    environment:
+      - FRAPPE_SOCKETIO_PORT=9000
     working_dir: /workspace/frappe-bench
     volumes:
       - ./workspace:/workspace

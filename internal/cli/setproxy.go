@@ -43,7 +43,7 @@ for prod benches run 'ffm restart <name>' to apply changes.`,
 	cmd.Flags().IntVar(&port, "port", 443, "Public port the reverse proxy listens on (sets socketio_port)")
 	cmd.Flags().StringVar(&host, "host", "", "Public domain, e.g. frappe.example.com (sets per-site host_name)")
 	cmd.Flags().BoolVar(&noSSL, "no-ssl", false, "Disable SSL mode even when --port 443 is used")
-	cmd.Flags().BoolVar(&reset, "reset", false, "Restore creation-time defaults (dev: port 9000, no ssl; prod: port 443, ssl on)")
+	cmd.Flags().BoolVar(&reset, "reset", false, "Restore creation-time defaults (dev: published socketio port, no ssl; prod: port 443, ssl on)")
 	cmd.Flags().BoolVar(&printCaddy, "print-caddy", false, "Print a Caddy config snippet for this bench")
 	cmd.Flags().BoolVar(&printNginx, "print-nginx", false, "Print an Nginx config snippet for this bench")
 
@@ -183,14 +183,21 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 		return nil
 	}
 
-	// Dev: restore socketio to internal port, clear ssl + host_name.
-	globalCmd := "cd /workspace/frappe-bench" +
-		" && bench set-config -gp socketio_port 9000" +
-		" && bench set-config -gp use_ssl 0"
+	// Dev: restore Socket.IO to this bench's host-published port, clear ssl + host_name.
+	sio := b.SocketIOPort
+	if sio == 0 {
+		sio = 9000 // backward compat for old state files without socketio_port
+	}
+	globalCmd := fmt.Sprintf(
+		"cd /workspace/frappe-bench"+
+			" && bench set-config -gp socketio_port %d"+
+			" && bench set-config -gp use_ssl 0",
+		sio,
+	)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", globalCmd); err != nil {
 		return fmt.Errorf("reset global config: %w\n%s", err, out)
 	}
-	fmt.Println("  ✓ socketio_port = 9000")
+	fmt.Printf("  ✓ socketio_port = %d\n", sio)
 	fmt.Println("  ✓ use_ssl       = 0")
 
 	siteCmd := fmt.Sprintf(
