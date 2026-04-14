@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -53,6 +55,11 @@ func runStart(name string) error {
 				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/"+
 				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/)"); err != nil && verbose {
 			fmt.Printf("warning: could not install frappe skills: %v\n", err)
+		}
+
+		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
+		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 
 		// Start the Frappe dev server in the background via nohup.

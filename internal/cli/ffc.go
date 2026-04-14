@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -61,6 +63,11 @@ func runFfcSetup(name string) error {
 	)
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", writeCmd); err != nil {
 		return fmt.Errorf("write ffc config: %w", err)
+	}
+
+	frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
+	if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
 	}
 
 	// 3. Verify ffc can reach the site (non-fatal — dev server may not be running)

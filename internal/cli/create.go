@@ -399,6 +399,13 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s/frappe-bench", workspaceDir)
 	}
 
+	if mode == "dev" {
+		frappeBench := filepath.Join(workspaceDir, "frappe-bench")
+		if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
+		}
+	}
+
 	// Start containers
 	s.step("Starting containers (docker compose up)")
 	if err := runner.Up(); err != nil {

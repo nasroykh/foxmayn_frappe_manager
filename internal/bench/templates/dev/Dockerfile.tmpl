@@ -8,6 +8,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends zsh curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Consistent UTF-8 for ZLE + Starship width math (docker exec TTY + emoji prompts desync otherwise)
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
 # Install starship (system-wide)
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 
@@ -26,10 +29,10 @@ RUN mkdir -p /opt/ffc-skill \
 # Install pnpm via corepack (system-wide)
 RUN corepack enable pnpm
 
-# Install Claude Code (system-wide)
-RUN npm install -g @anthropic-ai/claude-code
-
 USER frappe
+
+# Install Claude Code (official native installer; installs to ~/.local/bin for this user)
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Install zinit
 RUN git clone --depth=1 https://github.com/zdharma-continuum/zinit.git \
@@ -94,6 +97,7 @@ bindkey '^[^?'   backward-kill-word      # Alt+Backspace
 # =============================================================================
 # TOOLS
 # =============================================================================
+export PATH="$HOME/.local/bin:$PATH"
 source /home/frappe/.local/share/zinit/zinit.git/zinit.zsh
 autoload -Uz _zinit
 (( ${+_comps} )) && _comps[zinit]=_zinit
@@ -124,8 +128,10 @@ command_timeout = 500   # ms before a module is skipped (default 500)
 scan_timeout    = 30    # ms for file-system scanning (default 30)
 
 # ── Layout ─────────────────────────────────────────────────────────────────────
-# Line 1:  🐧 frappe  ~/projects/foo  main *(modified)  1m23s ··············· 🕐 25 Mar  14:30
-# Line 2:  venv-name ❯
+# Line 1:  F frappe  ~/projects/foo  main …  1m23s …  @ 25 Mar  14:30
+# Line 2:  venv-name >
+# No $fill/$time right column: docker exec TTYs often misreport COLUMNS, which breaks
+# Starship's fill math and desyncs Zsh line editing (tab completion redraw glitches).
 format = """
 $os\
 $username\
@@ -133,25 +139,23 @@ $directory\
 $git_branch\
 $git_state\
 $git_status\
-$cmd_duration\
-$fill\
-$time\
+$cmd_duration $time\
 $line_break\
 $python\
 $character"""
 
-# ── OS emoji ───────────────────────────────────────────────────────────────────
+# ── OS marker (ASCII; avoids ZLE width bugs over docker exec TTY) ──────────────
 [os]
 disabled = false
 format   = "[$symbol]($style)"
 style    = "bold white"
 
 [os.symbols]
-Ubuntu  = "𝔽 "
-Debian  = "𝔽 "
-Linux   = "𝔽 "
-Windows = "𝔽 "
-Macos   = "𝔽 "
+Ubuntu  = "F "
+Debian  = "F "
+Linux   = "F "
+Windows = "F "
+Macos   = "F "
 
 # ── Username ───────────────────────────────────────────────────────────────────
 [username]
@@ -174,25 +178,21 @@ style  = "bright-black"
 [git_status]
 format     = "[[(*$conflicted$untracked$modified$staged$renamed$deleted)](218) ($ahead_behind$stashed)]($style)"
 style      = "cyan"
-conflicted = "​"
-untracked  = "​"
-modified   = "​"
-staged     = "​"
-renamed    = "​"
-deleted    = "​"
-stashed    = "≡"
+conflicted = ""
+untracked  = ""
+modified   = ""
+staged     = ""
+renamed    = ""
+deleted    = ""
+stashed    = "="
 
 [git_state]
 format = '\([$state( $progress_current/$progress_total)]($style)\) '
 style  = "bright-black"
 
-# ── Fill (empty space between left and right content on line 1) ────────────────
-[fill]
-symbol = " "
-
 # ── Command duration ───────────────────────────────────────────────────────────
 [cmd_duration]
-format            = "[⏱ $duration]($style) "
+format            = "[$duration]($style) "
 style             = "yellow"
 min_time          = 2_000   # only show when cmd took ≥ 2 s
 
@@ -206,13 +206,13 @@ detect_files      = []
 # ── Time (shown on the right) ──────────────────────────────────────────────────
 [time]
 disabled    = false
-format      = "[🕐 $time]($style)"
+format      = "[@ $time]($style)"
 time_format = "%d %b  %H:%M"
 style       = "bright-black"
 
-# ── Prompt character ───────────────────────────────────────────────────────────
+# ── Prompt character (ASCII; fancy glyphs confuse column math on some TTYs) ───
 [character]
-success_symbol  = "[❯](purple)"
-error_symbol    = "[❯](red)"
-vimcmd_symbol   = "[❮](green)"
+success_symbol  = "[>](purple)"
+error_symbol    = "[>](red)"
+vimcmd_symbol   = "[<](green)"
 STARSHIP_EOF
