@@ -539,13 +539,17 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 	}
 
-	// Prod: build production assets
+	// Compile JS/CSS bundles. Prod has always needed this; dev needs it too after
+	// bind-mounted runtime bench init (commit that moved bench init out of the image):
+	// without it, Desk can load as unstyled / effectively raw HTML until bench build.
 	if mode == "prod" {
 		s.step("Building production assets (bench build) — this may take a few minutes")
-		if out, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && bench build"); err != nil {
-			return fmt.Errorf("bench build: %w\n%s", err, out)
-		}
+	} else {
+		s.step("Building web assets (bench build) — this may take a few minutes")
+	}
+	if out, err := runner.ExecSilent("frappe", "bash", "-c",
+		"cd /workspace/frappe-bench && bench build"); err != nil {
+		return fmt.Errorf("bench build: %w\n%s", err, out)
 	}
 
 	// Dev only: start dev server + wait for HTTP + setup ffc
