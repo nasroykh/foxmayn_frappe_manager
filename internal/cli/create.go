@@ -52,7 +52,7 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail, nil)
 		},
 	}
 
@@ -228,7 +228,15 @@ func saveAcmeEmail(email string) {
 	_ = os.WriteFile(config.AcmeEmailFile(), []byte(email+"\n"), 0o600)
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string) (createErr error) {
+// createOpts carries optional behavior for runCreate. When fixedWebPort and
+// fixedSocketIOPort are both non-zero, that host port pair is used instead of
+// AllocatePorts (used by recreate to keep stable URLs).
+type createOpts struct {
+	fixedWebPort      int
+	fixedSocketIOPort int
+}
+
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string, opts *createOpts) (createErr error) {
 	// Validate mode
 	if mode != "dev" && mode != "prod" {
 		return fmt.Errorf("invalid --mode %q: must be 'dev' or 'prod'", mode)
@@ -274,11 +282,25 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	s := &counter{}
 
-	// Allocate ports
+	// Allocate ports (or reuse a fixed pair for recreate)
 	s.step("Allocating ports")
-	webPort, socketIOPort, err := bench.AllocatePorts(store)
-	if err != nil {
-		return fmt.Errorf("port allocation: %w", err)
+	var webPort, socketIOPort int
+	if opts != nil && opts.fixedWebPort > 0 && opts.fixedSocketIOPort > 0 {
+		if !bench.ValidBenchPortPair(opts.fixedWebPort, opts.fixedSocketIOPort) {
+			return fmt.Errorf("invalid fixed port pair: web_port=%d socketio_port=%d (must match ffm bench pairing)",
+				opts.fixedWebPort, opts.fixedSocketIOPort)
+		}
+		webPort = opts.fixedWebPort
+		socketIOPort = opts.fixedSocketIOPort
+		if err := bench.CheckTCPPortsFree(webPort, socketIOPort); err != nil {
+			return fmt.Errorf("fixed host ports not available (another process may be using them): %w", err)
+		}
+	} else {
+		var err error
+		webPort, socketIOPort, err = bench.AllocatePorts(store)
+		if err != nil {
+			return fmt.Errorf("port allocation: %w", err)
+		}
 	}
 
 	benchDir := config.BenchDir(name)

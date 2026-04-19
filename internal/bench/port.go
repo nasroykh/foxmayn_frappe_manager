@@ -14,6 +14,23 @@ const (
 	maxBenches   = 50
 )
 
+// ValidBenchPortPair reports whether webPort and socketIOPort match the
+// pairing used by ffm (socketIOBase - webBase offset between the two).
+func ValidBenchPortPair(webPort, socketIOPort int) bool {
+	return socketIOPort == webPort+(socketIOBase-webBase)
+}
+
+// CheckTCPPortsFree returns an error if any listed TCP port cannot be bound
+// on the host (same check used during AllocatePorts).
+func CheckTCPPortsFree(ports ...int) error {
+	for _, p := range ports {
+		if err := probePort(p); err != nil {
+			return fmt.Errorf("port %d: %w", p, err)
+		}
+	}
+	return nil
+}
+
 // AllocatePorts returns the next available (webPort, socketIOPort) pair.
 // It scans the state store to avoid already-assigned ports, then probes the
 // host to detect external conflicts.

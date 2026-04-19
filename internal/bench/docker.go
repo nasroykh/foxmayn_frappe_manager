@@ -11,6 +11,9 @@ import (
 )
 
 // Runner wraps docker compose commands scoped to a bench project.
+// ComposeDir is always set as the child process working directory so docker
+// compose does not depend on the caller's cwd (which may be missing or inside
+// a bind-mounted path that triggers getwd errors).
 type Runner struct {
 	Project    string // e.g. "ffm-mybench"
 	ComposeDir string // directory containing docker-compose.yml
@@ -29,6 +32,7 @@ func NewRunner(benchName, composeDir string, verbose bool) *Runner {
 func (r *Runner) compose(args ...string) *exec.Cmd {
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
 	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -41,6 +45,7 @@ func (r *Runner) compose(args ...string) *exec.Cmd {
 func (r *Runner) composeWithIO(args ...string) *exec.Cmd {
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
 	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -63,6 +68,7 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 func (r *Runner) Build() error {
 	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "build"}
 	cmd := exec.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -81,6 +87,7 @@ func (r *Runner) Build() error {
 func (r *Runner) Run(service string, args ...string) error {
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "run", "--rm", service}, args...)
 	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -138,6 +145,7 @@ func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) e
 	args := append([]string{"exec", "-T", "-w", workdir, service}, shellArgs...)
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
 	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -147,7 +155,9 @@ func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) e
 func (r *Runner) ExecSilent(service string, shellArgs ...string) (string, error) {
 	args := append([]string{"exec", "-T", service}, shellArgs...)
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
-	out, err := exec.Command("docker", full...).CombinedOutput()
+	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
+	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -177,7 +187,9 @@ func (r *Runner) PS(format string) (string, error) {
 		args = append(args, "--format", format)
 	}
 	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
-	out, err := exec.Command("docker", full...).CombinedOutput()
+	cmd := exec.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
+	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 

@@ -60,17 +60,9 @@ func runDelete(name string, force bool) error {
 		}
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, verbose)
-
 	fmt.Printf("Deleting bench %q...\n", name)
 
-	if err := runner.Down(true); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
-	}
-
-	if err := os.RemoveAll(b.Dir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: remove bench dir: %v\n", err)
-	}
+	teardownBenchFiles(b)
 
 	if err := store.Remove(name); err != nil {
 		return fmt.Errorf("update state: %w", err)
@@ -78,4 +70,17 @@ func runDelete(name string, force bool) error {
 
 	fmt.Printf("Bench %q deleted.\n", name)
 	return nil
+}
+
+// teardownBenchFiles runs docker compose down with volumes and removes the
+// bench directory. Warnings are printed for non-fatal errors (same behavior
+// as delete).
+func teardownBenchFiles(b state.Bench) {
+	runner := bench.NewRunner(b.Name, b.Dir, verbose)
+	if err := runner.Down(true); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
+	}
+	if err := os.RemoveAll(b.Dir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: remove bench dir: %v\n", err)
+	}
 }
