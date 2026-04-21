@@ -48,8 +48,9 @@ make install
 | | Development (`--mode dev`) | Production (`--mode prod`) |
 |--|--|--|
 | **Purpose** | Local dev with Claude Code, ffc, hot-reload | VPS deployment |
-| **Containers** | 4 (frappe + mariadb + redis×2) | 7 (gunicorn + socketio + workers + scheduler + mariadb + redis×2) |
+| **Containers** | 4 (frappe + db + redis×2) | 7 (gunicorn + socketio + workers + scheduler + db + redis×2) |
 | **Image** | Full dev tools (zsh, starship, Go, ffc, Claude Code) | Minimal (no dev tools) |
+| **Database** | MariaDB 11.8 or PostgreSQL 18 (experimental) | MariaDB 11.8 or PostgreSQL 18 (experimental) |
 | **Site name** | `<name>.localhost` | Your public domain |
 | **SSL** | Via shared Traefik proxy | Let's Encrypt (or `--no-ssl` for external Caddy/Nginx) |
 | **Dev server** | `bench start` (honcho) | Services run via compose `command:` |
@@ -152,7 +153,8 @@ Flags:
   --frappe-branch string  Frappe branch to initialise (default "version-15")
   --apps stringArray      Apps to install (see formats below)
   --admin-password string Frappe site admin password (default "admin"; required for prod)
-  --db-password string    MariaDB root password (default "ffm123456")
+  --db-type string        Database engine: mariadb or postgres (default "mariadb")
+  --db-password string    Database root password (default "ffm123456")
   --github-token string   GitHub PAT for private HTTPS repos
   --proxy-port int        Dev reverse proxy: set socketio_port (e.g. 443 or 80)
   --proxy-host string     Dev reverse proxy: set per-site host_name
@@ -174,7 +176,7 @@ When `SSH_AUTH_SOCK` is set, the SSH agent is automatically forwarded into the c
 
 ### `ffm list` / `ffm ls`
 
-Lists all managed benches with their live status, mode (dev/prod), port, domain URL, and Frappe branch.
+Lists all managed benches with their live status, mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.
 
 ### `ffm status [name]`
 
@@ -344,7 +346,7 @@ Prints the build version, commit hash, and build date.
 | Service | Image | Purpose |
 |--|--|--|
 | `frappe` | Built locally (dev image) | App server + `bench start` (honcho) + all dev tools |
-| `mariadb` | `mariadb:11.8` | Database |
+| `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database (selected via `--db-type`) |
 | `redis-cache` | `redis:alpine` | Cache |
 | `redis-queue` | `redis:alpine` | Background job queue |
 
@@ -357,7 +359,7 @@ Prints the build version, commit hash, and build date.
 | `worker-long` | same | Long background jobs |
 | `worker-short` | same | Short background jobs |
 | `scheduler` | same | Scheduled tasks (`bench schedule`) |
-| `mariadb` | `mariadb:11.8` | Database (with healthcheck) |
+| `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database with healthcheck (selected via `--db-type`) |
 | `redis-cache` | `redis:alpine` | Cache |
 | `redis-queue` | `redis:alpine` | Job queue |
 
@@ -381,7 +383,10 @@ Configured entirely via CLI flags — no config file on disk. Uses `--restart=un
 ## Building from source
 
 ```bash
+make          # tidy + build + install (default)
+make ship     # same as above explicitly
 make build    # → ./bin/ffm
+make install  # → $GOPATH/bin/ffm
 make vet      # go vet
 make fmt      # gofmt
 make tidy     # go mod tidy

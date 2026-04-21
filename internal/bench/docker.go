@@ -212,6 +212,23 @@ func (r *Runner) WaitForMariaDB(password string, timeout time.Duration, progress
 	return fmt.Errorf("MariaDB did not become ready within %s", timeout)
 }
 
+// WaitForPostgres polls until PostgreSQL accepts connections or the timeout elapses.
+func (r *Runner) WaitForPostgres(password string, timeout time.Duration, progressWriter io.Writer) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := r.ExecSilent("postgres", "pg_isready", "-U", "postgres")
+		if err == nil && strings.Contains(out, "accepting connections") {
+			return nil
+		}
+		if progressWriter != nil {
+			fmt.Fprintf(progressWriter, "\r  waiting for PostgreSQL... (%ds elapsed)",
+				int(time.Since(deadline.Add(-timeout)).Seconds()))
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("PostgreSQL did not become ready within %s", timeout)
+}
+
 // ConfigureGitHubToken sets up a git credential helper inside the frappe
 // container so that HTTPS github.com URLs authenticate with the given token.
 func (r *Runner) ConfigureGitHubToken(token string) error {

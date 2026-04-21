@@ -23,6 +23,7 @@ func newCreateCmd() *cobra.Command {
 		apps          []string
 		adminPassword string
 		dbPassword    string
+		dbType        string
 		githubToken   string
 		proxyPort     int
 		proxyHost     string
@@ -43,23 +44,24 @@ func newCreateCmd() *cobra.Command {
 
 			if !modeSet {
 				// No --mode flag: show full interactive form (asks dev or prod first).
-				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword); err != nil {
+				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType); err != nil {
 					return err
 				}
 			} else if mode == "dev" && !branchSet && !appsSet {
 				// Explicit --mode dev but no branch/apps: show dev-only form.
-				if err := runCreateForm(&frappeBranch, &apps); err != nil {
+				if err := runCreateForm(&frappeBranch, &apps, &dbType); err != nil {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail, nil)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, dbType, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail, nil)
 		},
 	}
 
 	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch (version-15 or version-16)")
 	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
-	cmd.Flags().StringVar(&dbPassword, "db-password", "ffm123456", "MariaDB root password")
+	cmd.Flags().StringVar(&dbPassword, "db-password", "ffm123456", "Database root password")
+	cmd.Flags().StringVar(&dbType, "db-type", "mariadb", "Database engine: mariadb or postgres")
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos")
 	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)")
 	cmd.Flags().StringVar(&proxyHost, "proxy-host", "", "Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)")
@@ -71,8 +73,8 @@ func newCreateCmd() *cobra.Command {
 	return cmd
 }
 
-// runCreateForm shows an interactive TUI to choose Frappe version and apps.
-func runCreateForm(branch *string, apps *[]string) error {
+// runCreateForm shows an interactive TUI to choose Frappe version, apps, and DB engine.
+func runCreateForm(branch *string, apps *[]string, dbType *string) error {
 	versionOptions := []huh.Option[string]{
 		huh.NewOption("Frappe v15 (stable)", "version-15"),
 		huh.NewOption("Frappe v16 (latest)", "version-16"),
@@ -85,6 +87,9 @@ func runCreateForm(branch *string, apps *[]string) error {
 
 	// Defaults
 	*branch = "version-15"
+	if *dbType == "" {
+		*dbType = "mariadb"
+	}
 
 	var customAppsRaw string
 
@@ -94,6 +99,13 @@ func runCreateForm(branch *string, apps *[]string) error {
 				Title("Frappe version").
 				Options(versionOptions...).
 				Value(branch),
+			huh.NewSelect[string]().
+				Title("Database engine").
+				Options(
+					huh.NewOption("MariaDB 11.8  (stable, recommended)", "mariadb"),
+					huh.NewOption("PostgreSQL 18  (experimental)", "postgres"),
+				).
+				Value(dbType),
 			huh.NewMultiSelect[string]().
 				Title("Additional apps to install").
 				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
@@ -119,9 +131,12 @@ func runCreateForm(branch *string, apps *[]string) error {
 
 // runCreateFormFull is the interactive form shown when --mode is not passed.
 // It asks dev or prod first, then shows the relevant follow-up fields.
-func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword *string) error {
+func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType *string) error {
 	*mode = "dev"
 	*branch = "version-15"
+	if *dbType == "" {
+		*dbType = "mariadb"
+	}
 
 	// Step 1: choose mode
 	err := huh.NewForm(
@@ -140,7 +155,7 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 	}
 
 	if *mode == "dev" {
-		return runCreateForm(branch, apps)
+		return runCreateForm(branch, apps, dbType)
 	}
 
 	// Step 2 (prod): domain, SSL, branch, apps
@@ -177,6 +192,13 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 				Title("Frappe version").
 				Options(versionOptions...).
 				Value(branch),
+			huh.NewSelect[string]().
+				Title("Database engine").
+				Options(
+					huh.NewOption("MariaDB 11.8  (stable, recommended)", "mariadb"),
+					huh.NewOption("PostgreSQL 18  (experimental)", "postgres"),
+				).
+				Value(dbType),
 			huh.NewMultiSelect[string]().
 				Title("Additional apps to install").
 				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
@@ -236,10 +258,18 @@ type createOpts struct {
 	fixedSocketIOPort int
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string, opts *createOpts) (createErr error) {
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, dbType, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string, opts *createOpts) (createErr error) {
 	// Validate mode
 	if mode != "dev" && mode != "prod" {
 		return fmt.Errorf("invalid --mode %q: must be 'dev' or 'prod'", mode)
+	}
+
+	// Normalise and validate db type
+	if dbType == "" {
+		dbType = "mariadb"
+	}
+	if dbType != "mariadb" && dbType != "postgres" {
+		return fmt.Errorf("invalid --db-type %q: must be 'mariadb' or 'postgres'", dbType)
 	}
 
 	// Prod-specific validation
@@ -352,17 +382,18 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	// Write compose file, Dockerfile, and (dev only) devcontainer config
 	s.step("Writing docker-compose.yml and Dockerfile")
 	data := bench.ComposeData{
-		Name:                name,
-		Mode:                mode,
-		BenchDir:            benchDir,
-		WebPort:             webPort,
-		WebPortEnd:          webPort + 5,
-		SocketIOPort:        socketIOPort,
-		SocketIOPortEnd:     socketIOPort + 5,
-		MariaDBRootPassword: dbPassword,
-		ForwardSSHAgent:     mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
-		Domain:              domain,
-		NoSSL:               noSSL,
+		Name:            name,
+		Mode:            mode,
+		BenchDir:        benchDir,
+		WebPort:         webPort,
+		WebPortEnd:      webPort + 5,
+		SocketIOPort:    socketIOPort,
+		SocketIOPortEnd: socketIOPort + 5,
+		DBType:          dbType,
+		DBRootPassword:  dbPassword,
+		ForwardSSHAgent: mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
+		Domain:          domain,
+		NoSSL:           noSSL,
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
 		return fmt.Errorf("render compose: %w", err)
@@ -434,10 +465,17 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("docker compose up: %w", err)
 	}
 
-	// Wait for MariaDB
-	s.step("Waiting for MariaDB to be ready...")
-	if err := runner.WaitForMariaDB(dbPassword, 90*time.Second, os.Stderr); err != nil {
-		return fmt.Errorf("wait for MariaDB: %w", err)
+	// Wait for database
+	if dbType == "postgres" {
+		s.step("Waiting for PostgreSQL to be ready...")
+		if err := runner.WaitForPostgres(dbPassword, 90*time.Second, os.Stderr); err != nil {
+			return fmt.Errorf("wait for PostgreSQL: %w", err)
+		}
+	} else {
+		s.step("Waiting for MariaDB to be ready...")
+		if err := runner.WaitForMariaDB(dbPassword, 90*time.Second, os.Stderr); err != nil {
+			return fmt.Errorf("wait for MariaDB: %w", err)
+		}
 	}
 	fmt.Println()
 
@@ -457,9 +495,18 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		// container-internal 9000 — otherwise the 2nd+ bench breaks Socket.IO.
 		socketIOPortCfg = socketIOPort
 	}
+	var dbConfigCmd string
+	if dbType == "postgres" {
+		dbConfigCmd = " && bench set-config -g db_host postgres" +
+			" && bench set-config -gp db_port 5432" +
+			" && bench set-config -g db_type postgres" +
+			" && bench set-config -g db_schema public"
+	} else {
+		dbConfigCmd = " && bench set-config -g db_host mariadb" +
+			" && bench set-config -gp db_port 3306"
+	}
 	configCmd := "cd /workspace/frappe-bench" +
-		" && bench set-config -g db_host mariadb" +
-		" && bench set-config -gp db_port 3306" +
+		dbConfigCmd +
 		" && bench set-config -g redis_cache redis://redis-cache:6379" +
 		" && bench set-config -g redis_queue redis://redis-queue:6379" +
 		" && bench set-config -g redis_socketio redis://redis-queue:6379" +
@@ -473,10 +520,18 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	// bench new-site
 	s.step(fmt.Sprintf("Creating site %q", siteName))
-	newSiteCmd := fmt.Sprintf(
-		"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
-		siteName, dbPassword, adminPassword,
-	)
+	var newSiteCmd string
+	if dbType == "postgres" {
+		newSiteCmd = fmt.Sprintf(
+			"cd /workspace/frappe-bench && bench new-site %s --db-type postgres --db-root-username postgres --db-root-password %s --admin-password %s",
+			siteName, dbPassword, adminPassword,
+		)
+	} else {
+		newSiteCmd = fmt.Sprintf(
+			"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
+			siteName, dbPassword, adminPassword,
+		)
+	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {
 		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}
@@ -606,6 +661,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		FrappeBranch:  frappeBranch,
 		AdminPassword: adminPassword,
 		DBPassword:    dbPassword,
+		DBType:        dbType,
 		SiteName:      siteName,
 		Apps:          apps,
 		ProxyHost:     resolvedProxyHost,
@@ -637,7 +693,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		fmt.Printf("  Site:          %s\n", siteName)
 	}
 	fmt.Printf("  Admin:         administrator / %s\n", adminPassword)
-	fmt.Printf("  DB root:       %s\n", dbPassword)
+	fmt.Printf("  DB (%s): root / %s\n", dbType, dbPassword)
 	if len(apps) > 0 {
 		fmt.Printf("  Apps:          %v\n", apps)
 	}

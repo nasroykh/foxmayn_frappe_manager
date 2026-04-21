@@ -1,4 +1,17 @@
 services:
+{{- if eq .DBType "postgres"}}
+  postgres:
+    image: docker.io/postgres:18
+    environment:
+      POSTGRES_PASSWORD: "{{.DBRootPassword}}"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+{{- else}}
   mariadb:
     image: docker.io/mariadb:11.8
     command:
@@ -7,15 +20,16 @@ services:
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
     environment:
-      MYSQL_ROOT_PASSWORD: "{{.MariaDBRootPassword}}"
+      MYSQL_ROOT_PASSWORD: "{{.DBRootPassword}}"
       MARIADB_AUTO_UPGRADE: 1
     volumes:
       - mariadb-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mariadb", "-u", "root", "-p{{.MariaDBRootPassword}}", "-e", "SELECT 1"]
+      test: ["CMD", "mariadb", "-u", "root", "-p{{.DBRootPassword}}", "-e", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 10
+{{- end}}
 
   redis-cache:
     image: docker.io/redis:alpine
@@ -35,8 +49,13 @@ services:
     ports:
       - "{{.WebPort}}:8000"
     depends_on:
+{{- if eq .DBType "postgres"}}
+      postgres:
+        condition: service_healthy
+{{- else}}
       mariadb:
         condition: service_healthy
+{{- end}}
     restart: unless-stopped
     networks:
       default: {}
@@ -133,7 +152,11 @@ services:
     restart: unless-stopped
 
 volumes:
+{{- if eq .DBType "postgres"}}
+  postgres-data:
+{{- else}}
   mariadb-data:
+{{- end}}
   pip-cache:
   yarn-cache:
 

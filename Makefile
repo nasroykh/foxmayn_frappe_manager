@@ -13,7 +13,9 @@ LDFLAGS := -s -w \
 	-X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Commit=$(COMMIT) \
 	-X github.com/nasroykh/foxmayn_frappe_manager/internal/version.Date=$(DATE)
 
-.PHONY: build install clean test tidy vet fmt help \
+.DEFAULT_GOAL := ship
+
+.PHONY: build install ship clean test tidy vet fmt help \
         skills-init skills-init-claude skills-init-cursor skills-init-agent
 
 ## build: compile binary to ./bin/ffm
@@ -25,6 +27,9 @@ build:
 install:
 	go install -ldflags "$(LDFLAGS)" $(CMD_PATH)
 	@mkdir -p ~/.config/ffm/
+
+## ship: tidy deps, build, and install in one step
+ship: tidy build install
 
 ## test: run all tests
 test:

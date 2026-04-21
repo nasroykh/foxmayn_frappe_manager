@@ -48,7 +48,7 @@ ffm update
 
 Each dev bench has:
 - A directory at `~/frappe/<name>/` with `docker-compose.yml`, `Dockerfile`, `workspace/`, and `.devcontainer/`
-- 4 Docker containers: `frappe` (app + honcho dev server), `mariadb`, `redis-cache`, `redis-queue`
+- 4 Docker containers: `frappe` (app + honcho dev server), `mariadb` or `postgres`, `redis-cache`, `redis-queue`
 - Site name: `<name>.localhost` (routed via shared Traefik proxy)
 - Admin: `administrator / admin` (default)
 - Tools in container: zsh + zinit + starship + Go + ffc + pnpm + Claude Code + 60 Frappe skills
@@ -57,7 +57,7 @@ Each dev bench has:
 ### Production mode (`--mode prod`)
 
 Each prod bench has:
-- 7+ Docker containers: `frappe` (gunicorn via `bench serve`), `socketio`, `worker-long`, `worker-short`, `scheduler`, `mariadb`, `redis-cache`, `redis-queue`
+- 7+ Docker containers: `frappe` (gunicorn via `bench serve`), `socketio`, `worker-long`, `worker-short`, `scheduler`, `mariadb` or `postgres`, `redis-cache`, `redis-queue`
 - Minimal Docker image (no dev tools)
 - Site name = public domain (e.g. `erp.example.com`)
 - Automatic Let's Encrypt SSL via Traefik (`websecure` entrypoint + ACME HTTP-01)
@@ -75,11 +75,14 @@ Each prod bench has:
 ### Creating a bench
 
 ```bash
-# Interactive form (choose mode, version + apps)
+# Interactive form (choose mode, DB engine, version + apps)
 ffm create mybench
 
 # Dev bench — explicit flags
 ffm create mybench --frappe-branch version-16 --apps erpnext --apps hrms
+
+# Dev bench with PostgreSQL (experimental)
+ffm create mybench --db-type postgres
 
 # Production bench — basic
 ffm create myprod --mode prod --domain erp.example.com \
@@ -88,6 +91,10 @@ ffm create myprod --mode prod --domain erp.example.com \
 # Production bench — no SSL (handle TLS externally)
 ffm create myprod --mode prod --domain erp.example.com \
     --admin-password MyStr0ngPass --no-ssl
+
+# Production bench with PostgreSQL
+ffm create myprod --mode prod --domain erp.example.com \
+    --admin-password MyStr0ngPass --acme-email admin@example.com --db-type postgres
 
 # Dev bench with a custom/private app
 ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
@@ -106,7 +113,7 @@ ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
 ffm list          # or: ffm ls
 ```
 
-Shows all benches with live status (running/stopped), mode (dev/prod), port, domain URL, and Frappe branch.
+Shows all benches with live status (running/stopped), mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.
 
 ### Bench status
 
@@ -114,7 +121,7 @@ Shows all benches with live status (running/stopped), mode (dev/prod), port, dom
 ffm status mybench
 ```
 
-Shows mode, per-container status, credentials, ports, URLs, and installed apps.
+Shows mode, DB engine + root password, per-container status, credentials, ports, URLs, and installed apps.
 
 ### Lifecycle (start / stop / restart)
 
@@ -350,13 +357,13 @@ code ~/frappe/mybench
 
 ## Credentials (Defaults — Dev)
 
-| What         | Value                     |
-| ------------ | ------------------------- |
-| Site admin   | `administrator` / `admin` |
-| MariaDB root | `root` / `ffm123456`      |
-| Site name    | `<bench-name>.localhost`  |
+| What         | Value                                           |
+| ------------ | ----------------------------------------------- |
+| Site admin   | `administrator` / `admin`                       |
+| DB root      | `root` / `ffm123456` (MariaDB or PostgreSQL)    |
+| Site name    | `<bench-name>.localhost`                        |
 
-Override during creation with `--admin-password` and `--db-password`.
+Override during creation with `--admin-password`, `--db-password`, and `--db-type`.
 
 **Production:** `--admin-password` is required and must not be `admin`.
 

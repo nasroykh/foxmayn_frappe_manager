@@ -25,13 +25,15 @@ type ComposeData struct {
 	// Name is the bench name, used as the Traefik router/service identifier.
 	Name string
 	// Mode is "dev" or "prod". Selects which template pair to render.
-	Mode                string
-	BenchDir            string
-	WebPort             int
-	WebPortEnd          int // dev only: upper end of port range
-	SocketIOPort        int
-	SocketIOPortEnd     int // dev only: upper end of port range
-	MariaDBRootPassword string
+	Mode            string
+	BenchDir        string
+	WebPort         int
+	WebPortEnd      int // dev only: upper end of port range
+	SocketIOPort    int
+	SocketIOPortEnd int // dev only: upper end of port range
+	// DBType is "mariadb" or "postgres". Controls which database service is rendered.
+	DBType         string
+	DBRootPassword string
 	// ForwardSSHAgent, when true, mounts the host SSH agent socket into the
 	// frappe container so that SSH-URL private repos work during bench get-app.
 	// Dev mode only.

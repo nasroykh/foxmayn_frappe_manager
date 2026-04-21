@@ -46,16 +46,17 @@ func runList() error {
 	domainStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
 
-	header := fmt.Sprintf("%-20s  %-5s  %-10s  %-8s  %-30s  %s",
+	header := fmt.Sprintf("%-20s  %-5s  %-7s  %-10s  %-8s  %-30s  %s",
 		headerStyle.Render("NAME"),
 		headerStyle.Render("MODE"),
+		headerStyle.Render("DB"),
 		headerStyle.Render("STATUS"),
 		headerStyle.Render("PORT"),
 		headerStyle.Render("DOMAIN"),
 		headerStyle.Render("BRANCH"),
 	)
 	fmt.Println(header)
-	fmt.Println(strings.Repeat("─", 96))
+	fmt.Println(strings.Repeat("─", 104))
 
 	devBenchExists := false
 	for _, b := range benches {
@@ -75,6 +76,11 @@ func runList() error {
 			modeStr = "prod"
 		}
 
+		dbStr := "maria"
+		if b.IsPostgres() {
+			dbStr = "pg"
+		}
+
 		var domainRendered string
 		if b.IsProd() {
 			d := b.ProxyHost
@@ -91,9 +97,10 @@ func runList() error {
 			}
 		}
 
-		fmt.Printf("%-20s  %-5s  %-10s  %-8d  %-30s  %s\n",
+		fmt.Printf("%-20s  %-5s  %-7s  %-10s  %-8d  %-30s  %s\n",
 			nameStyle.Render(b.Name),
 			dimStyle.Render(modeStr),
+			dimStyle.Render(dbStr),
 			statusRendered,
 			b.WebPort,
 			domainRendered,

@@ -64,7 +64,7 @@ func runStatus(name string) error {
 	label("branch", b.FrappeBranch)
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
 	if b.DBPassword != "" {
-		label("db root", b.DBPassword)
+		label("database", fmt.Sprintf("%s (root / %s)", b.DBEngine(), b.DBPassword))
 	}
 	if len(b.Apps) > 0 {
 		label("apps", strings.Join(b.Apps, ", "))

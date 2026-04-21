@@ -167,6 +167,7 @@ func runRecreate(name string, force, reallocatePorts bool, githubToken string, p
 		apps,
 		b.AdminPassword,
 		b.DBPassword,
+		b.DBEngine(),
 		githubToken,
 		proxyPortInt,
 		proxyHostStr,

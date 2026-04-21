@@ -41,11 +41,12 @@ internal/
                                 PersistentPreRunE runs update check on every command
     create.go                 → multi-step bench provisioning pipeline with auto-rollback;
                                 supports --mode dev (default) and --mode prod;
-                                interactive form (runCreateFormFull) asks mode first,
-                                then shows dev or prod follow-up fields
+                                supports --db-type mariadb (default) and --db-type postgres;
+                                interactive form (runCreateFormFull) asks mode first, then DB
+                                engine, then shows dev or prod follow-up fields
     delete.go                 → teardown with huh confirmation prompt (aliases: rm, remove)
     list.go                   → table output with live docker status via lipgloss;
-                                shows MODE column (dev/prod) and domain for prod benches
+                                shows MODE (dev/prod), DB (maria/pg), and domain columns
     start.go                  → docker compose up + (dev only) skill install + dev server start;
                                 prod: compose command: entries run services automatically
     stop.go                   → docker compose stop
@@ -54,7 +55,7 @@ internal/
     shell.go                  → interactive docker exec: zsh for dev, bash for prod;
                                 --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming
-    status.go                 → per-container status + credentials display; shows mode + domain
+    status.go                 → per-container status + credentials display; shows mode, DB engine, domain
     ffc.go                    → generate API keys + write ffc config inside container (dev only)
     proxy.go                  → ffm proxy subcommand group: start / stop / status
     setproxy.go               → configure socketio_port / use_ssl / host_name inside the
@@ -79,12 +80,15 @@ internal/
     port.go                   → port allocation: webBase=8000, socketIOBase=9000, step=10
     templates/
       dev/
-        docker-compose.yml.tmpl → 4-service dev compose (frappe+honcho, mariadb, redis×2)
+        docker-compose.yml.tmpl → 4-service dev compose (frappe+honcho, mariadb OR postgres,
+                                   redis×2); DB service is conditional on ComposeData.DBType
         Dockerfile.tmpl         → full dev image: zsh+zinit+starship+Go+ffc+pnpm+Claude Code
       prod/
         docker-compose.yml.tmpl → 7-service prod compose (gunicorn, socketio, workers,
-                                   scheduler, mariadb, redis×2); Traefik labels for domain
-                                   routing + Let's Encrypt; per-bench HTTP→HTTPS redirect
+                                   scheduler, mariadb OR postgres, redis×2); DB service,
+                                   healthcheck, and frappe depends_on are conditional on
+                                   ComposeData.DBType; Traefik labels for domain routing +
+                                   Let's Encrypt; per-bench HTTP→HTTPS redirect
         Dockerfile.tmpl         → minimal prod image (no dev tools)
 
   proxy/
@@ -100,7 +104,8 @@ internal/
 
   state/
     store.go                  → JSON-file state store (~/.config/ffm/benches.json);
-                                Bench struct with Mode/Domain/IsProd()/IsDev();
+                                Bench struct with Mode/Domain/DBType/IsProd()/IsDev()/
+                                DBEngine()/IsPostgres();
                                 Store with Load/Save/Add/Remove/Get/Update
 
   version/
@@ -243,6 +248,7 @@ func (r *Runner) Build() error {
 | `Logs(follow, service)`                                | `docker compose logs [-f] [service]`                 |
 | `PS(format)`                                           | `docker compose ps [--format X]`                     |
 | `WaitForMariaDB(pw, timeout, writer)`                  | Polls until MariaDB accepts connections              |
+| `WaitForPostgres(pw, timeout, writer)`                 | Polls until PostgreSQL accepts connections (`pg_isready`) |
 | `ConfigureGitHubToken(token)` / `CleanupGitHubToken()` | Temp git credential helper                           |
 | `GenerateAdminAPIKeys(siteName)`                       | Runs bench execute + parses JSON API keys            |
 
@@ -261,6 +267,8 @@ type Bench struct {
     FrappeBranch  string    `json:"frappe_branch"`
     AdminPassword string    `json:"admin_password"`
     DBPassword    string    `json:"db_password"`
+    // DBType is "mariadb" or "postgres". Empty is treated as "mariadb" (backward compatibility).
+    DBType        string    `json:"db_type,omitempty"`
     SiteName      string    `json:"site_name"`
     Apps          []string  `json:"apps"`
     ProxyHost     string    `json:"proxy_host,omitempty"`
@@ -271,11 +279,13 @@ type Bench struct {
     CreatedAt     time.Time `json:"created_at"`
 }
 
-func (b Bench) IsProd() bool { return b.Mode == "prod" }
-func (b Bench) IsDev() bool  { return b.Mode != "prod" }
+func (b Bench) IsProd() bool    { return b.Mode == "prod" }
+func (b Bench) IsDev() bool     { return b.Mode != "prod" }
+func (b Bench) DBEngine() string { /* returns "postgres" or "mariadb"; empty = "mariadb" */ }
+func (b Bench) IsPostgres() bool { return b.DBEngine() == "postgres" }
 ```
 
-Empty `Mode` is treated as `"dev"` for backward compatibility with existing state files.
+Empty `Mode` is treated as `"dev"` and empty `DBType` is treated as `"mariadb"` for backward compatibility with existing state files.
 
 ### Store operations
 
@@ -313,17 +323,18 @@ internal/bench/templates/
 
 ```go
 type ComposeData struct {
-    Name                string   // bench name, used as Traefik router ID
-    Mode                string   // "dev" or "prod"
-    BenchDir            string
-    WebPort             int      // first port in the range (e.g. 8000)
-    WebPortEnd          int      // last port in range (WebPort + 5); dev only
-    SocketIOPort        int      // first port (e.g. 9000)
-    SocketIOPortEnd     int      // SocketIOPort + 5; dev only
-    MariaDBRootPassword string
-    ForwardSSHAgent     bool     // dev only: mount SSH_AUTH_SOCK into container
-    Domain              string   // prod only: public domain for Traefik routing
-    NoSSL               bool     // prod only: skip TLS labels, route on HTTP entrypoint
+    Name            string   // bench name, used as Traefik router ID
+    Mode            string   // "dev" or "prod"
+    BenchDir        string
+    WebPort         int      // first port in the range (e.g. 8000)
+    WebPortEnd      int      // last port in range (WebPort + 5); dev only
+    SocketIOPort    int      // first port (e.g. 9000)
+    SocketIOPortEnd int      // SocketIOPort + 5; dev only
+    DBType          string   // "mariadb" or "postgres"; controls which DB service is rendered
+    DBRootPassword  string   // root password for whichever DB engine is selected
+    ForwardSSHAgent bool     // dev only: mount SSH_AUTH_SOCK into container
+    Domain          string   // prod only: public domain for Traefik routing
+    NoSSL           bool     // prod only: skip TLS labels, route on HTTP entrypoint
 }
 ```
 
@@ -339,18 +350,20 @@ bench.WriteDevcontainer(benchDir, data)   // → .devcontainer/devcontainer.json
 
 ### Prod compose services
 
-| Service        | Command                        | Notes                                                  |
-| -------------- | ------------------------------ | ------------------------------------------------------ |
-| `mariadb`      | default entrypoint             | Has healthcheck                                        |
-| `redis-cache`  | default                        |                                                        |
-| `redis-queue`  | default                        |                                                        |
-| `frappe`       | `bench serve --port 8000`      | gunicorn; depends_on mariadb (healthy); Traefik labels |
-| `socketio`     | `node apps/frappe/socketio.js` | Traefik labels for `/socket.io` path                   |
-| `worker-long`  | `bench worker --queue long`    | No ports                                               |
-| `worker-short` | `bench worker --queue short`   | No ports                                               |
-| `scheduler`    | `bench schedule`               | No ports                                               |
+| Service              | Command                        | Notes                                                           |
+| -------------------- | ------------------------------ | --------------------------------------------------------------- |
+| `mariadb` or `postgres` | default entrypoint          | Conditional on `{{.DBType}}`; has healthcheck                   |
+| `redis-cache`        | default                        |                                                                 |
+| `redis-queue`        | default                        |                                                                 |
+| `frappe`             | `bench serve --port 8000`      | gunicorn; depends_on db service (healthy); Traefik labels       |
+| `socketio`           | `node apps/frappe/socketio.js` | Traefik labels for `/socket.io` path                            |
+| `worker-long`        | `bench worker --queue long`    | No ports                                                        |
+| `worker-short`       | `bench worker --queue short`   | No ports                                                        |
+| `scheduler`          | `bench schedule`               | No ports                                                        |
 
 Traefik labels on `frappe` and `socketio` route `{{.Domain}}` on `websecure` (HTTPS) by default, or `web` (HTTP) when `{{.NoSSL}}` is true. Per-bench HTTP→HTTPS redirect is applied via labels (no global redirect, which would break dev benches).
+
+The `frappe` service's `depends_on` is conditional: `postgres: condition: service_healthy` when `{{.DBType}}` is `"postgres"`, otherwise `mariadb: condition: service_healthy`. The volume name (`postgres-data` vs `mariadb-data`) is also conditional.
 
 ## Config Paths
 
@@ -443,9 +456,9 @@ func runCreate(...) (createErr error) {
 | Build image           | same                 | same (smaller)                                           |
 | Bench init            | + skills copy        | base only (no skills in prod image)                      |
 | Up                    | same                 | same                                                     |
-| Wait MariaDB          | same                 | same                                                     |
-| Configure site        | socketio_port=9000   | socketio_port=443 (ssl) or 80 (no-ssl)                   |
-| New site              | same                 | same                                                     |
+| Wait DB               | WaitForMariaDB or WaitForPostgres (based on --db-type) | same              |
+| Configure site        | db_host + db_port set per engine; socketio_port=9000 | db_host + db_port set per engine; socketio_port=443 (ssl) or 80 (no-ssl) |
+| New site              | `--mariadb-root-password` (mariadb) or `--db-type postgres --db-root-username postgres` (postgres) | same |
 | **Developer mode**    | enabled              | skipped                                                  |
 | **Host name**         | only if --proxy-host | always set to https/http://domain                        |
 | Install apps          | same                 | same                                                     |
@@ -548,6 +561,8 @@ Both share `newerThan()` and `parseSemver()` helpers.
 ## Build & Release
 
 ```bash
+make           # → tidy + build + install (default goal)
+make ship      # → same as above explicitly (tidy → build → install)
 make build     # → ./bin/ffm with version ldflags
 make install   # → $GOPATH/bin/ffm + creates ~/.config/ffm/
 make vet       # → go vet ./...
@@ -584,7 +599,7 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 5. If behavior differs by mode, check `b.IsProd()` / `b.IsDev()` after `store.Get(name)`
 6. If it modifies compose or Dockerfile templates, edit `internal/bench/templates/dev/` or `prod/`
 7. If it touches config paths, update `internal/config/paths.go`
-8. Run `make vet && make fmt && make build` to verify
+8. Run `make ship` (or `make vet && make fmt && make build`) to verify
 9. Update CLAUDE.md and the skill files under `.agents/skills/`
 10. Run `make skills-init` to sync skills across agent directories
 
