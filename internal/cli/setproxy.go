@@ -155,12 +155,14 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 		// Prod: restore to creation-time defaults (socketio on 443, SSL on, host_name = https://<domain>).
 		globalCmd := "cd /workspace/frappe-bench" +
 			" && bench set-config -gp socketio_port 443" +
-			" && bench set-config -gp use_ssl 1"
+			" && bench set-config -gp use_ssl 1" +
+			fmt.Sprintf(" && bench set-config -g socketio_frappe_url %s", socketioFrappeURL("prod"))
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", globalCmd); err != nil {
 			return fmt.Errorf("reset global config: %w\n%s", err, out)
 		}
-		fmt.Println("  ✓ socketio_port = 443")
-		fmt.Println("  ✓ use_ssl       = 1")
+		fmt.Println("  ✓ socketio_port       = 443")
+		fmt.Println("  ✓ use_ssl             = 1")
+		fmt.Printf("  ✓ socketio_frappe_url = %s\n", socketioFrappeURL("prod"))
 
 		hostName := "https://" + b.Domain
 		siteCmd := fmt.Sprintf(
@@ -191,14 +193,16 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	globalCmd := fmt.Sprintf(
 		"cd /workspace/frappe-bench"+
 			" && bench set-config -gp socketio_port %d"+
-			" && bench set-config -gp use_ssl 0",
-		sio,
+			" && bench set-config -gp use_ssl 0"+
+			" && bench set-config -g socketio_frappe_url %s",
+		sio, socketioFrappeURL("dev"),
 	)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", globalCmd); err != nil {
 		return fmt.Errorf("reset global config: %w\n%s", err, out)
 	}
-	fmt.Printf("  ✓ socketio_port = %d\n", sio)
-	fmt.Println("  ✓ use_ssl       = 0")
+	fmt.Printf("  ✓ socketio_port       = %d\n", sio)
+	fmt.Println("  ✓ use_ssl             = 0")
+	fmt.Printf("  ✓ socketio_frappe_url = %s\n", socketioFrappeURL("dev"))
 
 	siteCmd := fmt.Sprintf(
 		"cd /workspace/frappe-bench && bench --site %s set-config host_name http://%s",

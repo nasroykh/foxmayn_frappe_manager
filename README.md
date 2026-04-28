@@ -266,7 +266,7 @@ ffm proxy status   # show status + dashboard URL
 
 ### `ffm set-proxy [name]`
 
-Configures a bench (dev or prod) for an external reverse proxy (Caddy, Nginx, etc.). Sets `socketio_port`, `use_ssl`, and `host_name` inside the Frappe container.
+Configures a bench (dev or prod) for an external reverse proxy (Caddy, Nginx, etc.). Sets `socketio_port`, `use_ssl`, `host_name`, and `socketio_frappe_url` inside the Frappe container.
 
 - **Dev**: dev server restarts automatically
 - **Prod**: prints a reminder to run `ffm restart <name>` to apply changes to all services
@@ -280,8 +280,8 @@ ffm set-proxy myprod  --host erp.example.com
 ffm set-proxy mybench --port 80 --host frappe.example.com
 
 # Reset to direct-access defaults
-#   dev  → socketio_port 9000, use_ssl 0, host_name http://<name>.localhost
-#   prod → socketio_port 443,  use_ssl 1, host_name https://<domain>
+#   dev  → socketio_port <allocated>, use_ssl 0, host_name http://<name>.localhost, socketio_frappe_url http://127.0.0.1:8000
+#   prod → socketio_port 443,          use_ssl 1, host_name https://<domain>,       socketio_frappe_url http://frappe:8000
 ffm set-proxy mybench --reset
 ffm set-proxy myprod  --reset
 

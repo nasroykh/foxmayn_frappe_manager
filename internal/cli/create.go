@@ -510,7 +510,8 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		" && bench set-config -g redis_cache redis://redis-cache:6379" +
 		" && bench set-config -g redis_queue redis://redis-queue:6379" +
 		" && bench set-config -g redis_socketio redis://redis-queue:6379" +
-		fmt.Sprintf(" && bench set-config -gp socketio_port %d", socketIOPortCfg)
+		fmt.Sprintf(" && bench set-config -gp socketio_port %d", socketIOPortCfg) +
+		fmt.Sprintf(" && bench set-config -g socketio_frappe_url %s", socketioFrappeURL(mode))
 	if (mode == "prod" && !noSSL) || proxyPort == 443 {
 		configCmd += " && bench set-config -gp use_ssl 1"
 	}
@@ -713,6 +714,13 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 // setupFfcConfig generates Frappe API keys via Python inside the container and
 // writes ~/.config/ffc/config.yaml. No HTTP server needs to be running.
+func socketioFrappeURL(mode string) string {
+	if mode == "prod" {
+		return "http://frappe:8000"
+	}
+	return "http://127.0.0.1:8000"
+}
+
 func setupFfcConfig(runner *bench.Runner, benchName, siteName string) error {
 	keys, err := runner.GenerateAdminAPIKeys(siteName)
 	if err != nil {
