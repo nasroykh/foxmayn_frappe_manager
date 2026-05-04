@@ -459,10 +459,24 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		}
 	}
 
-	// Start containers
-	s.step("Starting containers (docker compose up)")
-	if err := runner.Up(); err != nil {
-		return fmt.Errorf("docker compose up: %w", err)
+	// Start containers.
+	// Prod uses a two-phase start: bring up only the DB + redis + frappe tier
+	// first so that the scheduler/worker containers don't start (and crash-loop
+	// on missing app modules) before apps are installed.
+	if mode == "prod" {
+		dbService := "mariadb"
+		if dbType == "postgres" {
+			dbService = "postgres"
+		}
+		s.step("Starting core services (DB, redis, frappe)")
+		if err := runner.UpServices(dbService, "redis-cache", "redis-queue", "frappe"); err != nil {
+			return fmt.Errorf("docker compose up (core services): %w", err)
+		}
+	} else {
+		s.step("Starting containers (docker compose up)")
+		if err := runner.Up(); err != nil {
+			return fmt.Errorf("docker compose up: %w", err)
+		}
 	}
 
 	// Wait for database
@@ -628,6 +642,16 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if out, err := runner.ExecSilent("frappe", "bash", "-c",
 		"cd /workspace/frappe-bench && bench build"); err != nil {
 		return fmt.Errorf("bench build: %w\n%s", err, out)
+	}
+
+	// Prod phase 2: start the remaining services (socketio, workers, scheduler)
+	// now that all apps are installed and assets are built. They can now import
+	// app modules without crashing.
+	if mode == "prod" {
+		s.step("Starting remaining services (socketio, workers, scheduler)")
+		if err := runner.Up(); err != nil {
+			return fmt.Errorf("docker compose up (remaining services): %w", err)
+		}
 	}
 
 	// Dev only: start dev server + wait for HTTP + setup ffc

@@ -105,6 +105,15 @@ func (r *Runner) Up() error {
 	return r.withOutput(r.compose("up", "-d")).Run()
 }
 
+// UpServices starts only the named services (and their declared depends_on
+// dependencies) detached. Used during prod bench creation to start just the DB
+// + redis + frappe tier before apps are installed, preventing scheduler and
+// worker containers from crash-looping on missing app modules.
+func (r *Runner) UpServices(services ...string) error {
+	args := append([]string{"up", "-d"}, services...)
+	return r.withOutput(r.compose(args...)).Run()
+}
+
 // Down stops and removes containers and volumes.
 // --remove-orphans ensures containers from a previous compose config revision
 // are also removed, preventing stale containers from blocking a re-create.
