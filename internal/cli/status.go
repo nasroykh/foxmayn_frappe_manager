@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
@@ -71,6 +72,10 @@ func runStatus(name string) error {
 	}
 	label("web port", fmt.Sprintf("%d", b.WebPort))
 	label("socketio", fmt.Sprintf("%d", b.SocketIOPort))
+	if !b.CreatedAt.IsZero() && time.Since(b.CreatedAt) > 7*24*time.Hour {
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		fmt.Printf("  %s\n", hintStyle.Render("Tip: run 'ffm clean-logs "+name+"' to purge old log table rows (Error Log, Version, Access Log, …)"))
+	}
 	fmt.Println()
 
 	runner := bench.NewRunner(b.Name, b.Dir, false)

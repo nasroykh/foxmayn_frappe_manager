@@ -14,6 +14,10 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
+      - --innodb-buffer-pool-size=256M
+      - --innodb-flush-method=O_DIRECT
+      - --tmp-table-size=64M
+      - --max-heap-table-size=64M
     environment:
       MYSQL_ROOT_PASSWORD: "{{.DBRootPassword}}"
       MARIADB_AUTO_UPGRADE: 1

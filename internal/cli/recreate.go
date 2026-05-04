@@ -161,6 +161,12 @@ func runRecreate(name string, force, reallocatePorts bool, githubToken string, p
 		return fmt.Errorf("update state: %w", err)
 	}
 
+	// New tuning fields are not stored in state; recreate uses sensible defaults.
+	mariadbBufferPool := ""
+	if b.IsProd() {
+		mariadbBufferPool = "1G"
+	}
+
 	return runCreate(
 		b.Name,
 		b.FrappeBranch,
@@ -175,6 +181,13 @@ func runRecreate(name string, force, reallocatePorts bool, githubToken string, p
 		b.Domain,
 		noSSL,
 		acmeEmail,
+		mariadbBufferPool,
+		2,     // gunicornWorkers default
+		1,     // workerLongCount default
+		1,     // workerShortCount default
+		"",    // redisCacheMaxmem → defaults in runCreate
+		"",    // redisQueueMaxmem → defaults in runCreate
+		false, // slowQueryLog
 		copts,
 	)
 }

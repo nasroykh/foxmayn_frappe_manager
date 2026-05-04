@@ -44,6 +44,29 @@ type ComposeData struct {
 	// NoSSL, when true, routes on HTTP entrypoint instead of websecure.
 	// Prod mode only.
 	NoSSL bool
+	// MariaDBBufferPool sets the InnoDB buffer pool size for the MariaDB
+	// service (e.g. "1G", "2G"). Prod mode only; dev uses a hardcoded 256M.
+	// Empty is treated as "1G".
+	MariaDBBufferPool string
+	// GunicornWorkers is the number of gunicorn worker processes.
+	// Prod mode only. Zero is treated as 2.
+	GunicornWorkers int
+	// RedisCacheMaxmem is the maxmemory limit for redis-cache (e.g. "512mb").
+	// Prod mode only. Empty is treated as "512mb".
+	RedisCacheMaxmem string
+	// RedisQueueMaxmem is the maxmemory limit for redis-queue.
+	// Uses noeviction so jobs are never silently dropped.
+	// Prod mode only. Empty is treated as "512mb".
+	RedisQueueMaxmem string
+	// WorkerLongCount is the replica count for the long-queue worker.
+	// Prod mode only. Zero is treated as 1.
+	WorkerLongCount int
+	// WorkerShortCount is the replica count for the short-queue worker.
+	// Prod mode only. Zero is treated as 1.
+	WorkerShortCount int
+	// SlowQueryLog enables MariaDB slow query logging (MariaDB + prod only).
+	// runCreate must create <benchDir>/mysql-logs/ when this is true.
+	SlowQueryLog bool
 }
 
 // WriteCompose renders the compose template into the bench directory.

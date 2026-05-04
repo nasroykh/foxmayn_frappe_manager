@@ -49,6 +49,7 @@ create, start, stop, and delete Frappe development benches with a single command
 		newLogsCmd(),
 		newShellCmd(),
 		newStatusCmd(),
+		newCleanLogsCmd(),
 		newProxyCmd(),
 		newSetProxyCmd(),
 		newFfcCmd(),

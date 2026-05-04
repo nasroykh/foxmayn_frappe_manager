@@ -19,18 +19,25 @@ import (
 
 func newCreateCmd() *cobra.Command {
 	var (
-		frappeBranch  string
-		apps          []string
-		adminPassword string
-		dbPassword    string
-		dbType        string
-		githubToken   string
-		proxyPort     int
-		proxyHost     string
-		mode          string
-		domain        string
-		noSSL         bool
-		acmeEmail     string
+		frappeBranch      string
+		apps              []string
+		adminPassword     string
+		dbPassword        string
+		dbType            string
+		githubToken       string
+		proxyPort         int
+		proxyHost         string
+		mode              string
+		domain            string
+		noSSL             bool
+		acmeEmail         string
+		mariadbBufferPool string
+		gunicornWorkers   int
+		workerLongCount   int
+		workerShortCount  int
+		redisCacheMaxmem  string
+		redisQueueMaxmem  string
+		slowQueryLog      bool
 	)
 
 	cmd := &cobra.Command{
@@ -44,7 +51,7 @@ func newCreateCmd() *cobra.Command {
 
 			if !modeSet {
 				// No --mode flag: show full interactive form (asks dev or prod first).
-				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType); err != nil {
+				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType, &mariadbBufferPool, &gunicornWorkers); err != nil {
 					return err
 				}
 			} else if mode == "dev" && !branchSet && !appsSet {
@@ -53,7 +60,7 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 			}
-			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, dbType, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail, nil)
+			return runCreate(args[0], frappeBranch, apps, adminPassword, dbPassword, dbType, githubToken, proxyPort, proxyHost, mode, domain, noSSL, acmeEmail, mariadbBufferPool, gunicornWorkers, workerLongCount, workerShortCount, redisCacheMaxmem, redisQueueMaxmem, slowQueryLog, nil)
 		},
 	}
 
@@ -69,6 +76,13 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&domain, "domain", "", "Public domain for production (required for --mode prod), e.g. erp.example.com")
 	cmd.Flags().BoolVar(&noSSL, "no-ssl", false, "Skip Let's Encrypt SSL in production (handle TLS externally via Caddy/Nginx)")
 	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Email for Let's Encrypt certificates (required on first --mode prod bench with SSL)")
+	cmd.Flags().StringVar(&mariadbBufferPool, "mariadb-buffer-pool", "1G", "InnoDB buffer pool size for MariaDB (e.g. 512M, 1G, 2G, 4G). Prod only; dev uses 256M.")
+	cmd.Flags().IntVar(&gunicornWorkers, "gunicorn-workers", 2, "Number of gunicorn worker processes (prod only). Rule of thumb: 2*CPU+1.")
+	cmd.Flags().IntVar(&workerLongCount, "worker-long-replicas", 1, "Number of long-queue background worker replicas (prod only).")
+	cmd.Flags().IntVar(&workerShortCount, "worker-short-replicas", 1, "Number of short-queue background worker replicas (prod only).")
+	cmd.Flags().StringVar(&redisCacheMaxmem, "redis-cache-maxmem", "512mb", "Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction.")
+	cmd.Flags().StringVar(&redisQueueMaxmem, "redis-queue-maxmem", "512mb", "Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped.")
+	cmd.Flags().BoolVar(&slowQueryLog, "slow-query-log", false, "Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.")
 
 	return cmd
 }
@@ -131,7 +145,7 @@ func runCreateForm(branch *string, apps *[]string, dbType *string) error {
 
 // runCreateFormFull is the interactive form shown when --mode is not passed.
 // It asks dev or prod first, then shows the relevant follow-up fields.
-func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType *string) error {
+func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType, mariadbBufferPool *string, gunicornWorkers *int) error {
 	*mode = "dev"
 	*branch = "version-15"
 	if *dbType == "" {
@@ -158,7 +172,7 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 		return runCreateForm(branch, apps, dbType)
 	}
 
-	// Step 2 (prod): domain, SSL, branch, apps
+	// Step 2 (prod): domain, SSL, branch, apps, DB tuning
 	versionOptions := []huh.Option[string]{
 		huh.NewOption("Frappe v15 (stable)", "version-15"),
 		huh.NewOption("Frappe v16 (latest)", "version-16"),
@@ -166,6 +180,25 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 	appOptions := []huh.Option[string]{
 		huh.NewOption("ERPNext", "erpnext"),
 		huh.NewOption("HRMS", "hrms"),
+	}
+	bufferPoolOptions := []huh.Option[string]{
+		huh.NewOption("512M  (4 GB RAM server)", "512M"),
+		huh.NewOption("1G    (8 GB RAM server)", "1G"),
+		huh.NewOption("2G    (16 GB RAM server)", "2G"),
+		huh.NewOption("4G    (32 GB RAM server)", "4G"),
+		huh.NewOption("8G    (64 GB+ RAM server)", "8G"),
+	}
+	if *mariadbBufferPool == "" {
+		*mariadbBufferPool = "1G"
+	}
+	gunicornOptions := []huh.Option[int]{
+		huh.NewOption("1  (minimal / testing)", 1),
+		huh.NewOption("2  (2–4 CPU — default)", 2),
+		huh.NewOption("4  (8 CPU)", 4),
+		huh.NewOption("8  (16+ CPU)", 8),
+	}
+	if *gunicornWorkers == 0 {
+		*gunicornWorkers = 2
 	}
 	var customAppsRaw string
 	savedEmail := readSavedAcmeEmail()
@@ -199,6 +232,16 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 					huh.NewOption("PostgreSQL 18  (experimental)", "postgres"),
 				).
 				Value(dbType),
+			huh.NewSelect[int]().
+				Title("Gunicorn worker processes").
+				Description("Rule of thumb: 2×CPU+1. More workers = more RAM usage.").
+				Options(gunicornOptions...).
+				Value(gunicornWorkers),
+			huh.NewSelect[string]().
+				Title("MariaDB buffer pool size").
+				Description("InnoDB buffer pool: set to ~50–70% of server RAM. Skipped for PostgreSQL.").
+				Options(bufferPoolOptions...).
+				Value(mariadbBufferPool),
 			huh.NewMultiSelect[string]().
 				Title("Additional apps to install").
 				Description("Space to toggle, enter to confirm. Leave empty for a bare Frappe bench.").
@@ -258,7 +301,7 @@ type createOpts struct {
 	fixedSocketIOPort int
 }
 
-func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, dbType, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail string, opts *createOpts) (createErr error) {
+func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPassword, dbType, githubToken string, proxyPort int, proxyHost string, mode, domain string, noSSL bool, acmeEmail, mariadbBufferPool string, gunicornWorkers, workerLongCount, workerShortCount int, redisCacheMaxmem, redisQueueMaxmem string, slowQueryLog bool, opts *createOpts) (createErr error) {
 	// Validate mode
 	if mode != "dev" && mode != "prod" {
 		return fmt.Errorf("invalid --mode %q: must be 'dev' or 'prod'", mode)
@@ -381,19 +424,49 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 
 	// Write compose file, Dockerfile, and (dev only) devcontainer config
 	s.step("Writing docker-compose.yml and Dockerfile")
+	if mariadbBufferPool == "" {
+		mariadbBufferPool = "1G"
+	}
+	if gunicornWorkers <= 0 {
+		gunicornWorkers = 2
+	}
+	if workerLongCount <= 0 {
+		workerLongCount = 1
+	}
+	if workerShortCount <= 0 {
+		workerShortCount = 1
+	}
+	if redisCacheMaxmem == "" {
+		redisCacheMaxmem = "512mb"
+	}
+	if redisQueueMaxmem == "" {
+		redisQueueMaxmem = "512mb"
+	}
 	data := bench.ComposeData{
-		Name:            name,
-		Mode:            mode,
-		BenchDir:        benchDir,
-		WebPort:         webPort,
-		WebPortEnd:      webPort + 5,
-		SocketIOPort:    socketIOPort,
-		SocketIOPortEnd: socketIOPort + 5,
-		DBType:          dbType,
-		DBRootPassword:  dbPassword,
-		ForwardSSHAgent: mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
-		Domain:          domain,
-		NoSSL:           noSSL,
+		Name:              name,
+		Mode:              mode,
+		BenchDir:          benchDir,
+		WebPort:           webPort,
+		WebPortEnd:        webPort + 5,
+		SocketIOPort:      socketIOPort,
+		SocketIOPortEnd:   socketIOPort + 5,
+		DBType:            dbType,
+		DBRootPassword:    dbPassword,
+		ForwardSSHAgent:   mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
+		Domain:            domain,
+		NoSSL:             noSSL,
+		MariaDBBufferPool: mariadbBufferPool,
+		GunicornWorkers:   gunicornWorkers,
+		WorkerLongCount:   workerLongCount,
+		WorkerShortCount:  workerShortCount,
+		RedisCacheMaxmem:  redisCacheMaxmem,
+		RedisQueueMaxmem:  redisQueueMaxmem,
+		SlowQueryLog:      slowQueryLog && mode == "prod" && dbType == "mariadb",
+	}
+	if data.SlowQueryLog {
+		if err := os.MkdirAll(filepath.Join(benchDir, "mysql-logs"), 0o755); err != nil {
+			return fmt.Errorf("create mysql-logs dir: %w", err)
+		}
 	}
 	if err := bench.WriteCompose(benchDir, data); err != nil {
 		return fmt.Errorf("render compose: %w", err)
