@@ -393,6 +393,16 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		fmt.Fprintln(os.Stderr, "\nCreate failed — cleaning up...")
 		composePath := filepath.Join(benchDir, "docker-compose.yml")
 		if _, statErr := os.Stat(composePath); statErr == nil {
+			// Dump DB container logs so the user can diagnose startup failures
+			// (e.g. bad MariaDB flags) before the containers are torn down.
+			dbService := "mariadb"
+			if dbType == "postgres" {
+				dbService = "postgres"
+			}
+			fmt.Fprintf(os.Stderr, "\n--- %s container logs ---\n", dbService)
+			fmt.Fprintln(os.Stderr, runner.LogsString(dbService))
+			fmt.Fprintln(os.Stderr, "--- end logs ---")
+
 			if downErr := runner.Down(true); downErr != nil && verbose {
 				fmt.Fprintf(os.Stderr, "  cleanup: docker compose down: %v\n", downErr)
 			}

@@ -28,7 +28,7 @@ services:
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
       - --innodb-buffer-pool-size={{.MariaDBBufferPool}}
-      - --innodb-log-capacity=256M
+      - --innodb-log-file-size=256M
       - --innodb-flush-log-at-trx-commit=2
       - --innodb-flush-method=O_DIRECT
       - --tmp-table-size=64M

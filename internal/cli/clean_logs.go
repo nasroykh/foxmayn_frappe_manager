@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -62,7 +61,26 @@ func runCleanLogs(name string, days int, dryRun, yes bool) error {
 		return err
 	}
 
+	if b.IsPostgres() {
+		return fmt.Errorf("clean-logs does not yet support PostgreSQL benches")
+	}
+
 	runner := bench.NewRunner(b.Name, b.Dir, verbose)
+
+	// Read the actual DB name from site_config.json inside the frappe container.
+	// Frappe stores db_name there; it may differ from the site name.
+	dbNameScript := fmt.Sprintf(
+		`import json,sys; print(json.load(open('/workspace/frappe-bench/sites/%s/site_config.json'))['db_name'])`,
+		b.SiteName,
+	)
+	dbName, err := runner.ExecSilent("frappe", "python3", "-c", dbNameScript)
+	if err != nil {
+		return fmt.Errorf("read site_config.json: %w\n%s", err, dbName)
+	}
+	dbName = strings.TrimSpace(dbName)
+	if dbName == "" {
+		return fmt.Errorf("could not determine db_name from site_config.json")
+	}
 
 	if !dryRun && !yes {
 		tableNames := make([]string, len(logTableColumns))
@@ -89,61 +107,47 @@ func runCleanLogs(name string, days int, dryRun, yes bool) error {
 		}
 	}
 
-	pyScript := buildCleanLogsScript(b.SiteName, days, dryRun)
-	encoded := base64.StdEncoding.EncodeToString([]byte(pyScript))
-	shellCmd := fmt.Sprintf("cd /workspace/frappe-bench && echo '%s' | base64 -d | python3", encoded)
+	total := 0
+	for _, pair := range logTableColumns {
+		table, col := pair[0], pair[1]
 
-	return runner.ExecOutputInDir("frappe", "/workspace/frappe-bench", "bash", "-c", shellCmd)
-}
+		countSQL := fmt.Sprintf(
+			"SELECT COUNT(*) FROM `%s`.`%s` WHERE `%s` < NOW() - INTERVAL %d DAY;",
+			dbName, table, col, days,
+		)
+		countOut, err := runner.ExecSilent("mariadb",
+			"mariadb", "-u", "root", "-p"+b.DBPassword, "-N", "-e", countSQL)
+		if err != nil {
+			fmt.Printf("  %s: skipped (%s)\n", table, strings.TrimSpace(countOut))
+			continue
+		}
 
-// buildCleanLogsScript returns a Python script that runs inside the frappe
-// container to count (dry-run) or delete log rows older than the given days.
-// Table names are backtick-quoted via chr(96) to avoid terminating Go raw strings.
-func buildCleanLogsScript(siteName string, days int, dryRun bool) string {
-	pairs := make([]string, len(logTableColumns))
-	for i, pair := range logTableColumns {
-		pairs[i] = fmt.Sprintf("(%q, %q)", pair[0], pair[1])
-	}
-	tableList := strings.Join(pairs, ", ")
+		count := 0
+		fmt.Sscanf(strings.TrimSpace(countOut), "%d", &count)
 
-	header := fmt.Sprintf(
-		"import frappe\nfrom frappe.utils import add_days, today\n\n"+
-			"frappe.init(site=%q)\nfrappe.connect()\n\n"+
-			"bt = chr(96)\ntables = [%s]\ncutoff = add_days(today(), -%d)\ntotal = 0\n",
-		siteName, tableList, days,
-	)
+		if dryRun {
+			fmt.Printf("  %-30s %d rows would be deleted\n", table+":", count)
+			total += count
+			continue
+		}
 
-	var body string
-	if dryRun {
-		body = "for table, col in tables:\n" +
-			"    try:\n" +
-			"        count = frappe.db.sql(\n" +
-			"            \"SELECT COUNT(*) FROM \" + bt + table + bt + \" WHERE \" + bt + col + bt + \" < %s\",\n" +
-			"            [cutoff]\n" +
-			"        )[0][0]\n" +
-			"        print(f\"  {table}: {count} rows would be deleted\")\n" +
-			"        total += count\n" +
-			"    except Exception as e:\n" +
-			"        print(f\"  {table}: skipped ({e})\")\n" +
-			"\nprint(f\"\\nTotal: {total} rows  (cutoff date: {cutoff})\")\n"
-	} else {
-		body = "for table, col in tables:\n" +
-			"    try:\n" +
-			"        count = frappe.db.sql(\n" +
-			"            \"SELECT COUNT(*) FROM \" + bt + table + bt + \" WHERE \" + bt + col + bt + \" < %s\",\n" +
-			"            [cutoff]\n" +
-			"        )[0][0]\n" +
-			"        frappe.db.sql(\n" +
-			"            \"DELETE FROM \" + bt + table + bt + \" WHERE \" + bt + col + bt + \" < %s\",\n" +
-			"            [cutoff]\n" +
-			"        )\n" +
-			"        frappe.db.commit()\n" +
-			"        print(f\"  {table}: deleted {count} rows\")\n" +
-			"        total += count\n" +
-			"    except Exception as e:\n" +
-			"        print(f\"  {table}: skipped ({e})\")\n" +
-			"\nprint(f\"\\nTotal: {total} rows deleted  (cutoff date: {cutoff})\")\n"
+		deleteSQL := fmt.Sprintf(
+			"DELETE FROM `%s`.`%s` WHERE `%s` < NOW() - INTERVAL %d DAY;",
+			dbName, table, col, days,
+		)
+		if out, err := runner.ExecSilent("mariadb",
+			"mariadb", "-u", "root", "-p"+b.DBPassword, "-e", deleteSQL); err != nil {
+			fmt.Printf("  %s: delete failed (%s)\n", table, strings.TrimSpace(out))
+			continue
+		}
+		fmt.Printf("  %-30s deleted %d rows\n", table+":", count)
+		total += count
 	}
 
-	return header + body + "frappe.destroy()\n"
+	action := "would be deleted"
+	if !dryRun {
+		action = "deleted"
+	}
+	fmt.Printf("\nTotal: %d rows %s  (older than %d days)\n", total, action, days)
+	return nil
 }

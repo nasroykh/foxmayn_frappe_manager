@@ -189,6 +189,15 @@ func (r *Runner) Logs(follow bool, service string) error {
 	return r.composeWithIO(args...).Run()
 }
 
+// LogsString captures and returns logs for a service without streaming to stdout.
+func (r *Runner) LogsString(service string) string {
+	args := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "logs"}, service)
+	cmd := exec.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	out, _ := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out))
+}
+
 // PS returns the raw output of docker compose ps.
 func (r *Runner) PS(format string) (string, error) {
 	args := []string{"ps"}
