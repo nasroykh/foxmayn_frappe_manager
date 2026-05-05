@@ -3,6 +3,7 @@ package bench
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -41,6 +42,9 @@ type ComposeData struct {
 	// Domain is the public domain for production benches (e.g. "erp.example.com").
 	// Prod mode only.
 	Domain string
+	// SiteName is the Frappe site name (e.g. "erp.example.com" for prod, "<name>.localhost" for dev).
+	// Prod mode only — written into wsgi.py to force single-site routing.
+	SiteName string
 	// NoSSL, when true, routes on HTTP entrypoint instead of websecure.
 	// Prod mode only.
 	NoSSL bool
@@ -121,6 +125,16 @@ func WriteDockerfile(benchDir string, data ComposeData) error {
 	defer f.Close()
 
 	return tmpl.Execute(f, data)
+}
+
+// WriteWsgiWrapper writes wsgi.py into benchDir for prod benches.
+// Gunicorn runs with --chdir /workspace/frappe-bench/sites so Frappe's module-level
+// _sites_path defaults correctly. This wrapper only forces _site so that any HTTP
+// Host header (including bare "localhost") resolves to the correct single site,
+// making localhost:PORT work in addition to the configured domain.
+func WriteWsgiWrapper(benchDir, siteName string) error {
+	content := fmt.Sprintf("import frappe.app as _a\n_a._site = %q\napplication = _a.application\n", siteName)
+	return os.WriteFile(filepath.Join(benchDir, "wsgi.py"), []byte(content), 0o644)
 }
 
 // WriteDevcontainer writes .devcontainer/devcontainer.json into the bench

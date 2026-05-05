@@ -34,6 +34,12 @@ func newRestartCmd() *cobra.Command {
 				if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{Mode: b.Mode, DBType: b.DBEngine()}); err != nil {
 					return fmt.Errorf("write Dockerfile: %w", err)
 				}
+				if b.IsProd() {
+					fmt.Printf("Updating wsgi.py for bench %q...\n", name)
+					if err := bench.WriteWsgiWrapper(b.Dir, b.SiteName); err != nil {
+						return fmt.Errorf("write wsgi.py: %w", err)
+					}
+				}
 				runner := bench.NewRunner(b.Name, b.Dir, verbose)
 				fmt.Printf("Rebuilding image for bench %q...\n", name)
 				if err := runner.Build(); err != nil {

@@ -464,6 +464,7 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		DBRootPassword:    dbPassword,
 		ForwardSSHAgent:   mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
 		Domain:            domain,
+		SiteName:          siteName,
 		NoSSL:             noSSL,
 		MariaDBBufferPool: mariadbBufferPool,
 		GunicornWorkers:   gunicornWorkers,
@@ -483,6 +484,11 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 	if err := bench.WriteDockerfile(benchDir, data); err != nil {
 		return fmt.Errorf("render dockerfile: %w", err)
+	}
+	if mode == "prod" {
+		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
+			return fmt.Errorf("render wsgi wrapper: %w", err)
+		}
 	}
 	if mode == "dev" {
 		if err := bench.WriteDevcontainer(benchDir, data); err != nil {
@@ -734,6 +740,15 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		s.step("Starting remaining services (socketio, workers, scheduler)")
 		if err := runner.Up(); err != nil {
 			return fmt.Errorf("docker compose up (remaining services): %w", err)
+		}
+	}
+
+	// Prod: wait for gunicorn to respond (localhost works because wsgi.py forces _site)
+	if mode == "prod" {
+		s.step("Waiting for web server to respond...")
+		url := fmt.Sprintf("http://localhost:%d", webPort)
+		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
 		}
 	}
 
