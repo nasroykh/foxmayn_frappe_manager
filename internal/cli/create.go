@@ -736,6 +736,22 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("bench build: %w\n%s", err, out)
 	}
 
+	// Prod: cycle gunicorn workers so they pick up newly installed app modules.
+	// Workers fork from the master before apps are installed, so their sys.path
+	// doesn't include new .pth entries added by pip/bench install-app. SIGHUP
+	// tells the master to gracefully replace workers with fresh ones.
+	if mode == "prod" {
+		s.step("Reloading gunicorn workers (picking up installed apps)")
+		if _, err := runner.ExecSilent("frappe", "bash", "-c", "kill -HUP 1"); err != nil && verbose {
+			fmt.Fprintf(os.Stderr, "  warning: gunicorn HUP: %v\n", err)
+		}
+		s.step("Waiting for web server to respond...")
+		url := fmt.Sprintf("http://localhost:%d", webPort)
+		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
+		}
+	}
+
 	// Prod phase 2: start the remaining services (socketio, workers, scheduler)
 	// now that all apps are installed and assets are built. They can now import
 	// app modules without crashing.
@@ -743,15 +759,6 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		s.step("Starting remaining services (socketio, workers, scheduler)")
 		if err := runner.Up(); err != nil {
 			return fmt.Errorf("docker compose up (remaining services): %w", err)
-		}
-	}
-
-	// Prod: wait for gunicorn to respond (localhost works because wsgi.py forces _site)
-	if mode == "prod" {
-		s.step("Waiting for web server to respond...")
-		url := fmt.Sprintf("http://localhost:%d", webPort)
-		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
-			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
 		}
 	}
 
