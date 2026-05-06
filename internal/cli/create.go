@@ -485,11 +485,6 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	if err := bench.WriteDockerfile(benchDir, data); err != nil {
 		return fmt.Errorf("render dockerfile: %w", err)
 	}
-	if mode == "prod" {
-		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
-			return fmt.Errorf("render wsgi wrapper: %w", err)
-		}
-	}
 	if mode == "dev" {
 		if err := bench.WriteDevcontainer(benchDir, data); err != nil {
 			return fmt.Errorf("render devcontainer: %w", err)
@@ -539,6 +534,14 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 	}
 	if _, err := os.Stat(filepath.Join(workspaceDir, "frappe-bench", "apps")); err != nil {
 		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s/frappe-bench", workspaceDir)
+	}
+
+	// Write wsgi.py after bench init so sites/ exists. Lives under the workspace
+	// bind mount — no extra volume entry needed in docker-compose.yml.
+	if mode == "prod" {
+		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
+			return fmt.Errorf("write wsgi.py: %w", err)
+		}
 	}
 
 	if mode == "dev" {

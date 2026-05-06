@@ -76,7 +76,6 @@ services:
     working_dir: /workspace/frappe-bench
     volumes:
       - ./workspace:/workspace
-      - ./wsgi.py:/workspace/frappe-bench/sites/wsgi.py:ro
       - pip-cache:/home/frappe/.cache/pip
       - yarn-cache:/home/frappe/.cache/yarn
     ports:

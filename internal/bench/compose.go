@@ -127,14 +127,16 @@ func WriteDockerfile(benchDir string, data ComposeData) error {
 	return tmpl.Execute(f, data)
 }
 
-// WriteWsgiWrapper writes wsgi.py into benchDir for prod benches.
-// Gunicorn runs with --chdir /workspace/frappe-bench/sites so Frappe's module-level
-// _sites_path defaults correctly. This wrapper only forces _site so that any HTTP
-// Host header (including bare "localhost") resolves to the correct single site,
-// making localhost:PORT work in addition to the configured domain.
+// WriteWsgiWrapper writes wsgi.py into the bench workspace at
+// <benchDir>/workspace/frappe-bench/sites/wsgi.py. It lives under the existing
+// ./workspace:/workspace bind mount so no extra volume entry is needed, and is
+// written after bench init (so the sites/ directory already exists). Gunicorn
+// runs with --chdir sites, making this file discoverable as "wsgi" module. It
+// forces _site so any Host header (including bare "localhost") resolves correctly.
 func WriteWsgiWrapper(benchDir, siteName string) error {
-	content := fmt.Sprintf("import frappe.app as _a\n_a._site = %q\napplication = _a.application\n", siteName)
-	return os.WriteFile(filepath.Join(benchDir, "wsgi.py"), []byte(content), 0o644)
+	content := fmt.Sprintf("import frappe.app as _a\n_a._site = %q\napplication = _a.application_with_statics()\n", siteName)
+	dest := filepath.Join(benchDir, "workspace", "frappe-bench", "sites", "wsgi.py")
+	return os.WriteFile(dest, []byte(content), 0o644)
 }
 
 // WriteDevcontainer writes .devcontainer/devcontainer.json into the bench
