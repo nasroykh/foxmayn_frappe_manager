@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,9 @@ func newRestartCmd() *cobra.Command {
 					fmt.Printf("Updating wsgi.py for bench %q...\n", name)
 					if err := bench.WriteWsgiWrapper(b.Dir, b.SiteName); err != nil {
 						return fmt.Errorf("write wsgi.py: %w", err)
+					}
+					if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
 					}
 				}
 				runner := bench.NewRunner(b.Name, b.Dir, verbose)

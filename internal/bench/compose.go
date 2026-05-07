@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -137,6 +138,26 @@ func WriteWsgiWrapper(benchDir, siteName string) error {
 	content := fmt.Sprintf("import frappe.app as _a\n_a._site = %q\napplication = _a.application_with_statics()\n", siteName)
 	dest := filepath.Join(benchDir, "workspace", "frappe-bench", "sites", "wsgi.py")
 	return os.WriteFile(dest, []byte(content), 0o644)
+}
+
+// PatchAuthenticateJs patches Frappe's realtime authenticate middleware so that
+// socket.io connections without an Origin header (same-origin requests where
+// browsers omit Origin on GET) are allowed instead of rejected with "Invalid
+// origin". The file is at a fixed path under the bind-mounted workspace, so the
+// patch survives container restarts. It must be re-applied after bench update.
+func PatchAuthenticateJs(benchDir string) error {
+	path := filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe",
+		"realtime", "middlewares", "authenticate.js")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	original := `if (get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
+	patched := `if (socket.request.headers.origin && get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
+	if !strings.Contains(string(content), original) {
+		return nil // already patched or file changed; leave it alone
+	}
+	return os.WriteFile(path, []byte(strings.Replace(string(content), original, patched, 1)), 0o644)
 }
 
 // WriteDevcontainer writes .devcontainer/devcontainer.json into the bench

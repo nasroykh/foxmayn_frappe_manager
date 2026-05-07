@@ -139,14 +139,18 @@ services:
       - "traefik.docker.network=ffm-proxy"
       - "traefik.http.routers.{{.Name}}-socketio.rule=Host(`{{.Domain}}`) && PathPrefix(`/socket.io`)"
       - "traefik.http.routers.{{.Name}}-socketio.entrypoints=web"
+      - "traefik.http.routers.{{.Name}}-socketio.middlewares={{.Name}}-socketio-origin"
       - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
+      - "traefik.http.middlewares.{{.Name}}-socketio-origin.headers.customRequestHeaders.Origin=http://{{.Domain}}"
 {{- else}}
       - "traefik.enable=true"
       - "traefik.docker.network=ffm-proxy"
       - "traefik.http.routers.{{.Name}}-socketio.rule=Host(`{{.Domain}}`) && PathPrefix(`/socket.io`)"
       - "traefik.http.routers.{{.Name}}-socketio.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}-socketio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{.Name}}-socketio.middlewares={{.Name}}-socketio-origin"
       - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
+      - "traefik.http.middlewares.{{.Name}}-socketio-origin.headers.customRequestHeaders.Origin=https://{{.Domain}}"
 {{- end}}
 
   worker-long:

@@ -542,6 +542,9 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
 			return fmt.Errorf("write wsgi.py: %w", err)
 		}
+		if err := bench.PatchAuthenticateJs(benchDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+		}
 	}
 
 	if mode == "dev" {
