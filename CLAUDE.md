@@ -47,6 +47,8 @@ internal/
     ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container (dev only); also called as a step in create
     proxy.go              → ffm proxy subcommand group: start / stop / status; bare 'ffm proxy' shows status
     setproxy.go           → ffm set-proxy: configures socketio_port / use_ssl / per-site host_name inside the container for reverse-proxy deployments (dev and prod); dev: restarts bench start automatically; prod: prints 'ffm restart' hint; --reset uses mode-aware defaults (dev: socketio_port <allocated> / use_ssl 0 / socketio_frappe_url http://127.0.0.1:8000; prod: socketio_port 443 / ssl on / host_name https://<domain> / socketio_frappe_url http://frappe:8000); --print-caddy / --print-nginx emit ready-to-paste config snippets
+    tunnel.go             → ffm tunnel [name]: enable/disable/print VPS tunnel; writes frpc.toml + starts ffm-<name>-frpc container via docker run (not compose); sets host_name/socketio_port/use_ssl via bench set-config; --off disables + calls runSetProxyReset; tunnel state persisted in benches.json as *TunnelState
+    tunnel_server.go      → ffm tunnel server group: list/add/set/remove/use tunnel VPS profiles; profiles stored in ~/.config/ffm/tunnel.json (0o600); server add prints frps.toml + Caddyfile VPS setup snippet
     update.go             → ffm update: fetches latest release from GitHub API, compares semver, downloads platform-specific archive (tar.gz/zip), atomically replaces running binary; --check (check only) / --yes (skip confirmation)
     update_check.go       → background update notification: reads/writes ~/.config/ffm/.update_check.json (24 h TTL); runUpdateCheck() called via PersistentPreRunE on every command except 'update'; startBackgroundFetch() goroutine; waitForUpdateCheck() blocks up to 2 s before process exit
 
@@ -68,8 +70,12 @@ internal/
   proxy/
     proxy.go              → all Traefik lifecycle logic: EnsureNetwork(), Start(), Stop(), IsRunning(), Status(), SupportsHTTPS(), EnsureHTTPS(email); createContainer() for HTTP-only; createContainerHTTPS() adds port 443, ffm-letsencrypt volume, ACME resolver flags; no global HTTP→HTTPS redirect (each prod bench handles its own via compose labels)
 
-  config/                 → path resolution (bench dirs, state file, acme email file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars; AcmeEmailFile() → ~/.config/ffm/.acme_email
-  state/                  → JSON-file state store (~/.config/ffm/benches.json); Bench struct includes Mode ("dev"/"prod", empty=dev for backward compat), DBType ("mariadb"/"postgres", empty=mariadb for backward compat), Domain, IsProd()/IsDev()/DBEngine()/IsPostgres() helpers, ProxyHost; Store.Update(name, fn) applies a mutation and saves
+  tunnel/
+    config.go             → Server struct + Config (Default + Servers map); Load/Save for ~/.config/ffm/tunnel.json (0o600); Lookup(name) and DefaultServer() helpers
+    frpc.go               → frpc container lifecycle: Start/Stop/Restart/IsRunning/Status via docker run (not compose); container named ffm-<bench>-frpc on ffm-<bench>_default network; RenderFrpcToml() + WriteFrpcToml() (0o600); PublicURL/PublicURLFromParts helpers; dev mode: both proxies use localIP=frappe; prod mode: socketio proxy uses localIP=socketio
+
+  config/                 → path resolution (bench dirs, state file, acme email file, tunnel config file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars; AcmeEmailFile() → ~/.config/ffm/.acme_email; TunnelConfigFile() → ~/.config/ffm/tunnel.json
+  state/                  → JSON-file state store (~/.config/ffm/benches.json); Bench struct includes Mode ("dev"/"prod", empty=dev for backward compat), DBType ("mariadb"/"postgres", empty=mariadb for backward compat), Domain, Tunnel (*TunnelState, nil=no tunnel), IsProd()/IsDev()/DBEngine()/IsPostgres() helpers, ProxyHost; Store.Update(name, fn) applies a mutation and saves
   version/                → build-time version variables
 ```
 
@@ -91,6 +97,7 @@ internal/
 - **Claude/agent skills** — dev benches only. 60 Frappe Claude skills + ffc skill are pre-fetched into the dev Docker image at build time and copied during bench init. On every `ffm start` / `ffm restart`, `runStart` checks for `.claude/skills/foxmayn-frappe-cli/SKILL.md` and runs the full copy if missing (idempotent back-fill).
 - **Private repo support** — `--apps` accepts short names, SSH URLs, HTTPS URLs, and `url@branch` or `name@branch` suffix. SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set. For private HTTPS repos, `--github-token` configures a temporary git credential helper (cleaned up via `defer`).
 - The `create` command has automatic rollback: a named-return defer tears down containers and removes the bench directory on any failure. State is saved only on success.
+- **VPS tunnel** — `ffm tunnel <name>` exposes a bench over a public URL via a user-owned VPS running frps + Caddy. The frpc client runs as a standalone Docker container (`ffm-<name>-frpc`) on the bench's `ffm-<name>_default` network — NOT managed by compose, so it isn't affected by compose stops. Lifecycle: `tunnel.Start/Stop/Restart()` in `internal/tunnel/frpc.go` use `docker run/stop/rm` (same pattern as `internal/proxy/proxy.go`). `ffm start` / `ffm delete` are tunnel-aware: `start.go` calls `tunnel.Start()` if `b.Tunnel != nil && b.Tunnel.Enabled`; `delete.go` calls `tunnel.Stop()` before `compose down`. Tunnel server profiles (VPS host, port, token, base_domain) live in `~/.config/ffm/tunnel.json` (mode 0o600). Per-bench tunnel state (`Server`, `Subdomain`, `Enabled`) is stored as `*TunnelState` on `state.Bench` — nil pointer means no tunnel, omitted from old benches.json entries.
 
 ### Dependencies
 
@@ -124,6 +131,7 @@ git push origin v0.1.0
 ~/frappe/<bench-name>/
   docker-compose.yml     # generated per bench (dev: 4 services, prod: 7+ services)
   Dockerfile             # dev: tools image; prod: minimal image
+  frpc.toml              # written when tunnel is enabled (mode 0o600 — contains token)
   workspace/             # bind-mounted into container at /workspace; bench lives at workspace/frappe-bench/
     frappe-bench/
       .agents/skills/    # dev only: 60 Frappe Claude skills + ffc skill
@@ -135,4 +143,5 @@ git push origin v0.1.0
   benches.json           # state file
   .update_check.json     # cached latest release tag (refreshed every 24 h by background goroutine)
   .acme_email            # saved Let's Encrypt email (auto-used on subsequent prod bench creations)
+  tunnel.json            # VPS tunnel server profiles (mode 0o600 — contains tokens)
 ```

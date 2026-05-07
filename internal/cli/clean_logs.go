@@ -92,7 +92,7 @@ func runCleanLogs(name string, days int, dryRun, yes bool) error {
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title(fmt.Sprintf("Delete log rows older than %d days from %q?", days, name)).
-					Description("Tables: "+strings.Join(tableNames, ", ")+"\nThis cannot be undone.").
+					Description("Tables: " + strings.Join(tableNames, ", ") + "\nThis cannot be undone.").
 					Affirmative("Yes, delete").
 					Negative("Cancel").
 					Value(&confirmed),

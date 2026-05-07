@@ -9,6 +9,7 @@ import (
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 )
 
 func newDeleteCmd() *cobra.Command {
@@ -76,6 +77,12 @@ func runDelete(name string, force bool) error {
 // bench directory. Warnings are printed for non-fatal errors (same behavior
 // as delete).
 func teardownBenchFiles(b state.Bench) {
+	// Stop the frpc tunnel sidecar before compose down (not compose-managed).
+	if b.Tunnel != nil && b.Tunnel.Enabled {
+		if err := tunnel.Stop(b.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: stop frpc container: %v\n", err)
+		}
+	}
 	runner := bench.NewRunner(b.Name, b.Dir, verbose)
 	if err := runner.Down(true); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)

@@ -40,6 +40,12 @@ func AcmeEmailFile() string {
 	return filepath.Join(ConfigDir(), ".acme_email")
 }
 
+// TunnelConfigFile returns the path to tunnel.json, which stores VPS tunnel
+// server profiles (host, port, auth token, base domain). Mode 0o600 — contains tokens.
+func TunnelConfigFile() string {
+	return filepath.Join(ConfigDir(), "tunnel.json")
+}
+
 // EnsureDataDir creates both the benches dir and config dir if they don't exist.
 func EnsureDataDir() error {
 	if err := os.MkdirAll(BenchesDir(), 0o755); err != nil {

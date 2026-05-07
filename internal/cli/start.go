@@ -11,6 +11,7 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 )
 
 func newStartCmd() *cobra.Command {
@@ -75,6 +76,15 @@ func runStart(name string) error {
 		}
 	}
 	// Prod: services start automatically via compose command: directives.
+
+	// Restart frpc tunnel sidecar if this bench has one configured.
+	if b.Tunnel != nil && b.Tunnel.Enabled {
+		if _, err := tunnel.Lookup(b.Tunnel.Server); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: tunnel server %q not found — skipping frpc start (%v)\n", b.Tunnel.Server, err)
+		} else if err := tunnel.Start(b.Dir, b.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not start frpc tunnel: %v\n", err)
+		}
+	}
 
 	fmt.Printf("Bench %q is running.\n", name)
 	if b.IsProd() {

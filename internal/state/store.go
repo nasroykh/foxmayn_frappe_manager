@@ -9,6 +9,16 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 )
 
+// TunnelState holds the tunnel configuration for a bench.
+// Zero value means no tunnel configured.
+type TunnelState struct {
+	// Server is the tunnel server profile name from tunnel.json.
+	Server string `json:"server,omitempty"`
+	// Subdomain is the public subdomain slug (e.g. "mydev" → mydev.tunnel.example.com).
+	Subdomain string `json:"subdomain,omitempty"`
+	Enabled   bool   `json:"enabled,omitempty"`
+}
+
 // Bench holds the persisted state for a single managed bench.
 type Bench struct {
 	Name          string `json:"name"`
@@ -28,8 +38,10 @@ type Bench struct {
 	// Mode is "dev" or "prod". Empty is treated as "dev" for backward compatibility.
 	Mode string `json:"mode,omitempty"`
 	// Domain is the public domain for production benches (e.g. "erp.example.com").
-	Domain    string    `json:"domain,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Domain string `json:"domain,omitempty"`
+	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
+	Tunnel    *TunnelState `json:"tunnel,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 // IsProd reports whether the bench was created in production mode.
