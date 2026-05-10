@@ -545,6 +545,9 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		if err := bench.PatchAuthenticateJs(benchDir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
 		}
+		if err := bench.PatchUtilsJs(benchDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+		}
 	}
 
 	if mode == "dev" {

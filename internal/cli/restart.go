@@ -43,6 +43,9 @@ func newRestartCmd() *cobra.Command {
 					if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
 						fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
 					}
+					if err := bench.PatchUtilsJs(b.Dir); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+					}
 				}
 				runner := bench.NewRunner(b.Name, b.Dir, verbose)
 				fmt.Printf("Rebuilding image for bench %q...\n", name)
