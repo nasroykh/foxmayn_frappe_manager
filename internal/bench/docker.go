@@ -135,6 +135,13 @@ func (r *Runner) Stop() error {
 	return r.withOutput(r.compose("stop")).Run()
 }
 
+// RestartService stops and restarts a single named compose service in-place.
+// The container is not recreated — volumes and bind mounts are preserved.
+// The process inside restarts from scratch, re-reading sys.path on startup.
+func (r *Runner) RestartService(service string) error {
+	return r.withOutput(r.compose("restart", service)).Run()
+}
+
 // Exec runs a command inside a service container interactively.
 func (r *Runner) Exec(service string, shellArgs ...string) error {
 	args := append([]string{"exec", service}, shellArgs...)

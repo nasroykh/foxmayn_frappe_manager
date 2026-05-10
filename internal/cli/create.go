@@ -739,14 +739,15 @@ func runCreate(name, frappeBranch string, apps []string, adminPassword, dbPasswo
 		return fmt.Errorf("bench build: %w\n%s", err, out)
 	}
 
-	// Prod: cycle gunicorn workers so they pick up newly installed app modules.
-	// Workers fork from the master before apps are installed, so their sys.path
-	// doesn't include new .pth entries added by pip/bench install-app. SIGHUP
-	// tells the master to gracefully replace workers with fresh ones.
+	// Prod: restart the frappe container so gunicorn starts fresh and picks up
+	// app modules installed after initial container start. SIGHUP is insufficient:
+	// the compose command is "bash -c '... && gunicorn'", so PID 1 is bash (which
+	// ignores SIGHUP), and even if it reached gunicorn, new workers would still
+	// fork from the master with the pre-install sys.path.
 	if mode == "prod" {
-		s.step("Reloading gunicorn workers (picking up installed apps)")
-		if _, err := runner.ExecSilent("frappe", "bash", "-c", "kill -HUP 1"); err != nil && verbose {
-			fmt.Fprintf(os.Stderr, "  warning: gunicorn HUP: %v\n", err)
+		s.step("Restarting frappe container (picking up installed apps)")
+		if err := runner.RestartService("frappe"); err != nil {
+			return fmt.Errorf("restart frappe: %w", err)
 		}
 		s.step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
