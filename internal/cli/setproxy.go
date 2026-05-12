@@ -109,7 +109,7 @@ func runSetProxy(name string, port int, host string, noSSL, reset, printCaddy, p
 	// Dev: restart bench start in background. Prod: instruct user to restart.
 	if b.IsDev() {
 		fmt.Println("  Restarting dev server...")
-		restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
+		restartCmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
 			" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
 		if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 			// Non-fatal: pkill exits 1 when no process matched, which is fine.
@@ -214,7 +214,7 @@ func runSetProxyReset(b state.Bench, runner *bench.Runner, store *state.Store) e
 	fmt.Printf("  ✓ host_name     = http://%s\n", b.SiteName)
 
 	fmt.Println("  Restarting dev server...")
-	restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
+	restartCmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
 		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 		fmt.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")

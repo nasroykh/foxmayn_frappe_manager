@@ -328,7 +328,7 @@ func applyTunnelFrappeConfig(b state.Bench, runner *bench.Runner, publicURL stri
 
 	if b.IsDev() {
 		fmt.Println("  Restarting dev server...")
-		restartCmd := "pkill -f 'bench start' 2>/dev/null; sleep 1" +
+		restartCmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
 			" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
 		if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 			fmt.Println("  (dev server restart returned non-zero — may already have been stopped)")
