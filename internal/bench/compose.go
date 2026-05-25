@@ -160,12 +160,12 @@ func PatchAuthenticateJs(benchDir string) error {
 	return os.WriteFile(path, []byte(strings.Replace(string(content), original, patched, 1)), 0o644)
 }
 
-// PatchUtilsJs patches Frappe's realtime utils so that get_url falls back to
-// socketio_frappe_url (http://frappe:8000) when the socket connection has no
-// Origin header. Frappe v15 builds the auth URL as origin+path; same-origin
-// polling GETs never carry Origin, so without this patch the auth request goes
-// to "undefined/api/..." and Node throws EAI_AGAIN. Must be re-applied after
-// bench update (same lifecycle as PatchAuthenticateJs).
+// PatchUtilsJs patches Frappe's realtime utils so that get_url always uses
+// socketio_frappe_url (http://127.0.0.1:8000) for server-to-server auth instead
+// of the browser's Origin header. Using origin causes ENOTFOUND / ECONNREFUSED
+// inside the container because hostnames like "sitename.localhost" or direct
+// host ports (localhost:8040) don't resolve from inside Docker. Must be
+// re-applied after bench update (same lifecycle as PatchAuthenticateJs).
 func PatchUtilsJs(benchDir string) error {
 	path := filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe",
 		"realtime", "utils.js")
@@ -174,7 +174,7 @@ func PatchUtilsJs(benchDir string) error {
 		return err
 	}
 	original := `return socket.request.headers.origin + path;`
-	patched := `return (socket.request.headers.origin || require("../node_utils").get_conf().socketio_frappe_url || "http://localhost:8000") + path;`
+	patched := `return (require("../node_utils").get_conf().socketio_frappe_url || socket.request.headers.origin || "http://localhost:8000") + path;`
 	if !strings.Contains(string(content), original) {
 		return nil // already patched or file changed; leave it alone
 	}

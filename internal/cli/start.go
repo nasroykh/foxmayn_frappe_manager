@@ -63,6 +63,13 @@ func runStart(name string) error {
 			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 
+		if err := bench.PatchAuthenticateJs(b.Dir); err != nil && verbose {
+			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+		}
+		if err := bench.PatchUtilsJs(b.Dir); err != nil && verbose {
+			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+		}
+
 		// Start the Frappe dev server in the background via nohup.
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
 			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
