@@ -1,17 +1,9 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"time"
-
 	"github.com/spf13/cobra"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 func newStartCmd() *cobra.Command {
@@ -24,89 +16,8 @@ func newStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runStart(name)
+			return manager.New(verbose).Start(name, manager.CLIProgress{})
 		},
 	}
 }
 
-func runStart(name string) error {
-	store := state.Default()
-	b, err := store.Get(name)
-	if err != nil {
-		return err
-	}
-
-	runner := bench.NewRunner(b.Name, b.Dir, verbose)
-
-	fmt.Printf("Starting bench %q...\n", name)
-
-	// Bring containers back up (they may have been stopped, not downed).
-	if err := runner.Up(); err != nil {
-		return fmt.Errorf("docker compose up: %w", err)
-	}
-
-	if b.IsDev() {
-		// Ensure Claude/agent skills are present (missing on benches created before this feature).
-		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"[ -f /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/SKILL.md ] ||"+
-				" (mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills"+
-				" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/"+
-				" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/"+
-				" && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli"+
-				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/"+
-				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/)"); err != nil && verbose {
-			fmt.Printf("warning: could not install frappe skills: %v\n", err)
-		}
-
-		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
-		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
-		}
-
-		if err := bench.PatchAuthenticateJs(b.Dir); err != nil && verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
-		}
-		if err := bench.PatchUtilsJs(b.Dir); err != nil && verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
-		}
-
-		// Start the Frappe dev server in the background via nohup.
-		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
-			return fmt.Errorf("bench start: %w", err)
-		}
-
-		// Wait for the web port to respond.
-		url := fmt.Sprintf("http://localhost:%d", b.WebPort)
-		if err := bench.WaitForHTTP(url, 30*time.Second); err != nil {
-			fmt.Printf("warning: %v\n", err)
-		}
-	}
-	// Prod: services start automatically via compose command: directives.
-
-	// Restart frpc tunnel sidecar if this bench has one configured.
-	if b.Tunnel != nil && b.Tunnel.Enabled {
-		if _, err := tunnel.Lookup(b.Tunnel.Server); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: tunnel server %q not found — skipping frpc start (%v)\n", b.Tunnel.Server, err)
-		} else if err := tunnel.Start(b.Dir, b.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not start frpc tunnel: %v\n", err)
-		}
-	}
-
-	fmt.Printf("Bench %q is running.\n", name)
-	if b.IsProd() {
-		if b.ProxyHost != "" {
-			fmt.Printf("  URL: %s\n", b.ProxyHost)
-		} else if b.Domain != "" {
-			fmt.Printf("  URL: https://%s\n", b.Domain)
-		}
-	} else {
-		fmt.Printf("  URL (port):    http://localhost:%d\n", b.WebPort)
-		if proxy.IsRunning() {
-			fmt.Printf("  URL (domain):  http://%s\n", b.SiteName)
-		} else {
-			fmt.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", b.SiteName)
-		}
-	}
-	return nil
-}

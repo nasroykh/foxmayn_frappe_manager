@@ -2,14 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 func newDeleteCmd() *cobra.Command {
@@ -34,12 +31,7 @@ func newDeleteCmd() *cobra.Command {
 }
 
 func runDelete(name string, force bool) error {
-	store := state.Default()
-	b, err := store.Get(name)
-	if err != nil {
-		return err
-	}
-
+	svc := manager.New(verbose)
 	if !force {
 		confirmed := false
 		form := huh.NewForm(
@@ -60,34 +52,5 @@ func runDelete(name string, force bool) error {
 			return nil
 		}
 	}
-
-	fmt.Printf("Deleting bench %q...\n", name)
-
-	teardownBenchFiles(b)
-
-	if err := store.Remove(name); err != nil {
-		return fmt.Errorf("update state: %w", err)
-	}
-
-	fmt.Printf("Bench %q deleted.\n", name)
-	return nil
-}
-
-// teardownBenchFiles runs docker compose down with volumes and removes the
-// bench directory. Warnings are printed for non-fatal errors (same behavior
-// as delete).
-func teardownBenchFiles(b state.Bench) {
-	// Stop the frpc tunnel sidecar before compose down (not compose-managed).
-	if b.Tunnel != nil && b.Tunnel.Enabled {
-		if err := tunnel.Stop(b.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: stop frpc container: %v\n", err)
-		}
-	}
-	runner := bench.NewRunner(b.Name, b.Dir, verbose)
-	if err := runner.Down(true); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
-	}
-	if err := os.RemoveAll(b.Dir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: remove bench dir: %v\n", err)
-	}
+	return svc.Delete(name, manager.CLIProgress{})
 }

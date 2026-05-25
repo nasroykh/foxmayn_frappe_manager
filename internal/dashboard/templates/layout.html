@@ -1,0 +1,114 @@
+{{define "layout.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Meta.Title}} — ffm admin</title>
+  
+  <!-- Tailwind CSS & Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'media',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 antialiased min-h-screen flex flex-col transition-colors duration-200">
+
+  <!-- Navbar -->
+  <header class="sticky top-0 z-40 w-full border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-4 md:px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <!-- Logo / Brand -->
+        <a class="flex items-center gap-2 font-bold tracking-tight text-lg text-zinc-900 dark:text-zinc-50" href="/admin">
+          <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:text-zinc-900 text-xs font-black">f</span>
+          <span>ffm <span class="font-normal text-zinc-500 text-sm">admin</span></span>
+        </a>
+
+        <!-- Desktop Navigation -->
+        <nav class="hidden md:flex items-center gap-1 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+          <a href="/admin" class="px-3 py-1.5 rounded-md transition-colors {{if eq .Meta.ActiveNav "dashboard"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Dashboard</a>
+          <a href="/admin/benches" class="px-3 py-1.5 rounded-md transition-colors {{if eq .Meta.ActiveNav "benches"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Benches</a>
+          <a href="/admin/proxy" class="px-3 py-1.5 rounded-md transition-colors {{if eq .Meta.ActiveNav "proxy"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Proxy</a>
+          <a href="/admin/tunnel-servers" class="px-3 py-1.5 rounded-md transition-colors {{if eq .Meta.ActiveNav "tunnels"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Tunnels</a>
+          <a href="/admin/jobs" class="px-3 py-1.5 rounded-md transition-colors {{if eq .Meta.ActiveNav "jobs"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Jobs</a>
+        </nav>
+      </div>
+
+      <!-- Right Section -->
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center rounded-full bg-zinc-100 dark:bg-zinc-900 px-2.5 py-0.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+          v{{.Meta.Version}}
+        </span>
+        
+        <!-- Mobile Navigation Menu Button -->
+        <button id="mobile-menu-btn" class="md:hidden p-1.5 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-md focus:outline-none" aria-label="Toggle Menu">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Navigation Drawer -->
+    <div id="mobile-menu" class="hidden md:hidden border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 pt-2 pb-4 space-y-1">
+      <a href="/admin" class="block px-3 py-2 rounded-md text-base font-medium {{if eq .Meta.ActiveNav "dashboard"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Dashboard</a>
+      <a href="/admin/benches" class="block px-3 py-2 rounded-md text-base font-medium {{if eq .Meta.ActiveNav "benches"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Benches</a>
+      <a href="/admin/proxy" class="block px-3 py-2 rounded-md text-base font-medium {{if eq .Meta.ActiveNav "proxy"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Proxy</a>
+      <a href="/admin/tunnel-servers" class="block px-3 py-2 rounded-md text-base font-medium {{if eq .Meta.ActiveNav "tunnels"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Tunnels</a>
+      <a href="/admin/jobs" class="block px-3 py-2 rounded-md text-base font-medium {{if eq .Meta.ActiveNav "jobs"}}bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold{{else}}text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100{{end}}">Jobs</a>
+    </div>
+  </header>
+
+  <!-- Main Content container -->
+  <main class="flex-1 max-w-6xl mx-auto w-full px-4 md:px-6 py-6 md:py-8 animate-fade-in">
+    <!-- Flash Messages -->
+    {{if .Meta.FlashOK}}
+    <div class="mb-6 p-4 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-3" role="alert">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      <span class="text-sm font-medium">{{.Meta.FlashOK}}</span>
+    </div>
+    {{end}}
+    {{if .Meta.FlashErr}}
+    <div class="mb-6 p-4 rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 flex items-center gap-3" role="alert">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+      <span class="text-sm font-medium">{{.Meta.FlashErr}}</span>
+    </div>
+    {{end}}
+
+    {{.BodyHTML}}
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 mt-12 py-6">
+    <div class="max-w-6xl mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+      <p>&copy; 2026 ffm. All rights reserved.</p>
+      <p class="flex items-center gap-3">
+        <span>Foxmayn Frappe Manager</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
+        <a class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" href="https://github.com/nasroykh/foxmayn_frappe_manager" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="/admin/static/admin.js" defer></script>
+  <script>
+    // Toggle Mobile Navigation Menu
+    const btn = document.getElementById('mobile-menu-btn');
+    const menu = document.getElementById('mobile-menu');
+    if (btn && menu) {
+      btn.addEventListener('click', () => {
+        menu.classList.toggle('hidden');
+      });
+    }
+  </script>
+</body>
+</html>{{end}}

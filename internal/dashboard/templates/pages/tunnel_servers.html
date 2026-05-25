@@ -1,0 +1,126 @@
+{{define "tunnel_servers_body"}}
+<div class="mb-8">
+  <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Tunnel Servers</h1>
+  <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Manage remote VPS tunnel profiles to expose local development environments to the public internet.</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <!-- Left Side: Configured Profiles List -->
+  <div class="lg:col-span-2 space-y-6">
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Active Tunnel Profiles</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs uppercase bg-zinc-50/75 dark:bg-zinc-900/75 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+            <tr>
+              <th scope="col" class="px-6 py-3.5 font-semibold">Name</th>
+              <th scope="col" class="px-6 py-3.5 font-semibold">Connection Details</th>
+              <th scope="col" class="px-6 py-3.5 font-semibold">Base Domain</th>
+              <th scope="col" class="px-6 py-3.5 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {{range $name, $srv := .Config.Servers}}
+            <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50 transition-colors">
+              <td class="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-50">
+                <div class="flex items-center gap-2">
+                  <span>{{$name}}</span>
+                  {{if eq $.Config.Default $name}}
+                  <span class="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/30 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-400">
+                    Default
+                  </span>
+                  {{end}}
+                </div>
+              </td>
+              <td class="px-6 py-4 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                {{$srv.Host}}:{{$srv.Port}}
+              </td>
+              <td class="px-6 py-4 text-zinc-500 dark:text-zinc-400 font-mono text-xs">
+                {{$srv.BaseDomain}}
+              </td>
+              <td class="px-6 py-4 text-right">
+                <div class="inline-flex items-center gap-1.5">
+                  {{if ne $.Config.Default $name}}
+                  <form method="post" action="/admin/tunnel-servers/{{$name}}/use" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{$.Meta.CSRFToken}}">
+                    <button class="inline-flex items-center justify-center rounded-md bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 px-2.5 py-1.5 text-xs font-semibold transition-colors focus:outline-none" type="submit">
+                      Set Default
+                    </button>
+                  </form>
+                  {{end}}
+                  <form method="post" action="/admin/tunnel-servers/{{$name}}/remove" class="inline" onsubmit="return confirm('Remove tunnel server {{$name}} permanently?')">
+                    <input type="hidden" name="csrf_token" value="{{$.Meta.CSRFToken}}">
+                    <button class="inline-flex items-center justify-center rounded-md bg-white hover:bg-rose-50 dark:bg-zinc-900 dark:hover:bg-rose-950/20 border border-zinc-200 dark:border-zinc-800 hover:border-rose-200 dark:hover:border-rose-900/30 text-zinc-700 dark:text-zinc-200 hover:text-rose-600 dark:hover:text-rose-400 px-2.5 py-1.5 text-xs font-semibold transition-colors focus:outline-none" type="submit">
+                      Remove
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="4" class="px-6 py-12 text-center text-zinc-500 dark:text-zinc-400">
+                No tunnel servers configured yet. Add your first VPS profile in the side panel.
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side: Add Profile Form -->
+  <div class="col-span-1">
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Add Server Profile</h2>
+      </div>
+      <div class="p-6">
+        <form method="post" action="/admin/tunnel-servers" class="space-y-4">
+          <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+          
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Profile Name</label>
+            <input name="name" required placeholder="my-vps-server" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">VPS Host (IP or Domain)</label>
+            <input name="host" required placeholder="vps.example.com" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">FRPS Port</label>
+            <input name="port" type="number" value="7000" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">FRPS Token / Auth Key</label>
+            <input name="token" type="password" required placeholder="••••••••••••••••" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Base Domain</label>
+            <input name="base_domain" required placeholder="tunnel.example.com" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+            <span class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 block">Your VPS reverse proxy will route <code>*.tunnel.example.com</code> to this client.</span>
+          </div>
+
+          <div class="flex items-center pt-2">
+            <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+              <input name="default" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+              Set as default profile
+            </label>
+          </div>
+
+          <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-50 dark:hover:bg-zinc-200 dark:text-zinc-900 py-2.5 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
+            Save Profile
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

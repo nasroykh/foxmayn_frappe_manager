@@ -1,0 +1,106 @@
+{{define "exec_body"}}
+<!-- Breadcrumb -->
+<nav class="mb-4 text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+  <a href="/admin/benches" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Benches</a>
+  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+  <a href="/admin/benches/{{.Bench}}" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">{{.Bench}}</a>
+  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+  <span class="text-zinc-900 dark:text-zinc-200">Run Command</span>
+</nav>
+
+<div class="mb-8">
+  <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Run Container Command</h1>
+  <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Execute one-shot administrative commands directly inside a service container for bench <span class="font-semibold text-zinc-800 dark:text-zinc-200 font-mono text-xs bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{{.Bench}}</span>.</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+  <!-- Left Panel: Command Input Form -->
+  <div class="lg:col-span-2 space-y-6">
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Execution Parameters</h2>
+      </div>
+      <div class="p-6">
+        <form method="post" class="space-y-4">
+          <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+          
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Target Service</label>
+            <input name="service" value="{{.Service}}" placeholder="frappe" required class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
+            <span class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 block">Usually <code>frappe</code> for benches, or <code>mariadb</code> / <code>postgres</code>.</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Command to Execute</label>
+            <textarea name="command" rows="4" placeholder="bench version" required class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono text-xs">{{.Command}}</textarea>
+          </div>
+
+          <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-50 dark:hover:bg-zinc-200 dark:text-zinc-900 py-2.5 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Run Command
+          </button>
+        </form>
+      </div>
+    </div>
+    
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 bg-zinc-50/40 dark:bg-zinc-900/10 text-xs text-zinc-500 dark:text-zinc-400 flex items-start gap-2.5">
+      <svg class="w-4 h-4 text-zinc-400 dark:text-zinc-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      <div>
+        <span class="font-semibold text-zinc-700 dark:text-zinc-300">💡 Interactive Prompt Hint:</span> 
+        For a fully interactive shell with zsh, autocomplete, history, and styling inside the dev container, open your local terminal and run:
+        <code class="block mt-1 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[10px] font-mono select-all text-zinc-700 dark:text-zinc-300">ffm shell {{.Bench}}</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Command Output -->
+  <div class="lg:col-span-3 space-y-6">
+    <div class="bg-zinc-950 rounded-xl border border-zinc-800/80 shadow-lg overflow-hidden flex flex-col h-full min-h-[400px]">
+      <!-- Terminal Header Bar -->
+      <div class="px-4 py-3 bg-[#0d0d10] border-b border-zinc-900 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="flex gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+          </div>
+          <span class="text-xs text-zinc-500 font-mono font-medium ml-2">Terminal Execution Output</span>
+        </div>
+        {{if .Output}}
+        <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="copy-output-btn">
+          Copy Output
+        </button>
+        {{end}}
+      </div>
+      
+      <!-- Pre Container -->
+      <div class="p-5 overflow-auto flex-1 h-[50vh]">
+        {{if .Output}}
+        <pre id="exec-output" class="text-zinc-300 font-mono text-xs md:text-sm leading-relaxed whitespace-pre-wrap select-text">{{.Output}}</pre>
+        {{else}}
+        <div class="h-full flex flex-col items-center justify-center text-center text-zinc-600 dark:text-zinc-500 font-mono text-xs select-none">
+          <svg class="w-8 h-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          <span>Waiting for command execution request…</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var copyBtn = document.getElementById('copy-output-btn');
+  var outputEl = document.getElementById('exec-output');
+  if (copyBtn && outputEl) {
+    copyBtn.addEventListener('click', function() {
+      navigator.clipboard.writeText(outputEl.innerText).then(function() {
+        var orig = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        setTimeout(function() { copyBtn.textContent = orig; }, 1500);
+      });
+    });
+  }
+})();
+</script>
+{{end}}

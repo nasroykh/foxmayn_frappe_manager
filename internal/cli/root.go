@@ -55,6 +55,7 @@ create, start, stop, and delete Frappe development benches with a single command
 		newFfcCmd(),
 		newTunnelCmd(),
 		newUpdateCmd(),
+		newDashboardCmd(),
 	)
 
 	return root
@@ -63,6 +64,9 @@ create, start, stop, and delete Frappe development benches with a single command
 // Execute runs the root command and waits for any background update-check
 // goroutine to finish writing its state file before the process exits.
 func Execute() error {
+	if maybeRunDashboardDaemon() {
+		return nil
+	}
 	err := NewRootCmd().Execute()
 	waitForUpdateCheck()
 	if err != nil {

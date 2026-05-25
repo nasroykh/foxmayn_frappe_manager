@@ -1,0 +1,178 @@
+{{define "bench_form_body"}}
+<!-- Breadcrumb -->
+<nav class="mb-4 text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+  <a href="/admin/benches" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Benches</a>
+  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+  <span class="text-zinc-900 dark:text-zinc-200">New Bench</span>
+</nav>
+
+<div class="mb-8">
+  <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Create New Bench</h1>
+  <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Configure and spin up a new isolated Frappe/ERPNext container environment.</p>
+</div>
+
+<!-- Main Form -->
+<form method="post" action="/admin/benches" class="max-w-3xl space-y-8">
+  <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+
+  <!-- Core Settings Card -->
+  <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+      <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">General Parameters</h2>
+    </div>
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+      
+      <!-- Name -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Bench Name</label>
+        <input name="name" required pattern="[a-z0-9][a-z0-9_-]*" placeholder="my-custom-bench" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+        <span class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 block">Only alphanumeric characters, hyphens, and underscores.</span>
+      </div>
+
+      <!-- Mode -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Deployment Mode</label>
+        <select name="mode" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          <option value="dev" {{if eq .Form.Mode "dev"}}selected{{end}}>Development (Single honcho container)</option>
+          <option value="prod" {{if eq .Form.Mode "prod"}}selected{{end}}>Production (Multi-container microservices)</option>
+        </select>
+      </div>
+
+      <!-- Frappe Branch -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Frappe Branch</label>
+        <input name="frappe_branch" value="{{.Form.FrappeBranch}}" placeholder="version-15" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- DB Type -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Database Type</label>
+        <select name="db_type" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+          <option value="mariadb">MariaDB (Default)</option>
+          <option value="postgres">PostgreSQL</option>
+        </select>
+      </div>
+
+      <!-- Admin Password -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Admin Password</label>
+        <input name="admin_password" type="text" value="{{.Form.AdminPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
+      </div>
+
+      <!-- DB Password -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Database Root Password</label>
+        <input name="db_password" type="text" value="{{.Form.DBPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
+      </div>
+
+      <!-- Apps -->
+      <div class="col-span-1 md:col-span-2">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Frappe Apps to Install</label>
+        <textarea name="apps" rows="2" placeholder="erpnext, hrms, payments (or git HTTPS/SSH links)" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono"></textarea>
+        <span class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 block">Comma-separated app identifiers, branch suffix supported: e.g. <code>erpnext@version-15, hrms@version-15</code></span>
+      </div>
+
+      <!-- GitHub Token -->
+      <div class="col-span-1 md:col-span-2">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">GitHub Personal Access Token (Optional)</label>
+        <input name="github_token" type="password" placeholder="ghp_****************" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+        <span class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1 block">Required only for fetching private applications over HTTPS repositories.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Production Settings Card -->
+  <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+      <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Production & Networking Parameters (Prod Only)</h2>
+    </div>
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+      
+      <!-- Domain -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Domain Name</label>
+        <input name="domain" type="text" placeholder="erp.example.com" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- ACME Email -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Let's Encrypt Email</label>
+        <input name="acme_email" type="email" placeholder="admin@example.com" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- No SSL -->
+      <div class="col-span-1 md:col-span-2">
+        <label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300 font-medium">
+          <input name="no_ssl" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+          No SSL (Production Mode without built-in Traefik Let's Encrypt configuration)
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced/Performance Tuning (Details) -->
+  <details class="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+    <summary class="px-6 py-4 flex items-center justify-between cursor-pointer focus:outline-none select-none hover:bg-zinc-50 dark:hover:bg-zinc-900/50 bg-zinc-50/50 dark:bg-zinc-900/50">
+      <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Advanced Tuning & Optimization Parameters</h2>
+      <svg class="h-4 w-4 text-zinc-500 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+    </summary>
+    <div class="p-6 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-5">
+      
+      <!-- MariaDB Buffer Pool -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">MariaDB Buffer Pool Size</label>
+        <input name="mariadb_buffer_pool" value="{{.Form.MariaDBBufferPool}}" placeholder="256M" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Gunicorn Workers -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Gunicorn Web Workers</label>
+        <input name="gunicorn_workers" type="number" value="{{.Form.GunicornWorkers}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Worker Long -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Background Long Worker Count</label>
+        <input name="worker_long" type="number" value="{{.Form.WorkerLongCount}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Worker Short -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Background Short Worker Count</label>
+        <input name="worker_short" type="number" value="{{.Form.WorkerShortCount}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Redis Cache Size -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Redis Cache Max Memory</label>
+        <input name="redis_cache_maxmem" value="{{.Form.RedisCacheMaxmem}}" placeholder="512mb" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Redis Queue Size -->
+      <div class="col-span-1">
+        <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Redis Queue Max Memory</label>
+        <input name="redis_queue_maxmem" value="{{.Form.RedisQueueMaxmem}}" placeholder="256mb" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+      </div>
+
+      <!-- Slow Query Log -->
+      <div class="col-span-1 md:col-span-2">
+        <label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300 font-medium">
+          <input name="slow_query_log" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+          Enable Database Slow Query Log
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <!-- Submit Buttons -->
+  <div class="flex items-center gap-4 pt-4">
+    <button class="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 transition-colors shadow-sm focus:outline-none" type="submit">
+      <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+      Create Bench (Run Job)
+    </button>
+    <a href="/admin/benches" class="inline-flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-5 py-2.5 text-sm font-semibold transition-colors">
+      Cancel
+    </a>
+  </div>
+</form>
+{{end}}

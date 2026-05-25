@@ -1,0 +1,79 @@
+{{define "jobs_list_body"}}
+<div class="mb-8">
+  <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Background Jobs</h1>
+  <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">Audit log of asynchronous tasks, installations, and system modifications.</p>
+</div>
+
+<!-- Jobs List Card -->
+<div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden" data-searchable>
+  <!-- Search/Header Bar -->
+  <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
+    <div class="relative max-w-xs w-full">
+      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400 dark:text-zinc-500">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      </div>
+      <input type="search" id="table-search" class="block w-full pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors" placeholder="Filter jobs…">
+    </div>
+    <span class="text-xs text-zinc-400 dark:text-zinc-500 font-medium">Total tasks logged: {{len .Jobs}}</span>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left">
+      <thead class="text-xs uppercase bg-zinc-50/75 dark:bg-zinc-900/75 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+        <tr>
+          <th scope="col" class="px-6 py-3.5 font-semibold">Job ID</th>
+          <th scope="col" class="px-6 py-3.5 font-semibold">Task Type</th>
+          <th scope="col" class="px-6 py-3.5 font-semibold">Bench Name</th>
+          <th scope="col" class="px-6 py-3.5 font-semibold">Status</th>
+          <th scope="col" class="px-6 py-3.5 font-semibold">Updated At</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+        {{range .Jobs}}
+        <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50 transition-colors" data-search="{{.ID}} {{.Type}} {{.BenchName}} {{.Status}}">
+          <td class="px-6 py-4 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+            <a class="hover:underline flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400" href="/admin/jobs/{{.ID}}">
+              {{.ID}}
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+          </td>
+          <td class="px-6 py-4 font-medium text-zinc-900 dark:text-zinc-100 uppercase text-xs tracking-wider">
+            {{.Type}}
+          </td>
+          <td class="px-6 py-4 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+            {{.BenchName}}
+          </td>
+          <td class="px-6 py-4">
+            {{if eq .Status "succeeded"}}
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/30 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <span class="h-1 w-1 rounded-full bg-emerald-500"></span>
+              Succeeded
+            </span>
+            {{else if eq .Status "failed"}}
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800/30 px-2.5 py-0.5 text-xs font-semibold text-rose-700 dark:text-rose-400">
+              <span class="h-1 w-1 rounded-full bg-rose-500"></span>
+              Failed
+            </span>
+            {{else}}
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800/30 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-400 animate-pulse">
+              <span class="h-1 w-1 rounded-full bg-blue-500"></span>
+              {{.Status}}
+            </span>
+            {{end}}
+          </td>
+          <td class="px-6 py-4 text-zinc-500 dark:text-zinc-400 text-xs">
+            {{.UpdatedAt}}
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="5" class="px-6 py-12 text-center text-zinc-500 dark:text-zinc-400">
+            No background jobs found.
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -7,9 +7,8 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
 func newListCmd() *cobra.Command {
@@ -25,13 +24,13 @@ func newListCmd() *cobra.Command {
 }
 
 func runList() error {
-	store := state.Default()
-	benches, err := store.Load()
+	svc := manager.New(verbose)
+	views, err := svc.ListBenchViews()
 	if err != nil {
 		return err
 	}
 
-	if len(benches) == 0 {
+	if len(views) == 0 {
 		fmt.Println("No benches found. Run `ffm create <name>` to create one.")
 		return nil
 	}
@@ -59,37 +58,25 @@ func runList() error {
 	fmt.Println(strings.Repeat("─", 104))
 
 	devBenchExists := false
-	for _, b := range benches {
-		if b.IsDev() {
+	for _, v := range views {
+		if v.Mode == "dev" {
 			devBenchExists = true
 		}
 
-		status := liveStatus(b)
-
-		statusRendered := runningStyle.Render(status)
-		if strings.ToLower(status) != "running" {
-			statusRendered = stoppedStyle.Render(status)
-		}
-
-		modeStr := "dev"
-		if b.IsProd() {
-			modeStr = "prod"
-		}
-
-		dbStr := "maria"
-		if b.IsPostgres() {
-			dbStr = "pg"
+		statusRendered := runningStyle.Render(v.Status)
+		if strings.ToLower(v.Status) != "running" {
+			statusRendered = stoppedStyle.Render(v.Status)
 		}
 
 		var domainRendered string
-		if b.IsProd() {
-			d := b.ProxyHost
-			if d == "" && b.Domain != "" {
-				d = "https://" + b.Domain
+		if v.Mode == "prod" {
+			d := v.ProxyHost
+			if d == "" && v.Domain != "" {
+				d = "https://" + v.Domain
 			}
 			domainRendered = domainStyle.Render(d)
 		} else {
-			domain := fmt.Sprintf("http://%s", b.SiteName)
+			domain := fmt.Sprintf("http://%s", v.SiteName)
 			if proxyUp {
 				domainRendered = domainStyle.Render(domain)
 			} else {
@@ -98,13 +85,13 @@ func runList() error {
 		}
 
 		fmt.Printf("%-20s  %-5s  %-7s  %-10s  %-8d  %-30s  %s\n",
-			nameStyle.Render(b.Name),
-			dimStyle.Render(modeStr),
-			dimStyle.Render(dbStr),
+			nameStyle.Render(v.Name),
+			dimStyle.Render(v.Mode),
+			dimStyle.Render(v.DBEngine),
 			statusRendered,
-			b.WebPort,
+			v.WebPort,
 			domainRendered,
-			dimStyle.Render(b.FrappeBranch),
+			dimStyle.Render(v.FrappeBranch),
 		)
 	}
 
@@ -114,20 +101,3 @@ func runList() error {
 	return nil
 }
 
-// liveStatus queries docker compose for the bench's live running state.
-func liveStatus(b state.Bench) string {
-	runner := bench.NewRunner(b.Name, b.Dir, false)
-	out, err := runner.PS("table")
-	if err != nil || out == "" {
-		return "unknown"
-	}
-	lines := strings.Split(out, "\n")
-	// Count running containers (skip header line)
-	for _, line := range lines[1:] {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "running") || strings.Contains(lower, "up") {
-			return "running"
-		}
-	}
-	return "stopped"
-}

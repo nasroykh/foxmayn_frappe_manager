@@ -111,6 +111,30 @@ ffm restart mysite                             # apply to all services
 ffm set-proxy mysite --host erp.example.com --print-caddy
 ```
 
+## Web dashboard
+
+Optional browser UI for managing benches (same operations as the CLI), modeled after the [kbls admin console](https://github.com/KB-Developpement/kb_pro_license_server).
+
+```bash
+# Foreground (blocks; Ctrl+C to stop)
+ffm dashboard start --admin-password 'choose-a-strong-password'
+
+# Background daemon
+ffm dashboard start -d --admin-password 'choose-a-strong-password'
+
+# Management
+ffm dashboard status
+ffm dashboard stop
+ffm dashboard logs -f
+```
+
+- Default URL: **http://127.0.0.1:8787/admin** (HTTP Basic auth)
+- Bind on LAN: `ffm dashboard start --listen 0.0.0.0:8787 --admin-password '…'` — use TLS via a reverse proxy in production
+- Long operations (`create`, `recreate`) run as **background jobs** with live log streaming
+- Interactive shell: use `ffm shell <name>` in the terminal (dashboard supports one-shot `exec` only)
+
+Settings are stored in `~/.config/ffm/dashboard.json` (mode `0600` when a password is set).
+
 ## Commands
 
 ### `ffm create <name>`

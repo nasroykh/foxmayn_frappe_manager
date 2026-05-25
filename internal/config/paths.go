@@ -46,6 +46,26 @@ func TunnelConfigFile() string {
 	return filepath.Join(ConfigDir(), "tunnel.json")
 }
 
+// DashboardConfigFile stores dashboard server settings (listen addr, etc.).
+func DashboardConfigFile() string {
+	return filepath.Join(ConfigDir(), "dashboard.json")
+}
+
+// DashboardPIDFile is the PID file for the background dashboard daemon.
+func DashboardPIDFile() string {
+	return filepath.Join(ConfigDir(), "dashboard.pid")
+}
+
+// DashboardLogFile is the log file for the background dashboard daemon.
+func DashboardLogFile() string {
+	return filepath.Join(ConfigDir(), "dashboard.log")
+}
+
+// JobsFile persists async job state for the dashboard.
+func JobsFile() string {
+	return filepath.Join(ConfigDir(), "jobs.json")
+}
+
 // EnsureDataDir creates both the benches dir and config dir if they don't exist.
 func EnsureDataDir() error {
 	if err := os.MkdirAll(BenchesDir(), 0o755); err != nil {

@@ -1,12 +1,9 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 func newStopCmd() *cobra.Command {
@@ -19,24 +16,7 @@ func newStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runStop(name)
+			return manager.New(verbose).Stop(name, manager.CLIProgress{})
 		},
 	}
-}
-
-func runStop(name string) error {
-	store := state.Default()
-	b, err := store.Get(name)
-	if err != nil {
-		return err
-	}
-
-	runner := bench.NewRunner(b.Name, b.Dir, verbose)
-
-	fmt.Printf("Stopping bench %q...\n", name)
-	if err := runner.Stop(); err != nil {
-		return fmt.Errorf("docker compose stop: %w", err)
-	}
-	fmt.Printf("Bench %q stopped.\n", name)
-	return nil
 }

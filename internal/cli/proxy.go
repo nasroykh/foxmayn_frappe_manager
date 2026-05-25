@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 )
 
@@ -12,7 +13,6 @@ func newProxyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "proxy",
 		Short: "Manage the shared Traefik reverse proxy (sitename.localhost routing)",
-		// Running `ffm proxy` with no subcommand shows the current status.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProxyStatus()
 		},
@@ -33,13 +33,9 @@ func newProxyStartCmd() *cobra.Command {
 		Short: "Start the Traefik proxy (enables sitename.localhost routing)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Starting Traefik proxy...")
-			if err := proxy.Start(); err != nil {
+			if err := manager.New(verbose).ProxyStart(manager.CLIProgress{}); err != nil {
 				return err
 			}
-			fmt.Println("Proxy is running.")
-			fmt.Printf("  HTTP:      http://<bench>.localhost\n")
-			fmt.Printf("  Dashboard: %s\n", proxy.DashboardURL())
 			printWSL2Note()
 			return nil
 		},
@@ -52,11 +48,10 @@ func newProxyStopCmd() *cobra.Command {
 		Short: "Stop the Traefik proxy (benches remain accessible on their direct ports)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Stopping Traefik proxy...")
-			if err := proxy.Stop(); err != nil {
+			svc := manager.New(verbose)
+			if err := svc.ProxyStop(manager.CLIProgress{}); err != nil {
 				return err
 			}
-			fmt.Println("Proxy stopped.")
 			fmt.Println("  Benches are still reachable on their direct ports (run 'ffm list').")
 			fmt.Println("  Run 'ffm proxy start' to re-enable domain routing.")
 			return nil
@@ -76,23 +71,16 @@ func newProxyStatusCmd() *cobra.Command {
 }
 
 func runProxyStatus() error {
-	status := proxy.Status()
-	network := "absent"
-	if proxy.IsNetworkPresent() {
-		network = "present"
-	}
-
-	fmt.Printf("Proxy status:  %s\n", status)
-	fmt.Printf("Network (%s):  %s\n", proxy.NetworkName, network)
-	if proxy.IsRunning() {
-		fmt.Printf("Dashboard:     %s\n", proxy.DashboardURL())
+	v := manager.New(verbose).ProxyStatus()
+	fmt.Printf("Proxy status:  %s\n", v.Status)
+	fmt.Printf("Network (%s):  %s\n", proxy.NetworkName, v.Network)
+	if v.Running {
+		fmt.Printf("Dashboard:     %s\n", v.Dashboard)
 		fmt.Printf("Routing:       http://<bench>.localhost\n")
 	}
 	return nil
 }
 
-// printWSL2Note prints a one-time reminder for WSL2 users about .localhost
-// resolution on the Windows host.
 func printWSL2Note() {
 	fmt.Println()
 	fmt.Println("  Note (WSL2): .localhost subdomains resolve correctly inside WSL2.")

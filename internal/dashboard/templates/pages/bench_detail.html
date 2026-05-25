@@ -1,0 +1,305 @@
+{{define "bench_detail_body"}}
+<!-- Breadcrumb -->
+<nav class="mb-4 text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+  <a href="/admin/benches" class="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Benches</a>
+  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+  <span class="text-zinc-900 dark:text-zinc-200">{{.Bench.Name}}</span>
+</nav>
+
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-zinc-200 dark:border-zinc-800">
+  <div>
+    <div class="flex items-center gap-3">
+      <h1 class="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{{.Bench.Name}}</h1>
+      {{if eq .Bench.Status "running"}}
+      <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/30 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+        {{.Bench.Status}}
+      </span>
+      {{else}}
+      <span class="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2.5 py-0.5 text-xs font-semibold text-zinc-700 dark:text-zinc-400">
+        <span class="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"></span>
+        {{.Bench.Status}}
+      </span>
+      {{end}}
+    </div>
+    <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
+      <a href="{{.Bench.SiteURL}}" target="_blank" class="hover:underline inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300">
+        {{.Bench.SiteURL}}
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+      </a>
+    </p>
+  </div>
+  
+  <!-- Lifecycle Buttons -->
+  <div class="flex flex-wrap items-center gap-2">
+    <form method="post" action="/admin/benches/{{.Bench.Name}}/start" class="inline">
+      <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+      <button class="inline-flex items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-sm font-semibold shadow-sm focus:outline-none transition-colors" type="submit">
+        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        Start
+      </button>
+    </form>
+    
+    <form method="post" action="/admin/benches/{{.Bench.Name}}/stop" class="inline">
+      <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+      <button class="inline-flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold shadow-sm focus:outline-none transition-colors" type="submit">
+        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H10a1 1 0 01-1-1v-4z"></path></svg>
+        Stop
+      </button>
+    </form>
+    
+    <form method="post" action="/admin/benches/{{.Bench.Name}}/restart" class="inline">
+      <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+      <button class="inline-flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold shadow-sm focus:outline-none transition-colors" type="submit">
+        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 15.89M9 11l3-3m0 0l3 3m-3-3v12"></path></svg>
+        Restart
+      </button>
+    </form>
+
+    <a class="inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold transition-colors" href="/admin/benches/{{.Bench.Name}}/logs">
+      <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+      Logs
+    </a>
+
+    <a class="inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold transition-colors" href="/admin/benches/{{.Bench.Name}}/exec">
+      <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+      Run Command
+    </a>
+  </div>
+</div>
+
+<!-- Main Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  
+  <!-- Left Columns: Details and Container States -->
+  <div class="lg:col-span-2 space-y-8">
+    
+    <!-- Bench Specifications -->
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50">Specifications</h2>
+      </div>
+      <div class="p-6">
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Mode</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 font-semibold capitalize">{{.Bench.Mode}}</dd>
+          </div>
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Frappe Branch</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 font-mono">{{.Bench.FrappeBranch}}</dd>
+          </div>
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Site Name</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 font-mono">{{.Bench.SiteName}}</dd>
+          </div>
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Ports</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50">
+              Web: <span class="font-mono text-xs font-semibold">{{.Bench.WebPort}}</span> 
+              <span class="text-zinc-300 dark:text-zinc-700 px-1.5">|</span>
+              Socket.IO: <span class="font-mono text-xs font-semibold">{{.Bench.SocketIOPort}}</span>
+            </dd>
+          </div>
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Admin Credentials</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 flex items-center justify-between">
+              <span>administrator / <code class="blur-[4px] select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono transition-all duration-200" id="pw-admin">{{.Bench.AdminPassword}}</code></span>
+              <div class="flex gap-2">
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-admin">Reveal</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy="{{.Bench.AdminPassword}}">Copy</button>
+              </div>
+            </dd>
+          </div>
+          <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Database Details</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 flex items-center justify-between">
+              <span><span class="uppercase text-xs font-bold mr-1.5 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{{.Bench.DBEngine}}</span> root / <code class="blur-[4px] select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono transition-all duration-200" id="pw-db">{{.Bench.DBPassword}}</code></span>
+              <div class="flex gap-2">
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-db">Reveal</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy="{{.Bench.DBPassword}}">Copy</button>
+              </div>
+            </dd>
+          </div>
+          {{if .Bench.TunnelOn}}
+          <div class="col-span-1 sm:col-span-2 border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+            <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Active Tunnel</dt>
+            <dd class="text-zinc-900 dark:text-zinc-50 font-medium flex items-center gap-1.5">
+              <span class="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              {{.Bench.TunnelServer}} — <code class="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">{{.Bench.TunnelSub}}</code>
+            </dd>
+          </div>
+          {{end}}
+        </dl>
+      </div>
+    </div>
+
+    <!-- Active Containers PS Status -->
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50">Containers (Docker Compose)</h2>
+        <span class="text-xs text-zinc-400 dark:text-zinc-500 font-medium">Live Output</span>
+      </div>
+      <div class="p-0">
+        <pre class="bg-zinc-950 dark:bg-[#09090b] text-zinc-300 font-mono text-[11px] leading-relaxed p-5 overflow-auto max-h-72 select-text border-t border-zinc-800/20 whitespace-pre">{{.Bench.ContainersPS}}</pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Column: Settings & Operations Panels -->
+  <div class="space-y-8">
+    
+    <!-- Actions Panel -->
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 font-semibold text-sm">Tools & Utilities</h2>
+      </div>
+      <div class="p-6 space-y-4">
+        <!-- FFC setup action -->
+        <div>
+          <h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Frappe CLI Integrations</h3>
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/ffc">
+            <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+            <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 py-2 text-sm font-semibold transition-colors focus:outline-none" type="submit">
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a2 2 0 002 2h3a2 2 0 012 2v3a2 2 0 01-2 2h-1a2 2 0 100 4h1a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2v-1a2 2 0 10-4 0v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-3a2 2 0 012-2h1a2 2 0 100-4H5a2 2 0 01-2-2V9a2 2 0 012-2h3a2 2 0 002-2V4z"></path></svg>
+              Setup ffc Config
+            </button>
+          </form>
+        </div>
+        
+        <!-- Cleanup logs action -->
+        <div class="border-t border-zinc-100 dark:border-zinc-800/60 pt-4">
+          <h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Clean Logs</h3>
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/clean-logs" class="space-y-3">
+            <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs font-medium text-zinc-500 mb-1">Retention (Days)</label>
+                <input name="days" type="number" value="30" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+              </div>
+              <div class="flex items-end pb-2">
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                  <input name="dry_run" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+                  Dry Run
+                </label>
+              </div>
+            </div>
+            <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 py-2 text-sm font-semibold transition-colors focus:outline-none" type="submit">
+              Clean logs
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Proxy Settings Panel -->
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 font-semibold text-sm">Proxy Settings</h2>
+      </div>
+      <div class="p-6">
+        <form method="post" action="/admin/benches/{{.Bench.Name}}/set-proxy" class="space-y-4">
+          <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-zinc-500 mb-1">Custom Host Name</label>
+              <input name="host" type="text" placeholder="erp.example.com" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-500 mb-1">Custom Port</label>
+              <input name="port" type="number" value="443" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                <input name="no_ssl" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+                Disable SSL (No SSL)
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                <input name="reset" type="checkbox" value="1" class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-800 text-zinc-950 focus:ring-zinc-500 bg-white dark:bg-zinc-950">
+                Reset proxy defaults
+              </label>
+            </div>
+          </div>
+          <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-50 dark:hover:bg-zinc-200 dark:text-zinc-900 py-2 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
+            Apply Proxy Config
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- VPS Tunnel Panel -->
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex items-center justify-between">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 font-semibold text-sm">VPS Tunnel</h2>
+        <span class="text-xs font-semibold text-indigo-500 tracking-wide uppercase">{{if .Bench.TunnelOn}}Active{{else}}Inactive{{end}}</span>
+      </div>
+      <div class="p-6 space-y-4">
+        <form method="post" action="/admin/benches/{{.Bench.Name}}/tunnel/enable" class="space-y-4">
+          <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-zinc-500 mb-1">Tunnel Profile / Server</label>
+              <input name="server" type="text" placeholder="default (leaves blank for default)" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-500 mb-1">Tunnel Subdomain</label>
+              <input name="subdomain" type="text" placeholder="{{.Bench.Name}}" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
+            </div>
+          </div>
+          <button class="w-full inline-flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white py-2 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
+            Enable VPS Tunnel
+          </button>
+        </form>
+        
+        {{if .Bench.TunnelOn}}
+        <form method="post" action="/admin/benches/{{.Bench.Name}}/tunnel/disable" class="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+          <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+          <button class="w-full inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-rose-100 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-rose-900/30 dark:text-zinc-200 dark:hover:text-rose-400 py-2 text-sm font-semibold transition-colors focus:outline-none" type="submit">
+            Disable VPS Tunnel
+          </button>
+        </form>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Destructive Operations Panel -->
+    <div class="bg-rose-500/10 dark:bg-rose-950/10 border border-rose-500/20 dark:border-rose-900/20 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-rose-500/20 dark:border-rose-900/20 bg-rose-500/5">
+        <h2 class="font-semibold text-rose-800 dark:text-rose-400 text-sm">Danger Zone</h2>
+      </div>
+      <div class="p-6 space-y-4">
+        <!-- Recreate form -->
+        <div>
+          <h3 class="text-xs font-bold text-rose-800/80 dark:text-rose-400/80 uppercase tracking-wider mb-1">Recreate Bench</h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-2">Rebuilds Dockerfiles, wipes all bench data (including DB and uploads), and executes bench initialization from scratch.</p>
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/recreate" onsubmit="return confirm('Recreate destroys all database structures and files permanently. This is non-reversible. Continue?')">
+            <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+            <button class="w-full inline-flex items-center justify-center rounded-lg bg-rose-500 hover:bg-rose-600 text-white py-2 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
+              Recreate Bench (Wipe State)
+            </button>
+          </form>
+        </div>
+        
+        <!-- Delete form -->
+        <div class="border-t border-rose-500/10 dark:border-rose-900/10 pt-4">
+          <h3 class="text-xs font-bold text-rose-800/80 dark:text-rose-400/80 uppercase tracking-wider mb-1">Delete Bench</h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-2">Completely and permanently deletes the bench folder and halts all linked container microservices.</p>
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/delete" onsubmit="return confirm('Delete this bench permanently? All volume data, configuration files, and directories will be deleted. Continue?')">
+            <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+            <button class="w-full inline-flex items-center justify-center rounded-lg border border-rose-500/50 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 dark:hover:text-white py-2 text-sm font-semibold transition-colors focus:outline-none" type="submit">
+              Delete Bench Permanently
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  
+</div>
+
+<div class="mt-8 text-xs text-zinc-400 dark:text-zinc-500 border-t border-zinc-200 dark:border-zinc-800 pt-4">
+  <span>💡 Interactive prompt tip: You can open full interactive SSH shell anytime inside the workspace using the command: <code class="bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded text-[10px] font-mono select-all">ffm shell {{.Bench.Name}}</code></span>
+</div>
+{{end}}

@@ -1,13 +1,9 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 func newRestartCmd() *cobra.Command {
@@ -22,38 +18,10 @@ func newRestartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := runStop(name); err != nil {
-				return err
-			}
-			if rebuild {
-				store := state.Default()
-				b, err := store.Get(name)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("Updating Dockerfile for bench %q...\n", name)
-				if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{Mode: b.Mode, DBType: b.DBEngine()}); err != nil {
-					return fmt.Errorf("write Dockerfile: %w", err)
-				}
-				if b.IsProd() {
-					fmt.Printf("Updating wsgi.py for bench %q...\n", name)
-					if err := bench.WriteWsgiWrapper(b.Dir, b.SiteName); err != nil {
-						return fmt.Errorf("write wsgi.py: %w", err)
-					}
-				}
-				if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
-				}
-				if err := bench.PatchUtilsJs(b.Dir); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
-				}
-				runner := bench.NewRunner(b.Name, b.Dir, verbose)
-				fmt.Printf("Rebuilding image for bench %q...\n", name)
-				if err := runner.Build(); err != nil {
-					return fmt.Errorf("docker compose build: %w", err)
-				}
-			}
-			return runStart(name)
+			return manager.New(verbose).Restart(manager.RestartInput{
+				Name:    name,
+				Rebuild: rebuild,
+			}, manager.CLIProgress{})
 		},
 	}
 
