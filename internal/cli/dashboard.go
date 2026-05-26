@@ -126,7 +126,8 @@ func startDashboardDaemon(addr, password string) error {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	configureSysProcAttr(cmd.SysProcAttr)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
