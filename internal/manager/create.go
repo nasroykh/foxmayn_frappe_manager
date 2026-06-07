@@ -421,12 +421,18 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}
 
+	step("Setting default site")
+	useSiteCmd := fmt.Sprintf("cd /workspace/frappe-bench && bench use %s", siteName)
+	if out, err := runner.ExecSilent("frappe", "bash", "-c", useSiteCmd); err != nil {
+		return fmt.Errorf("bench use: %w\n%s", err, out)
+	}
+
 	// Developer mode (dev only)
 	if mode == "dev" {
 		step("Enabling developer mode")
 		devModeCmd := fmt.Sprintf(
-			"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1 && bench use %s",
-			siteName, siteName,
+			"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1",
+			siteName,
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
 			return fmt.Errorf("enable developer mode: %w\n%s", err, out)
