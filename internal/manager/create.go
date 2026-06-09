@@ -51,6 +51,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 	name := in.Name
 	frappeBranch := in.FrappeBranch
+	frappeRepo := in.FrappeRepo
 	apps := in.Apps
 	adminPassword := in.AdminPassword
 	dbPassword := in.DBPassword
@@ -116,7 +117,22 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("bench %q already exists", name)
 	}
 
-	pw.Printf("Creating bench %q  (frappe: %s  mode: %s", name, frappeBranch, mode)
+	// Parse frappeRepo for optional @branch suffix (same syntax as --apps).
+	frappeRepoURL := frappeRepo
+	frappeInitBranch := frappeBranch
+	if frappeRepo != "" {
+		spec := bench.ParseAppSpec(frappeRepo, "")
+		frappeRepoURL = spec.Source
+		if spec.Branch != "" {
+			frappeInitBranch = spec.Branch
+		}
+	}
+
+	frappeSrc := frappeInitBranch
+	if frappeRepoURL != "" {
+		frappeSrc = frappeRepoURL + "@" + frappeInitBranch
+	}
+	pw.Printf("Creating bench %q  (frappe: %s  mode: %s", name, frappeSrc, mode)
 	if mode == "prod" {
 		pw.Printf("  domain: %s", domain)
 	}
@@ -280,15 +296,19 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 
 	// Run bench init — dev mode also installs Claude/agent skills
-	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeBranch))
+	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeSrc))
 	var benchInitCmd string
+	benchInitRepoArgs := fmt.Sprintf("--frappe-branch %s", frappeInitBranch)
+	if frappeRepoURL != "" {
+		benchInitRepoArgs += fmt.Sprintf(" --frappe-path %s", frappeRepoURL)
+	}
 	baseInit := fmt.Sprintf(
-		`bench init --frappe-branch %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
+		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
 			` && rm -rf /workspace/frappe-bench`+
 			` && cp -a /tmp/ffm-bench-init /workspace/frappe-bench`+
 			` && grep -rIl '/tmp/ffm-bench-init' /workspace/frappe-bench 2>/dev/null | xargs -r sed -i 's|/tmp/ffm-bench-init|/workspace/frappe-bench|g'`+
 			` && rm -rf /tmp/ffm-bench-init`,
-		frappeBranch,
+		benchInitRepoArgs,
 	)
 	if mode == "dev" {
 		benchInitCmd = baseInit +
@@ -300,6 +320,17 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/`
 	} else {
 		benchInitCmd = baseInit
+	}
+	// When a GitHub token is provided and bench init must clone a private HTTPS repo,
+	// inject credentials directly into the one-off run container. ConfigureGitHubToken
+	// uses docker compose exec (needs a running container) so it cannot cover this step.
+	if githubToken != "" {
+		credSetup := fmt.Sprintf(
+			"printf 'https://x-oauth-basic:%s@github.com\\n' > /tmp/.git-credentials"+
+				" && git config --global credential.helper 'store --file /tmp/.git-credentials'",
+			githubToken,
+		)
+		benchInitCmd = credSetup + " && " + benchInitCmd
 	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
 		return fmt.Errorf("bench init: %w", err)

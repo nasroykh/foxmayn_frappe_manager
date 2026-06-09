@@ -12,6 +12,7 @@ import (
 func newCreateCmd() *cobra.Command {
 	var (
 		frappeBranch      string
+		frappeRepo        string
 		apps              []string
 		adminPassword     string
 		dbPassword        string
@@ -43,17 +44,17 @@ func newCreateCmd() *cobra.Command {
 
 			if !modeSet {
 				// No --mode flag: show full interactive form (asks dev or prod first).
-				if err := runCreateFormFull(&mode, &frappeBranch, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType, &mariadbBufferPool, &gunicornWorkers); err != nil {
+				if err := runCreateFormFull(&mode, &frappeBranch, &frappeRepo, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType, &mariadbBufferPool, &gunicornWorkers, &githubToken); err != nil {
 					return err
 				}
 			} else if mode == "dev" && !branchSet && !appsSet {
 				// Explicit --mode dev but no branch/apps: show dev-only form.
-				if err := runCreateForm(&frappeBranch, &apps, &dbType); err != nil {
+				if err := runCreateForm(&frappeBranch, &frappeRepo, &apps, &dbType, &githubToken); err != nil {
 					return err
 				}
 			}
 			return manager.New(verbose).Create(manager.CreateInput{
-				Name: args[0], FrappeBranch: frappeBranch, Apps: apps,
+				Name: args[0], FrappeBranch: frappeBranch, FrappeRepo: frappeRepo, Apps: apps,
 				AdminPassword: adminPassword, DBPassword: dbPassword, DBType: dbType,
 				GithubToken: githubToken, ProxyPort: proxyPort, ProxyHost: proxyHost,
 				Mode: mode, Domain: domain, NoSSL: noSSL, AcmeEmail: acmeEmail,
@@ -66,6 +67,7 @@ func newCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch (version-15 or version-16)")
+	cmd.Flags().StringVar(&frappeRepo, "frappe-repo", "", "Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.")
 	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
 	cmd.Flags().StringVar(&dbPassword, "db-password", "ffm123456", "Database root password")
@@ -89,7 +91,7 @@ func newCreateCmd() *cobra.Command {
 }
 
 // runCreateForm shows an interactive TUI to choose Frappe version, apps, and DB engine.
-func runCreateForm(branch *string, apps *[]string, dbType *string) error {
+func runCreateForm(branch *string, frappeRepo *string, apps *[]string, dbType *string, githubToken *string) error {
 	versionOptions := []huh.Option[string]{
 		huh.NewOption("Frappe v15 (stable)", "version-15"),
 		huh.NewOption("Frappe v16 (latest)", "version-16"),
@@ -130,6 +132,15 @@ func runCreateForm(branch *string, apps *[]string, dbType *string) error {
 				Title("Custom app (optional)").
 				Description("Short name, git URL, or url@branch. Comma-separated for multiple.\nExamples: mypkg, git@github.com:org/app.git@main, https://github.com/org/app").
 				Value(&customAppsRaw),
+			huh.NewInput().
+				Title("Custom Frappe repo (optional)").
+				Description("Use a fork or mirror instead of github.com/frappe/frappe. Append @branch to override the selected version.\nExamples: https://github.com/your-org/frappe.git@main, git@github.com:your-org/frappe.git@main").
+				Value(frappeRepo),
+			huh.NewInput().
+				Title("GitHub token (optional)").
+				Description("Personal access token for private HTTPS repos (Frappe fork or custom apps).").
+				EchoMode(huh.EchoModePassword).
+				Value(githubToken),
 		),
 	).Run()
 	if err != nil {
@@ -146,7 +157,7 @@ func runCreateForm(branch *string, apps *[]string, dbType *string) error {
 
 // runCreateFormFull is the interactive form shown when --mode is not passed.
 // It asks dev or prod first, then shows the relevant follow-up fields.
-func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType, mariadbBufferPool *string, gunicornWorkers *int) error {
+func runCreateFormFull(mode, branch *string, frappeRepo *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType, mariadbBufferPool *string, gunicornWorkers *int, githubToken *string) error {
 	*mode = "dev"
 	*branch = "version-15"
 	if *dbType == "" {
@@ -170,7 +181,7 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 	}
 
 	if *mode == "dev" {
-		return runCreateForm(branch, apps, dbType)
+		return runCreateForm(branch, frappeRepo, apps, dbType, githubToken)
 	}
 
 	// Step 2 (prod): domain, SSL, branch, apps, DB tuning
@@ -252,6 +263,15 @@ func runCreateFormFull(mode, branch *string, apps *[]string, domain, acmeEmail *
 				Title("Custom app (optional)").
 				Description("Short name, git URL, or url@branch. Comma-separated for multiple.").
 				Value(&customAppsRaw),
+			huh.NewInput().
+				Title("Custom Frappe repo (optional)").
+				Description("Use a fork or mirror instead of github.com/frappe/frappe. Append @branch to override the selected version.\nExamples: https://github.com/your-org/frappe.git@main, git@github.com:your-org/frappe.git@main").
+				Value(frappeRepo),
+			huh.NewInput().
+				Title("GitHub token (optional)").
+				Description("Personal access token for private HTTPS repos (Frappe fork or custom apps).").
+				EchoMode(huh.EchoModePassword).
+				Value(githubToken),
 		),
 	).Run()
 	if err != nil {

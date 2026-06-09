@@ -175,6 +175,9 @@ Flags:
   --acme-email string     Email for Let's Encrypt (required on first prod+SSL bench;
                           saved to ~/.config/ffm/.acme_email for subsequent benches)
   --frappe-branch string  Frappe branch to initialise (default "version-15")
+  --frappe-repo string    Custom Frappe repo URL with optional @branch suffix
+                          (e.g. https://github.com/your-org/frappe.git@main).
+                          Defaults to the official frappe/frappe repo.
   --apps stringArray      Apps to install (see formats below)
   --admin-password string Frappe site admin password (default "admin"; required for prod)
   --db-type string        Database engine: mariadb or postgres (default "mariadb")
@@ -197,6 +200,25 @@ ffm create mybench --apps "https://github.com/myorg/myapp@develop" --github-toke
 ```
 
 When `SSH_AUTH_SOCK` is set, the SSH agent is automatically forwarded into the container so SSH-URL private repos work without a token.
+
+#### Using a custom or forked Frappe repo
+
+By default `bench init` clones the official `frappe/frappe`. Use `--frappe-repo` to point at a fork or mirror, with an optional `@branch` suffix that overrides `--frappe-branch` for the Frappe checkout (apps still use `--frappe-branch`). For a private repo, pass `--github-token` — the credentials are injected into the `bench init` container.
+
+```bash
+# Public fork on a custom branch
+ffm create mybench --frappe-repo https://github.com/your-org/frappe.git@main
+
+# Private fork (HTTPS) with a token
+ffm create mybench \
+  --frappe-repo https://github.com/your-org/frappe.git@main \
+  --github-token ghp_xxx
+
+# Private fork over SSH (uses forwarded SSH agent, no token needed)
+ffm create mybench --frappe-repo "git@github.com:your-org/frappe.git@main"
+```
+
+Both `--frappe-repo` and `--github-token` are also available in the interactive `ffm create` form (the token field is masked).
 
 ### `ffm list` / `ffm ls`
 

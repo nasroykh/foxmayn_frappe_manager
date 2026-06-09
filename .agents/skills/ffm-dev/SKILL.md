@@ -427,7 +427,9 @@ All Traefik configuration is CLI flags — no config file on disk.
 - `--mode dev` without `--frappe-branch`/`--apps` → `runCreateForm()`: dev-only form (branch + apps)
 - Any other combination: skip forms, use flags directly
 
-`runCreateFormFull()` for prod shows: domain, admin password (password echo mode), ACME email (empty = no-ssl), Frappe version, apps.
+Both forms also include two optional trailing inputs: **Custom Frappe repo** (`--frappe-repo`, supports a `@branch` suffix) and **GitHub token** (`--github-token`, masked via `huh.EchoModePassword`). These pointers are threaded through `runCreateForm`/`runCreateFormFull` so flag values pre-fill them and form input flows back to `CreateInput`.
+
+`runCreateFormFull()` for prod shows: domain, admin password (password echo mode), ACME email (empty = no-ssl), Frappe version, DB engine, gunicorn workers, buffer pool, apps, custom Frappe repo, GitHub token.
 
 ### Rollback mechanism
 
@@ -536,6 +538,12 @@ Called by `resolveBenchName()` when `args` is empty, before showing the interact
 | `https://github.com/org/app@main` | HTTPS URL without `@main` | `main`                   |
 
 `GetAppCmd()` returns the `bench get-app` shell command. `DisplayName()` extracts the repo name for log output.
+
+`ParseAppSpec` is also reused in `manager/create.go` to split `--frappe-repo` into a URL (`Source` → `bench init --frappe-path`) and an optional `@branch` (overrides `--frappe-branch` for the Frappe checkout only). Call it with an empty `frappeBranch` there so a bare repo URL yields `Branch == ""` and falls back to the form/flag branch.
+
+### Private repo credentials during bench init
+
+`Runner.ConfigureGitHubToken` writes git credentials via `docker compose exec`, which needs a **running** container. But `bench init` runs in a one-off `docker compose run --rm` container, so that helper can't cover it. When `--github-token` is set, `create.go` prepends the credential setup (`printf 'https://x-oauth-basic:<token>@github.com' > /tmp/.git-credentials && git config --global credential.helper 'store --file /tmp/.git-credentials'`) directly into the bench init bash command. No cleanup is needed — the container is `--rm`. The token never appears in `bench init` output (the helper reads it from the file, not the command line).
 
 ## Error Handling
 

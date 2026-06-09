@@ -4,6 +4,7 @@ package manager
 type CreateInput struct {
 	Name              string
 	FrappeBranch      string
+	FrappeRepo        string
 	Apps              []string
 	AdminPassword     string
 	DBPassword        string
