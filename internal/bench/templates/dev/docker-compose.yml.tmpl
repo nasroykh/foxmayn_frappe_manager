@@ -35,6 +35,10 @@ services:
     build:
       context: .
     command: sleep infinity
+    # PID 1 is `sleep infinity`, which never reaps children. honcho's child
+    # processes (web, socketio, workers) get reparented to PID 1 when the dev
+    # server is restarted and pile up as zombies. tini (init: true) reaps them.
+    init: true
     environment:
       - SHELL=/bin/zsh
       - FRAPPE_SOCKETIO_PORT=9000
