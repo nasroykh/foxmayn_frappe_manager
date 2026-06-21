@@ -358,6 +358,11 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
+		// Make the RQ worker self-restart so an idle Redis timeout (which exits
+		// the worker rc=0) doesn't make honcho tear down the whole dev stack.
+		if err := bench.PatchProcfileWorker(benchDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
+		}
 	}
 
 	// Start containers.

@@ -181,6 +181,66 @@ func PatchUtilsJs(benchDir string) error {
 	return os.WriteFile(path, []byte(strings.Replace(string(content), original, patched, 1)), 0o644)
 }
 
+// PatchProcfileWorker rewrites the dev Procfile's `worker:` line so the RQ
+// background worker auto-restarts instead of taking down the whole honcho stack.
+//
+// On a dev bench every process (web/werkzeug, socketio, watch, schedule, worker)
+// runs under a single honcho supervisor (`bench start`), and honcho SIGTERMs the
+// ENTIRE stack the moment any one process exits. The RQ worker (RQ 1.15.1) quits
+// with rc=0 whenever its idle Redis dequeue raises redis.exceptions.TimeoutError
+// — which happens roughly every worker-TTL window (~7 min) of low background-job
+// traffic. That worker exit makes honcho kill the web server too, so the user
+// sees a 502 Bad Gateway until `bench start` is re-run.
+//
+// Wrapping the worker in a self-restarting bash loop means honcho only ever
+// watches the wrapper (which never exits), so a worker timeout/crash no longer
+// tears down the web server — the worker just relaunches in ~1s. The trap kills
+// the current worker child and exits 0 on SIGTERM/SIGINT so `ffm stop`/`restart`
+// shut down cleanly. Idempotent (a Procfile already wrapped is left untouched)
+// and re-applied on every start, so it survives `bench setup procfile` after a
+// bench update. The wrapper also runs the worker with `env -u DEV_SERVER` to
+// stop the RQ deprecation-warning flood (see inline note). dev-only — prod runs
+// each process in its own container.
+func PatchProcfileWorker(benchDir string) error {
+	path := filepath.Join(benchDir, "workspace", "frappe-bench", "Procfile")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := string(content)
+	if strings.Contains(text, "while true; do") {
+		return nil // already wrapped
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "worker:") {
+			continue
+		}
+		cmd := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "worker:"))
+		// Empty, or contains a single quote we can't safely embed in the
+		// bash -c '...' wrapper — leave the Procfile untouched.
+		if cmd == "" || strings.Contains(cmd, "'") {
+			return nil
+		}
+		// `env -u DEV_SERVER` runs the worker without the dev-web-server flag it
+		// inherits from `bench start`. With DEV_SERVER set, Frappe forces
+		// `warnings.simplefilter("always", DeprecationWarning)` (frappe/__init__.py),
+		// so RQ 1.15.1's `datetime.utcnow()` calls spam worker.error.log on
+		// Python 3.12+ (seen as a multi-hundred-MB log). The worker is not the dev
+		// web server, so dropping the flag is correct, not a workaround — it just
+		// restores Frappe's default ERROR-level logging for this process.
+		//
+		// `exec` so the bash loop *replaces* the shell honcho spawned and is the
+		// process honcho tracks/signals — otherwise SIGTERM on stop can hit a
+		// parent shell and leave the loop orphaned. The trap forwards the signal
+		// to the current worker child and exits 0 for a clean shutdown.
+		lines[i] = "worker: exec bash -c 'trap \"kill \\$child 2>/dev/null; exit 0\" TERM INT; " +
+			"while true; do env -u DEV_SERVER " + cmd + " & child=$!; wait $child; sleep 1; done'"
+		return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+	}
+	return nil // no worker: line found
+}
+
 // WriteDevcontainer writes .devcontainer/devcontainer.json into the bench
 // directory so that VS Code can open the full frappe-bench inside the container
 // ("Dev Containers: Reopen in Container" or "Attach to Running Container").

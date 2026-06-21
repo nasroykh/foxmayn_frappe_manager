@@ -50,6 +50,12 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		if err := bench.PatchUtilsJs(b.Dir); err != nil && s.Verbose {
 			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
 		}
+		// Self-restarting worker: stops an idle-Redis-timeout worker exit (rc=0)
+		// from making honcho SIGTERM the whole stack (502 Bad Gateway). Must run
+		// before bench start so honcho reads the patched Procfile.
+		if err := bench.PatchProcfileWorker(b.Dir); err != nil && s.Verbose {
+			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
+		}
 
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
 			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
