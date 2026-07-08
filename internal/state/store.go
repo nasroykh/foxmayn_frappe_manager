@@ -21,11 +21,16 @@ type TunnelState struct {
 
 // Bench holds the persisted state for a single managed bench.
 type Bench struct {
-	Name          string `json:"name"`
-	Dir           string `json:"dir"`
-	WebPort       int    `json:"web_port"`
-	SocketIOPort  int    `json:"socketio_port"`
-	FrappeBranch  string `json:"frappe_branch"`
+	Name         string `json:"name"`
+	Dir          string `json:"dir"`
+	WebPort      int    `json:"web_port"`
+	SocketIOPort int    `json:"socketio_port"`
+	FrappeBranch string `json:"frappe_branch"`
+	// FrappeRepo is the custom --frappe-repo source (URL, optionally with an
+	// @branch suffix) used at create time. Empty means the official
+	// frappe/frappe repo was used. Persisted so Recreate reuses the same fork
+	// instead of silently falling back to the official repo.
+	FrappeRepo    string `json:"frappe_repo,omitempty"`
 	AdminPassword string `json:"admin_password"`
 	DBPassword    string `json:"db_password"`
 	// DBType is "mariadb" or "postgres". Empty is treated as "mariadb" for backward compatibility.

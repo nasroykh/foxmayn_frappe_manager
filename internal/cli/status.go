@@ -63,6 +63,9 @@ func runStatus(name string) error {
 		}
 	}
 	label("branch", b.FrappeBranch)
+	if b.FrappeRepo != "" {
+		label("frappe repo", b.FrappeRepo)
+	}
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
 	if b.DBPassword != "" {
 		label("database", fmt.Sprintf("%s (root / %s)", b.DBEngine(), b.DBPassword))

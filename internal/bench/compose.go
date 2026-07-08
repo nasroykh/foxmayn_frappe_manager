@@ -166,6 +166,14 @@ func PatchAuthenticateJs(benchDir string) error {
 // inside the container because hostnames like "sitename.localhost" or direct
 // host ports (localhost:8040) don't resolve from inside Docker. Must be
 // re-applied after bench update (same lifecycle as PatchAuthenticateJs).
+//
+// Frappe rewrote realtime/utils.js's get_url() between version-15 and
+// version-16, so the v15 string this patch originally targeted no longer
+// exists on v16 — the function silently no-ops instead of patching. v16 only
+// substitutes webserver_port when developer_mode is set and otherwise still
+// falls back to the raw origin, so the same server-to-server auth bug remains
+// unpatched on prod (developer_mode=0) v16 benches. Try both function bodies;
+// whichever one matches gets patched, the other is a no-op.
 func PatchUtilsJs(benchDir string) error {
 	path := filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe",
 		"realtime", "utils.js")
@@ -173,12 +181,23 @@ func PatchUtilsJs(benchDir string) error {
 	if err != nil {
 		return err
 	}
-	original := `return socket.request.headers.origin + path;`
-	patched := `return (require("../node_utils").get_conf().socketio_frappe_url || socket.request.headers.origin || "http://localhost:8000") + path;`
-	if !strings.Contains(string(content), original) {
-		return nil // already patched or file changed; leave it alone
+	text := string(content)
+	if strings.Contains(text, "socketio_frappe_url") {
+		return nil // already patched
 	}
-	return os.WriteFile(path, []byte(strings.Replace(string(content), original, patched, 1)), 0o644)
+
+	if v15Original := `return socket.request.headers.origin + path;`; strings.Contains(text, v15Original) {
+		patched := `return (require("../node_utils").get_conf().socketio_frappe_url || socket.request.headers.origin || "http://localhost:8000") + path;`
+		return os.WriteFile(path, []byte(strings.Replace(text, v15Original, patched, 1)), 0o644)
+	}
+
+	if v16Original := `let url = socket.request.headers.origin;`; strings.Contains(text, v16Original) {
+		patched := "if (conf.socketio_frappe_url) {\n\t\treturn conf.socketio_frappe_url + path;\n\t}\n\t" +
+			"let url = socket.request.headers.origin || `http://localhost:${conf.webserver_port || 8000}`;"
+		return os.WriteFile(path, []byte(strings.Replace(text, v16Original, patched, 1)), 0o644)
+	}
+
+	return nil // unrecognized file structure; leave it alone
 }
 
 // PatchProcfileWorker rewrites the dev Procfile's `worker:` line so the RQ

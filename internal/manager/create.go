@@ -613,6 +613,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		WebPort:       webPort,
 		SocketIOPort:  socketIOPort,
 		FrappeBranch:  frappeBranch,
+		FrappeRepo:    frappeRepo,
 		AdminPassword: adminPassword,
 		DBPassword:    dbPassword,
 		DBType:        dbType,

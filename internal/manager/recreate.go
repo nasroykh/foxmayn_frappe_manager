@@ -96,6 +96,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 	return s.Create(CreateInput{
 		Name:              b.Name,
 		FrappeBranch:      b.FrappeBranch,
+		FrappeRepo:        b.FrappeRepo,
 		Apps:              apps,
 		AdminPassword:     b.AdminPassword,
 		DBPassword:        b.DBPassword,
