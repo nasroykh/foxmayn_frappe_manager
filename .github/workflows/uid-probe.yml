@@ -7,6 +7,11 @@
 # ffm writes across the ./workspace bind mount in both directions, so the
 # mismatch should make bench init fail to populate the workspace.
 #
+# This cannot be tested on macOS: Docker Desktop rewrites uids across the
+# virtiofs boundary, so a stock uid-1000 container writes happily into a
+# 1001-owned directory there. Only a native Linux bind mount shows the truth,
+# which is the entire reason this workflow exists.
+#
 # Expected result: the `without-remap` leg FAILS and `with-remap` SUCCEEDS.
 # If `without-remap` unexpectedly succeeds, the diagnosis is wrong and the job
 # fails loudly on purpose — that is the point of running it.
@@ -33,29 +38,35 @@ jobs:
             expect: success
 
     name: ${{ matrix.name }}
+
+    # Only contexts valid in jobs.<id>.env may appear here: github, needs,
+    # strategy, matrix, vars, secrets, inputs. The `runner` context is NOT
+    # among them, so RUNNER_TEMP-based paths are exported from a step below.
     env:
-      FFM_BENCHES_DIR: ${{ runner.temp }}/frappe
-      FFM_CONFIG_DIR: ${{ runner.temp }}/ffm-config
       CI: "true"
 
     steps:
+      - name: Resolve bench paths
+        run: |
+          echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
+          echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Runner identity and disk
+      - name: Runner identity, disk, and mount semantics
         run: |
           echo "runner user: $(id)"
           df -h / | tail -1
           docker version --format 'docker server {{.Server.Version}}'
-          # Confirms the mount is a native Linux bind mount with no ownership
-          # translation — the thing that makes this bug invisible on macOS,
-          # where Docker Desktop rewrites uids across the virtiofs boundary.
+          # Confirm this is a native bind mount with no ownership translation —
+          # the property macOS lacks, which is why this must run here.
           mkdir -p "$RUNNER_TEMP/mnt-probe"
           docker run --rm -v "$RUNNER_TEMP/mnt-probe":/m alpine \
-            sh -c 'touch /m/f && stat -c "%u:%g created-by-root-container" /m/f'
+            sh -c 'touch /m/f && stat -c "%u:%g created-inside-container" /m/f'
           stat -c '%u:%g as-seen-by-host' "$RUNNER_TEMP/mnt-probe/f"
 
       # The load-bearing fact behind the whole change. If this does not print
@@ -85,9 +96,7 @@ jobs:
         run: |
           ls -lan "$FFM_BENCHES_DIR/probe" 2>/dev/null || echo "(no bench dir)"
           ls -lan "$FFM_BENCHES_DIR/probe/workspace" 2>/dev/null || echo "(no workspace)"
-          echo "--- image user after build ---"
-          docker run --rm "$(docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" config --images 2>/dev/null | head -1)" id frappe 2>/dev/null \
-            || echo "(image not inspectable)"
+          ls -lan "$FFM_BENCHES_DIR/probe/workspace/frappe-bench" 2>/dev/null || echo "(no frappe-bench — this is the failure signature)"
 
       - name: Assert expected outcome
         run: |
@@ -100,5 +109,7 @@ jobs:
       - name: Teardown
         if: always()
         run: |
-          docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" down -v 2>/dev/null || true
+          if [ -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" ]; then
+            docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" down -v || true
+          fi
           rm -rf "$FFM_BENCHES_DIR/probe"
