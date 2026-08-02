@@ -1,0 +1,104 @@
+# Disposable experiment: proves whether the container/host uid mismatch actually
+# breaks `ffm create` on a GitHub-hosted runner, and whether --match-host-user
+# fixes it.
+#
+# Premise being tested: frappe/bench:latest creates its `frappe` user with
+# `useradd -u 1000`, while ubuntu-latest runs steps as `runner` (uid 1001).
+# ffm writes across the ./workspace bind mount in both directions, so the
+# mismatch should make bench init fail to populate the workspace.
+#
+# Expected result: the `without-remap` leg FAILS and `with-remap` SUCCEEDS.
+# If `without-remap` unexpectedly succeeds, the diagnosis is wrong and the job
+# fails loudly on purpose — that is the point of running it.
+#
+# Delete this file once the question is settled.
+name: uid-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: without-remap
+            flags: ""
+            expect: failure
+          - name: with-remap
+            flags: "--match-host-user"
+            expect: success
+
+    name: ${{ matrix.name }}
+    env:
+      FFM_BENCHES_DIR: ${{ runner.temp }}/frappe
+      FFM_CONFIG_DIR: ${{ runner.temp }}/ffm-config
+      CI: "true"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Runner identity and disk
+        run: |
+          echo "runner user: $(id)"
+          df -h / | tail -1
+          docker version --format 'docker server {{.Server.Version}}'
+          # Confirms the mount is a native Linux bind mount with no ownership
+          # translation — the thing that makes this bug invisible on macOS,
+          # where Docker Desktop rewrites uids across the virtiofs boundary.
+          mkdir -p "$RUNNER_TEMP/mnt-probe"
+          docker run --rm -v "$RUNNER_TEMP/mnt-probe":/m alpine \
+            sh -c 'touch /m/f && stat -c "%u:%g created-by-root-container" /m/f'
+          stat -c '%u:%g as-seen-by-host' "$RUNNER_TEMP/mnt-probe/f"
+
+      # The load-bearing fact behind the whole change. If this does not print
+      # uid=1000, the premise is wrong before anything else runs.
+      - name: Base image user
+        run: docker run --rm docker.io/frappe/bench:latest id frappe
+
+      - name: Build ffm from this branch
+        run: go build -o "$RUNNER_TEMP/ffm" ./cmd/ffm
+
+      - name: ffm create (${{ matrix.name }})
+        id: create
+        continue-on-error: true
+        run: |
+          mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          "$RUNNER_TEMP/ffm" create probe \
+            --mode dev \
+            --verbose \
+            --frappe-branch version-15 \
+            --keep-on-failure \
+            ${{ matrix.flags }}
+
+      # --keep-on-failure means the workspace survives a failed create, so the
+      # ownership that caused it is still inspectable.
+      - name: Ownership across the bind mount
+        if: always()
+        run: |
+          ls -lan "$FFM_BENCHES_DIR/probe" 2>/dev/null || echo "(no bench dir)"
+          ls -lan "$FFM_BENCHES_DIR/probe/workspace" 2>/dev/null || echo "(no workspace)"
+          echo "--- image user after build ---"
+          docker run --rm "$(docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" config --images 2>/dev/null | head -1)" id frappe 2>/dev/null \
+            || echo "(image not inspectable)"
+
+      - name: Assert expected outcome
+        run: |
+          echo "expected=${{ matrix.expect }}  actual=${{ steps.create.outcome }}"
+          if [ "${{ steps.create.outcome }}" != "${{ matrix.expect }}" ]; then
+            echo "::error::${{ matrix.name }}: expected ${{ matrix.expect }}, got ${{ steps.create.outcome }}"
+            exit 1
+          fi
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" down -v 2>/dev/null || true
+          rm -rf "$FFM_BENCHES_DIR/probe"
