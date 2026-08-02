@@ -42,6 +42,9 @@ Use --dry-run to preview row counts without deleting.`,
 
 func runCleanLogs(name string, days int, dryRun, yes bool) error {
 	if !dryRun && !yes {
+		if !isInteractive() {
+			return mustNotPrompt("log deletion confirmation", "pass --yes (or --dry-run to preview)")
+		}
 		confirmed := false
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -52,8 +55,11 @@ func runCleanLogs(name string, days int, dryRun, yes bool) error {
 					Negative("Cancel").
 					Value(&confirmed),
 			),
-		)
+		).WithKeyMap(benchPickKeyMap())
 		if err := form.Run(); err != nil {
+			if cancelled(err) {
+				return nil
+			}
 			return err
 		}
 		if !confirmed {

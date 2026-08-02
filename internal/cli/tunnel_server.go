@@ -198,6 +198,10 @@ func newTunnelServerRemoveCmd() *cobra.Command {
 				return fmt.Errorf("tunnel server %q not found", name)
 			}
 
+			if !isInteractive() {
+				return mustNotPrompt("tunnel server removal confirmation",
+					"removal is interactive-only; edit ~/.config/ffm/tunnel.json directly instead")
+			}
 			confirmed := false
 			form := huh.NewForm(
 				huh.NewGroup(
@@ -298,6 +302,10 @@ func runTunnelServerList() error {
 // runTunnelServerForm shows an interactive huh form to fill in server fields.
 // noTLS is controlled by the --no-tls flag; the form only handles string inputs.
 func runTunnelServerForm(host, portStr, token, baseDomain *string) error {
+	if !isInteractive() {
+		return mustNotPrompt("tunnel server details",
+			"pass --host, --port, --token and --base-domain")
+	}
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().

@@ -33,6 +33,9 @@ func newDeleteCmd() *cobra.Command {
 func runDelete(name string, force bool) error {
 	svc := manager.New(verbose)
 	if !force {
+		if !isInteractive() {
+			return mustNotPrompt("delete confirmation", "pass --force")
+		}
 		confirmed := false
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -43,8 +46,11 @@ func runDelete(name string, force bool) error {
 					Negative("Cancel").
 					Value(&confirmed),
 			),
-		)
+		).WithKeyMap(benchPickKeyMap())
 		if err := form.Run(); err != nil {
+			if cancelled(err) {
+				return nil
+			}
 			return err
 		}
 		if !confirmed {
