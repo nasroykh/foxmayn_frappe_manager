@@ -21,7 +21,16 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 			return err
 		}
 		pw.Printf("Updating Dockerfile for bench %q...\n", in.Name)
-		if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{Mode: b.Mode, DBType: b.DBEngine()}); err != nil {
+		// Carry MatchHostUser through, or the rebuild silently reverts the image
+		// to the stock uid 1000 and breaks the workspace bind mount on hosts that
+		// needed the remap.
+		hostUID, hostGID, uerr := composeUserIDs(b.MatchHostUser)
+		if uerr != nil {
+			return uerr
+		}
+		if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{
+			Mode: b.Mode, DBType: b.DBEngine(), HostUID: hostUID, HostGID: hostGID,
+		}); err != nil {
 			return fmt.Errorf("write Dockerfile: %w", err)
 		}
 		if b.IsProd() {

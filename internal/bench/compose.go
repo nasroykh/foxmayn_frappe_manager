@@ -72,6 +72,17 @@ type ComposeData struct {
 	// SlowQueryLog enables MariaDB slow query logging (MariaDB + prod only).
 	// runCreate must create <benchDir>/mysql-logs/ when this is true.
 	SlowQueryLog bool
+	// HostUID and HostGID, when both non-zero, make the Dockerfile remap the
+	// in-container `frappe` user (uid/gid 1000 in the frappe/bench base image)
+	// onto these ids. Zero — the default — leaves the base image untouched and
+	// renders exactly the Dockerfile ffm has always produced.
+	//
+	// Set from --match-host-user for hosts whose uid is not 1000, where the
+	// ./workspace bind mount is otherwise unwritable from one side or the other.
+	// HostUID alone gates rendering, so callers must set both or neither —
+	// manager.hostUserIDs enforces that.
+	HostUID int
+	HostGID int
 }
 
 // WriteCompose renders the compose template into the bench directory.
