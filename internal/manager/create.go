@@ -173,24 +173,40 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		siteName = domain
 	}
 
-	// Automatic cleanup on failure.
+	// Automatic cleanup on failure, unless the caller asked to keep the wreckage
+	// for diagnosis (unattended runs, where the rollback would otherwise delete
+	// the only evidence of why create failed).
+	keepOnFailure := in.KeepOnFailure || os.Getenv("FFM_KEEP_ON_FAILURE") != ""
 	defer func() {
 		if createErr == nil {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "\nCreate failed — cleaning up...")
 		composePath := filepath.Join(benchDir, "docker-compose.yml")
 		if _, statErr := os.Stat(composePath); statErr == nil {
-			// Dump DB container logs so the user can diagnose startup failures
+			// Dump container logs so the user can diagnose startup failures
 			// (e.g. bad MariaDB flags) before the containers are torn down.
 			dbService := "mariadb"
 			if dbType == "postgres" {
 				dbService = "postgres"
 			}
-			fmt.Fprintf(os.Stderr, "\n--- %s container logs ---\n", dbService)
-			fmt.Fprintln(os.Stderr, runner.LogsString(dbService))
-			fmt.Fprintln(os.Stderr, "--- end logs ---")
+			for _, svc := range []string{dbService, "frappe"} {
+				fmt.Fprintf(os.Stderr, "\n--- %s container logs ---\n", svc)
+				fmt.Fprintln(os.Stderr, runner.LogsString(svc))
+				fmt.Fprintln(os.Stderr, "--- end logs ---")
+			}
+		}
 
+		if keepOnFailure {
+			// State is only saved on success, so this bench is not tracked and
+			// `ffm delete` cannot find it. Print the literal teardown command.
+			fmt.Fprintf(os.Stderr, "\nCreate failed — leaving containers and %s in place (--keep-on-failure).\n", benchDir)
+			fmt.Fprintf(os.Stderr, "Clean up with:\n  docker compose -p %s -f %s/docker-compose.yml down -v && rm -rf %s\n",
+				bench.ProjectName(name), benchDir, benchDir)
+			return
+		}
+
+		fmt.Fprintln(os.Stderr, "\nCreate failed — cleaning up...")
+		if _, statErr := os.Stat(composePath); statErr == nil {
 			if downErr := runner.Down(true); downErr != nil && s.Verbose {
 				fmt.Fprintf(os.Stderr, "  cleanup: docker compose down: %v\n", downErr)
 			}
@@ -240,10 +256,16 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if redisQueueMaxmem == "" {
 		redisQueueMaxmem = "512mb"
 	}
+	hostUID, hostGID, err := composeUserIDs(in.MatchHostUser)
+	if err != nil {
+		return err
+	}
 	data := bench.ComposeData{
 		Name:              name,
 		Mode:              mode,
 		BenchDir:          benchDir,
+		HostUID:           hostUID,
+		HostGID:           hostGID,
 		WebPort:           webPort,
 		WebPortEnd:        webPort + 5,
 		SocketIOPort:      socketIOPort,
@@ -622,6 +644,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		ProxyHost:     resolvedProxyHost,
 		Mode:          mode,
 		Domain:        domain,
+		MatchHostUser: in.MatchHostUser,
 		CreatedAt:     time.Now(),
 	}
 	if err := s.AddBench(rec); err != nil {

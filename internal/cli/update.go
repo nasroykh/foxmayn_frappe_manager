@@ -61,22 +61,19 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// Fetch latest release from GitHub.
 	var release githubRelease
 	var fetchErr error
-	_ = spinner.New().
-		Title("Checking for updates…").
-		Action(func() {
-			resp, err := resty.New().R().
-				SetResult(&release).
-				SetHeader("Accept", "application/vnd.github+json").
-				Get(githubReleasesAPI)
-			if err != nil {
-				fetchErr = fmt.Errorf("fetching release info: %w", err)
-				return
-			}
-			if resp.StatusCode() != 200 {
-				fetchErr = fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode())
-			}
-		}).
-		Run()
+	withSpinner("Checking for updates…", func() {
+		resp, err := resty.New().R().
+			SetResult(&release).
+			SetHeader("Accept", "application/vnd.github+json").
+			Get(githubReleasesAPI)
+		if err != nil {
+			fetchErr = fmt.Errorf("fetching release info: %w", err)
+			return
+		}
+		if resp.StatusCode() != 200 {
+			fetchErr = fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode())
+		}
+	})
 	if fetchErr != nil {
 		return fetchErr
 	}
@@ -119,6 +116,9 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 
 	// Confirm before downloading.
 	if !upYes {
+		if !isInteractive() {
+			return mustNotPrompt("update confirmation", "pass --yes (or --check to only report)")
+		}
 		var confirmed bool
 		err := huh.NewForm(
 			huh.NewGroup(
@@ -135,18 +135,21 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 
 	// Download archive and replace binary.
 	var installErr error
-	_ = spinner.New().
-		Title(fmt.Sprintf("Downloading ffm %s…", latest)).
-		Action(func() {
-			installErr = downloadAndInstall(downloadURL)
-		}).
-		Run()
+	withSpinner(fmt.Sprintf("Downloading ffm %s…", latest), func() {
+		installErr = downloadAndInstall(downloadURL)
+	})
 	if installErr != nil {
 		return installErr
 	}
 
 	fmt.Fprintf(os.Stderr, "Updated to ffm %s\n", latest)
 	return nil
+}
+
+// runSpinner shows the huh spinner while action runs. Only called from
+// withSpinner, which has already established that a terminal is available.
+func runSpinner(title string, action func()) {
+	_ = spinner.New().Title(title).Action(action).Run()
 }
 
 // downloadAndInstall fetches the release archive and replaces the running binary.

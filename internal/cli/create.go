@@ -31,6 +31,10 @@ func newCreateCmd() *cobra.Command {
 		redisCacheMaxmem  string
 		redisQueueMaxmem  string
 		slowQueryLog      bool
+		matchHostUser     bool
+		keepOnFailure     bool
+		webPort           int
+		socketIOPort      int
 	)
 
 	cmd := &cobra.Command{
@@ -44,15 +48,41 @@ func newCreateCmd() *cobra.Command {
 
 			if !modeSet {
 				// No --mode flag: show full interactive form (asks dev or prod first).
+				// Note the gate is Changed("mode"), not the value — --mode already
+				// defaults to "dev", so an automated caller that passes every other
+				// flag but omits --mode would still land here.
+				if !isInteractive() {
+					return mustNotPrompt("bench mode",
+						"pass --mode dev or --mode prod (dev also needs --frappe-branch and/or --apps)")
+				}
 				if err := runCreateFormFull(&mode, &frappeBranch, &frappeRepo, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType, &mariadbBufferPool, &gunicornWorkers, &githubToken); err != nil {
+					if cancelled(err) {
+						return nil
+					}
 					return err
 				}
 			} else if mode == "dev" && !branchSet && !appsSet {
 				// Explicit --mode dev but no branch/apps: show dev-only form.
+				if !isInteractive() {
+					return mustNotPrompt("Frappe branch and apps",
+						"pass --frappe-branch and/or --apps")
+				}
 				if err := runCreateForm(&frappeBranch, &frappeRepo, &apps, &dbType, &githubToken); err != nil {
+					if cancelled(err) {
+						return nil
+					}
 					return err
 				}
 			}
+			// Env fallbacks so a CI job can set these once for the whole job
+			// instead of threading flags through every invocation.
+			if !cmd.Flags().Changed("match-host-user") && envEnabled("FFM_MATCH_HOST_USER") {
+				matchHostUser = true
+			}
+			if !cmd.Flags().Changed("keep-on-failure") && envEnabled("FFM_KEEP_ON_FAILURE") {
+				keepOnFailure = true
+			}
+
 			return manager.New(verbose).Create(manager.CreateInput{
 				Name: args[0], FrappeBranch: frappeBranch, FrappeRepo: frappeRepo, Apps: apps,
 				AdminPassword: adminPassword, DBPassword: dbPassword, DBType: dbType,
@@ -61,7 +91,9 @@ func newCreateCmd() *cobra.Command {
 				MariaDBBufferPool: mariadbBufferPool, GunicornWorkers: gunicornWorkers,
 				WorkerLongCount: workerLongCount, WorkerShortCount: workerShortCount,
 				RedisCacheMaxmem: redisCacheMaxmem, RedisQueueMaxmem: redisQueueMaxmem,
-				SlowQueryLog: slowQueryLog,
+				SlowQueryLog: slowQueryLog, MatchHostUser: matchHostUser,
+				KeepOnFailure: keepOnFailure,
+				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
 			}, manager.CLIProgress{})
 		},
 	}
@@ -86,6 +118,18 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&redisCacheMaxmem, "redis-cache-maxmem", "512mb", "Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction.")
 	cmd.Flags().StringVar(&redisQueueMaxmem, "redis-queue-maxmem", "512mb", "Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped.")
 	cmd.Flags().BoolVar(&slowQueryLog, "slow-query-log", false, "Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.")
+	cmd.Flags().BoolVar(&matchHostUser, "match-host-user", false,
+		"Build the image with the container's frappe user remapped to your uid/gid. "+
+			"Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), "+
+			"otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER")
+	cmd.Flags().BoolVar(&keepOnFailure, "keep-on-failure", false,
+		"On failure, leave containers and the bench directory in place instead of rolling back, "+
+			"so logs survive for diagnosis. Env: FFM_KEEP_ON_FAILURE")
+	cmd.Flags().IntVar(&webPort, "web-port", 0,
+		"Fixed host web port instead of auto-allocating from 8000. Must be paired with --socketio-port "+
+			"(= web port + 1000). Each bench publishes a 6-port range, so parallel benches must be at least 10 apart.")
+	cmd.Flags().IntVar(&socketIOPort, "socketio-port", 0,
+		"Fixed host Socket.IO port. Must equal --web-port + 1000.")
 
 	return cmd
 }
@@ -142,7 +186,7 @@ func runCreateForm(branch *string, frappeRepo *string, apps *[]string, dbType *s
 				EchoMode(huh.EchoModePassword).
 				Value(githubToken),
 		),
-	).Run()
+	).WithKeyMap(benchPickKeyMap()).Run()
 	if err != nil {
 		return err
 	}
@@ -175,7 +219,7 @@ func runCreateFormFull(mode, branch *string, frappeRepo *string, apps *[]string,
 				).
 				Value(mode),
 		),
-	).Run()
+	).WithKeyMap(benchPickKeyMap()).Run()
 	if err != nil {
 		return err
 	}
@@ -273,7 +317,7 @@ func runCreateFormFull(mode, branch *string, frappeRepo *string, apps *[]string,
 				EchoMode(huh.EchoModePassword).
 				Value(githubToken),
 		),
-	).Run()
+	).WithKeyMap(benchPickKeyMap()).Run()
 	if err != nil {
 		return err
 	}

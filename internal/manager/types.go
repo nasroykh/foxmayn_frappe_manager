@@ -25,6 +25,15 @@ type CreateInput struct {
 	SlowQueryLog      bool
 	FixedWebPort      int
 	FixedSocketIOPort int
+	// MatchHostUser rebuilds the image with the in-container `frappe` user
+	// remapped onto the host user's uid/gid. Needed on hosts whose uid is not
+	// 1000 (e.g. GitHub-hosted runners, uid 1001), where the ./workspace bind
+	// mount is otherwise unwritable across the boundary.
+	MatchHostUser bool
+	// KeepOnFailure leaves containers and the bench directory in place when
+	// Create fails, instead of rolling them back. Intended for unattended runs
+	// where the rollback would otherwise destroy the only diagnostic evidence.
+	KeepOnFailure bool
 }
 
 // RecreateInput holds parameters for recreating a bench from saved state.

@@ -114,5 +114,6 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 		WorkerShortCount:  1,
 		FixedWebPort:      fixedWeb,
 		FixedSocketIOPort: fixedSio,
+		MatchHostUser:     b.MatchHostUser,
 	}, pw)
 }

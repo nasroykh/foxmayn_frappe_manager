@@ -80,6 +80,12 @@ func pickBench(store *state.Store, title string) (string, error) {
 	if len(benches) == 1 {
 		return benches[0].Name, nil
 	}
+	// Guarding here rather than in resolveBenchName covers every caller, and
+	// only for the case that actually prompts — a single tracked bench is still
+	// auto-selected without a terminal.
+	if !isInteractive() {
+		return "", mustNotPrompt("a bench name", "pass the bench name as an argument")
+	}
 
 	opts := make([]huh.Option[string], len(benches))
 	for i, b := range benches {

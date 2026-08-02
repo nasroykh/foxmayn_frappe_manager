@@ -1,0 +1,134 @@
+# Disposable experiment: proves whether the container/host uid mismatch actually
+# breaks `ffm create` on a GitHub-hosted runner, and whether --match-host-user
+# fixes it.
+#
+# Premise being tested: frappe/bench:latest creates its `frappe` user with
+# `useradd -u 1000`, while ubuntu-latest runs steps as `runner` (uid 1001).
+# ffm writes across the ./workspace bind mount in both directions, so the
+# mismatch should make bench init fail to populate the workspace.
+#
+# This cannot be tested on macOS: Docker Desktop rewrites uids across the
+# virtiofs boundary, so a stock uid-1000 container writes happily into a
+# 1001-owned directory there. Only a native Linux bind mount shows the truth,
+# which is the entire reason this workflow exists.
+#
+# Expected result: dev-without-remap FAILS; dev-with-remap and prod-with-remap
+# SUCCEED. If dev-without-remap unexpectedly succeeds, the diagnosis is wrong
+# and the job fails loudly on purpose — that is the point of running it.
+#
+# Confirmed by run 30750146122 for the two dev legs: the base image really is
+# uid 1000, the runner really is uid 1001, the bind mount does not translate
+# ownership (0:0 on both sides), and create failed with
+# "rm: cannot remove '/workspace/frappe-bench': Permission denied".
+#
+# STATUS: settled. Run 30750146122 confirmed the dev legs; run 30750894001 added
+# prod-with-remap and all three passed. Kept as a regression test for the remap;
+# delete once that is no longer wanted.
+name: uid-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Dev, stock uid: fails at `rm -rf /workspace/frappe-bench` inside bench
+          # init, because the host created /workspace as uid 1001 at 0755.
+          - name: dev-without-remap
+            args: "--mode dev --frappe-branch version-15"
+            expect: failure
+          - name: dev-with-remap
+            args: "--mode dev --frappe-branch version-15 --match-host-user"
+            expect: success
+          # Prod exercises the OTHER direction of the same mismatch, which the dev
+          # legs never reach: WriteWsgiWrapper writes from the host into sites/, a
+          # directory the container created, and that one is a hard error rather
+          # than a warning. --no-ssl is mandatory here — without it, create calls
+          # proxy.EnsureHTTPS and would hit the real Let's Encrypt API from CI.
+          - name: prod-with-remap
+            args: "--mode prod --no-ssl --domain probe.ci.invalid --admin-password $ADMIN_PW --frappe-branch version-15 --match-host-user"
+            expect: success
+
+    name: ${{ matrix.name }}
+
+    # Only contexts valid in jobs.<id>.env may appear here: github, needs,
+    # strategy, matrix, vars, secrets, inputs. The `runner` context is NOT
+    # among them, so RUNNER_TEMP-based paths are exported from a step below.
+    env:
+      CI: "true"
+
+    steps:
+      - name: Resolve bench paths
+        run: |
+          echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
+          echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+          # Prod mode rejects the default admin password. Generated per run rather
+          # than committed; the bench is torn down and the domain is .invalid.
+          echo "ADMIN_PW=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Runner identity, disk, and mount semantics
+        run: |
+          echo "runner user: $(id)"
+          df -h / | tail -1
+          docker version --format 'docker server {{.Server.Version}}'
+          # Confirm this is a native bind mount with no ownership translation —
+          # the property macOS lacks, which is why this must run here.
+          mkdir -p "$RUNNER_TEMP/mnt-probe"
+          docker run --rm -v "$RUNNER_TEMP/mnt-probe":/m alpine \
+            sh -c 'touch /m/f && stat -c "%u:%g created-inside-container" /m/f'
+          stat -c '%u:%g as-seen-by-host' "$RUNNER_TEMP/mnt-probe/f"
+
+      # The load-bearing fact behind the whole change. If this does not print
+      # uid=1000, the premise is wrong before anything else runs.
+      - name: Base image user
+        run: docker run --rm docker.io/frappe/bench:latest id frappe
+
+      - name: Build ffm from this branch
+        run: go build -o "$RUNNER_TEMP/ffm" ./cmd/ffm
+
+      - name: ffm create (${{ matrix.name }})
+        id: create
+        continue-on-error: true
+        run: |
+          mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          # --mode comes from matrix.args; do not add one here or the legs collide.
+          "$RUNNER_TEMP/ffm" create probe \
+            --verbose \
+            --keep-on-failure \
+            ${{ matrix.args }}
+
+      # --keep-on-failure means the workspace survives a failed create, so the
+      # ownership that caused it is still inspectable.
+      - name: Ownership across the bind mount
+        if: always()
+        run: |
+          ls -lan "$FFM_BENCHES_DIR/probe" 2>/dev/null || echo "(no bench dir)"
+          ls -lan "$FFM_BENCHES_DIR/probe/workspace" 2>/dev/null || echo "(no workspace)"
+          ls -lan "$FFM_BENCHES_DIR/probe/workspace/frappe-bench" 2>/dev/null || echo "(no frappe-bench — this is the failure signature)"
+
+      - name: Assert expected outcome
+        run: |
+          echo "expected=${{ matrix.expect }}  actual=${{ steps.create.outcome }}"
+          if [ "${{ steps.create.outcome }}" != "${{ matrix.expect }}" ]; then
+            echo "::error::${{ matrix.name }}: expected ${{ matrix.expect }}, got ${{ steps.create.outcome }}"
+            exit 1
+          fi
+
+      - name: Teardown
+        if: always()
+        run: |
+          if [ -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" ]; then
+            docker compose -p ffm-probe -f "$FFM_BENCHES_DIR/probe/docker-compose.yml" down -v || true
+          fi
+          rm -rf "$FFM_BENCHES_DIR/probe"

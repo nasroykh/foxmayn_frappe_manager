@@ -57,6 +57,9 @@ Private app repos: pass --github-token if required for bench get-app.`,
 
 func runRecreate(name string, force, reallocatePorts bool, githubToken string, proxyPortOverride *int, proxyHostOverride *string) error {
 	if !force {
+		if !isInteractive() {
+			return mustNotPrompt("recreate confirmation", "pass --force")
+		}
 		confirmed := false
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -67,8 +70,11 @@ func runRecreate(name string, force, reallocatePorts bool, githubToken string, p
 					Negative("Cancel").
 					Value(&confirmed),
 			),
-		)
+		).WithKeyMap(benchPickKeyMap())
 		if err := form.Run(); err != nil {
+			if cancelled(err) {
+				return nil
+			}
 			return err
 		}
 		if !confirmed {

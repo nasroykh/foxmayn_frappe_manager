@@ -27,87 +27,240 @@ make clean          # removes ./bin/ffm
 
 Version info is injected at build time via `-ldflags` (see `Makefile` LDFLAGS).
 
-There are **no tests** yet. No test framework or test files exist.
+Tests are sparse but present — `make test` runs `go test ./...`. Coverage today is template
+rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`) and
+dashboard handlers (`internal/dashboard/handler_test.go`). The create pipeline and most of the
+CLI are untested.
 
 ## Architecture
 
+**The most important thing to know:** `internal/cli/` no longer holds bench logic. Its files are
+thin cobra wrappers that parse flags, resolve the bench name, prompt when interactive, and
+delegate to `internal/manager`. Every operation lives in `manager.Service` so that the CLI and
+the web dashboard run identical code paths. If you are looking for the create pipeline, it is
+`internal/manager/create.go`, not `internal/cli/create.go`.
+
 ```
-cmd/ffm/main.go          → entrypoint, calls cli.Execute() (wraps NewRootCmd().Execute() + waitForUpdateCheck)
+cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
-  cli/                    → cobra command definitions (one file per subcommand)
-    root.go               → root command, registers all subcommands, global --verbose flag (no -v shorthand); --version/-v flag via cobra root.Version; PersistentPreRunE runs update check on every command; Execute() exported function wraps cobra Execute + waitForUpdateCheck
-    create.go             → multi-step bench provisioning pipeline (port alloc → compose+Dockerfile write → docker build → bench init via docker compose run → docker up → site creation → app install → mode-specific steps); supports --mode dev (default) and --mode prod; supports --db-type mariadb (default) and --db-type postgres; supports --frappe-repo (custom Frappe repo URL with optional @branch, forwarded to bench init as --frappe-path) and --github-token (private HTTPS repos); interactive form (runCreateFormFull) asks mode first, then DB engine, then shows dev or prod follow-up fields including optional Frappe repo + masked GitHub token; automatic rollback on failure
-    delete.go             → teardown with confirmation prompt (uses charmbracelet/huh)
-    list.go               → table output with live docker status (uses lipgloss v2); shows MODE, DB (maria/pg), domain columns
-    start.go / stop.go / restart.go → lifecycle commands; restart.go delegates to runStop + runStart (--rebuild flag rewrites Dockerfile from template [mode-aware] + rebuilds image before starting); start.go auto-installs Claude/agent skills on start if missing (dev only, idempotent check against .claude/skills/foxmayn-frappe-cli/SKILL.md)
-    shell.go / logs.go    → interactive docker exec (zsh for dev frappe container, bash for prod) / log streaming; shell.go also supports --exec for non-interactive one-shot commands
-    status.go             → per-container status + credentials display; shows mode, DB engine, domain URL
-    pick.go               → resolveBenchName() + benchNameFromCWD() + pickBench() helpers; CWD auto-detection: if inside ~/frappe/<name>/, returns that bench name silently; falls back to interactive picker otherwise
-    ffc.go                → ffm ffc: generate Frappe API keys + write ffc config inside container (dev only); also called as a step in create
-    proxy.go              → ffm proxy subcommand group: start / stop / status; bare 'ffm proxy' shows status
-    setproxy.go           → ffm set-proxy: configures socketio_port / use_ssl / per-site host_name inside the container for reverse-proxy deployments (dev and prod); dev: restarts bench start automatically; prod: prints 'ffm restart' hint; --reset uses mode-aware defaults (dev: socketio_port <allocated> / use_ssl 0 / socketio_frappe_url http://127.0.0.1:8000; prod: socketio_port 443 / ssl on / host_name https://<domain> / socketio_frappe_url http://frappe:8000); --print-caddy / --print-nginx emit ready-to-paste config snippets
-    tunnel.go             → ffm tunnel [name]: enable/disable/print VPS tunnel; writes frpc.toml + starts ffm-<name>-frpc container via docker run (not compose); sets host_name/socketio_port/use_ssl via bench set-config; --off disables + calls runSetProxyReset; tunnel state persisted in benches.json as *TunnelState
-    tunnel_server.go      → ffm tunnel server group: list/add/set/remove/use tunnel VPS profiles; profiles stored in ~/.config/ffm/tunnel.json (0o600); server add prints frps.toml + Caddyfile VPS setup snippet
-    update.go             → ffm update: fetches latest release from GitHub API, compares semver, downloads platform-specific archive (tar.gz/zip), atomically replaces running binary; --check (check only) / --yes (skip confirmation)
-    update_check.go       → background update notification: reads/writes ~/.config/ffm/.update_check.json (24 h TTL); runUpdateCheck() called via PersistentPreRunE on every command except 'update'; startBackgroundFetch() goroutine; waitForUpdateCheck() blocks up to 2 s before process exit
+  cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
+    root.go               → registers all 17 subcommands; global --verbose and --non-interactive;
+                            PersistentPreRunE runs the update check (skipped for 'update');
+                            Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
+                            parses anything, then runs cobra, then waitForUpdateCheck()
+    interactive.go        → isInteractive() / mustNotPrompt() / cancelled() / withSpinner().
+                            $CI and $FFM_NON_INTERACTIVE imply non-interactive; $FFM_INTERACTIVE
+                            forces prompting back on; --non-interactive always wins
+    interactive_unix.go / interactive_windows.go → hasControllingTerminal() per platform
+    create.go             → create flags + the interactive forms (runCreateForm,
+                            runCreateFormFull); calls manager.Service.Create
+    recreate.go           → ffm recreate: --force / --reallocate-ports / --github-token /
+                            --proxy-port / --proxy-host
+    delete.go             → confirmation prompt (--force skips), then manager.Service.Delete
+    list.go               → lipgloss table over manager.ListBenchViews; alias 'ls'
+                            columns: NAME MODE DB STATUS PORT DOMAIN BRANCH
+    start.go / stop.go / restart.go → ~25-line wrappers; restart carries --rebuild
+    shell.go / logs.go    → the last commands that drive bench.Runner directly.
+                            shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
+                            --service to target another container. logs: --follow defaults TRUE
+    status.go             → per-container status + credentials; also prints a clean-logs tip
+                            for benches older than 7 days
+    clean_logs.go         → ffm clean-logs: --days 30 / --dry-run / --yes
+    pick.go               → resolveBenchName() + benchNameFromCWD() + pickBench();
+                            benchPickKeyMap() is what makes Esc abort every form in the package
+    ffc.go                → ffm ffc: regenerate Frappe API keys + ffc config
+    proxy.go              → ffm proxy start/stop/status (bare 'ffm proxy' shows status)
+    setproxy.go           → ffm set-proxy flags (--port default 443, --host, --no-ssl, --reset,
+                            --print-caddy, --print-nginx); behaviour in manager/setproxy.go
+    tunnel.go             → ffm tunnel flags; bare 'ffm tunnel' PRINTS STATUS, it does not enable
+    tunnel_server.go      → ffm tunnel server list/add/set/remove/use
+    dashboard.go          → ffm dashboard start/stop/status/logs; --daemon re-execs the binary
+                            with the hidden __dashboard-daemon argv
+    dashboard_daemon.go   → maybeRunDashboardDaemon(): that hidden entrypoint
+    dashboard_sys_unix.go / dashboard_sys_windows.go → SysProcAttr for the detached daemon
+    update.go             → ffm update: releases API, semver compare, atomic self-replace
+    update_check.go       → background update notice (24 h TTL); returns immediately when
+                            $FFM_NO_UPDATE_CHECK or $CI is set
+    claude_mcp.go         → DEAD CODE — superseded by internal/manager/claude_mcp.go. Safe to delete.
+
+  manager/                → the shared service layer. All bench operations live here. Output goes
+                            through ProgressWriter, never straight to stdout, so the CLI and the
+                            dashboard's job runner share one pipeline.
+    service.go            → Service{Store, Verbose, mu}; serialises all store access behind a
+                            mutex because the dashboard is concurrent
+    types.go              → CreateInput / RecreateInput / RestartInput / SetProxyInput /
+                            ExecInput / CleanLogsInput / BenchView / BenchDetail / DashboardStats
+    create.go             → THE create pipeline (see Key patterns). Also ReadSavedAcmeEmail /
+                            SaveAcmeEmail
+    recreate.go           → teardown + Create with stored inputs; reuses the old port pair
+    lifecycle.go          → Start / Stop / Delete / TeardownBenchFiles; Start also back-fills
+                            skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
+    restart.go            → Restart; --rebuild re-renders the Dockerfile (carrying MatchHostUser),
+                            rewrites wsgi.py for prod, re-applies the JS patches, rebuilds
+    benches.go            → LiveStatus / ListBenchViews / GetBenchDetail / DashboardOverview
+    setproxy.go           → SetProxy, mode-aware reset defaults, Caddy/Nginx snippets
+    tunnel_ops.go         → TunnelEnable / TunnelDisable
+    proxy_ops.go          → ProxyStatus / ProxyStart / ProxyStop
+    ffc.go                → SetupFFC: API keys + ~/.config/ffc/config.yaml + .mcp.json.
+                            NOTE: no mode gate — it will run against a prod bench and fail late
+    claude_mcp.go         → writes workspace/frappe-bench/.mcp.json (ffc MCP server)
+    clean_logs.go         → deletes old rows from 7 Frappe log tables
+    exec.go               → Exec / ExecOrError: one-shot command in a container
+    hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
+    jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
+    progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
+
+  dashboard/              → the /admin web UI. Stdlib only: html/template, embed, net/http.
+    handler.go            → //go:embed templates + static, basic auth, rendering
+    handler_actions.go    → POST endpoints for every bench operation
+    handler_jobs.go       → job list/detail + SSE progress stream
+    handler_logs.go       → SSE docker compose log stream
+    handler_csrf.go       → HMAC double-submit CSRF tokens
+    config.go             → dashboard.json; DefaultListenAddr 127.0.0.1:8787
+    templates/ static/    → layout + 9 pages; admin.css, admin.js
+
+  server/server.go        → net/http server (Go 1.22 method+pattern routes). GET /health always;
+                            /admin/* only when an admin password is set; WriteTimeout 0 for SSE
 
   bench/                  → core bench logic, no CLI concerns
-    bench.go              → name validation, project/container name helpers
-    app.go                → AppSpec type + ParseAppSpec(): parses --apps values supporting short names, SSH URLs, HTTPS URLs, and url@branch syntax
-    compose.go            → renders docker-compose.yml and Dockerfile from embedded Go templates (dev/ or prod/ subdir based on Mode); also writes .devcontainer/devcontainer.json (dev only); ComposeData includes Mode, DBType, DBRootPassword, Domain, NoSSL, ForwardSSHAgent
-    docker.go             → Runner type: all docker compose interactions (build/up/down/exec/logs/ps); WaitForMariaDB/WaitForPostgres poll until DB accepts connections; ExecOutputInDir for non-interactive streaming exec (used by shell --exec); ConfigureGitHubToken/CleanupGitHubToken for private HTTPS repos
-    frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName): runs bench execute inside container to generate API key/secret for Administrator
-    port.go               → port allocation: scans state store + probes host for free port pairs
+    bench.go              → name validation, ProjectName/container helpers
+    app.go                → AppSpec + ParseAppSpec(): short names, SSH/HTTPS URLs, url@branch
+    compose.go            → ComposeData + renders docker-compose.yml / Dockerfile /
+                            devcontainer.json. ALSO REWRITES FRAPPE SOURCE — see Key patterns:
+                            WriteWsgiWrapper, PatchAuthenticateJs, PatchUtilsJs, PatchProcfileWorker
+    docker.go             → Runner: build/up/down/exec/logs/ps, UpServices, RestartService,
+                            ExecDetached, LogsString, WaitForMariaDB/WaitForPostgres, WaitForHTTP,
+                            ConfigureGitHubToken/CleanupGitHubToken
+    frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName)
+    port.go               → AllocatePorts (web 8000 / socketio 9000, +10 per bench, max 50) plus
+                            ValidBenchPortPair / CheckTCPPortsFree for --web-port/--socketio-port
     templates/
       dev/
-        docker-compose.yml.tmpl  → 4-service dev compose; DB service is conditional on DBType (mariadb:11.8 or postgres:18); bind-mounts ./workspace to /workspace, pip-cache + yarn-cache volumes, Traefik labels for <name>.localhost, conditional SSH agent socket
-        Dockerfile.tmpl          → full dev image: extends frappe/bench:latest with zsh+zinit+starship+Go+ffc+pnpm+Claude Code; pre-fetches Frappe Claude Skill Package + ffc skill to /opt/
+        docker-compose.yml.tmpl  → 4 services (DB, redis×2, frappe); DB conditional on DBType;
+                                   bind-mounts ./workspace, pip/yarn cache volumes, Traefik labels
+                                   for <name>.localhost, conditional SSH agent socket
+        Dockerfile.tmpl          → full dev image: zsh/zinit/starship/Go/ffc/pnpm/Claude Code +
+                                   pre-fetched Frappe skills; optional HostUID/HostGID remap layer
       prod/
-        docker-compose.yml.tmpl  → 7-service prod compose: frappe (gunicorn), socketio, worker-long, worker-short, scheduler, DB service (mariadb:11.8 or postgres:18, conditional on DBType, with healthcheck), redis×2; frappe depends_on is conditional on DBType; Traefik labels for domain routing on websecure (or web if NoSSL); per-bench HTTP→HTTPS redirect labels
-        Dockerfile.tmpl          → minimal prod image: frappe/bench:latest + corepack pnpm only
+        docker-compose.yml.tmpl  → 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
+                                   socketio, worker-long, worker-short, scheduler) + an x-logging
+                                   anchor (json-file 10m×3); Traefik labels + per-bench
+                                   HTTP→HTTPS redirect; optional ./mysql-logs bind
+        Dockerfile.tmpl          → minimal: frappe/bench + corepack pnpm + optional remap layer
 
-  proxy/
-    proxy.go              → all Traefik lifecycle logic: EnsureNetwork(), Start(), Stop(), IsRunning(), Status(), SupportsHTTPS(), EnsureHTTPS(email); createContainer() for HTTP-only; createContainerHTTPS() adds port 443, ffm-letsencrypt volume, ACME resolver flags; no global HTTP→HTTPS redirect (each prod bench handles its own via compose labels)
-
+  proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
+                            IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
   tunnel/
-    config.go             → Server struct + Config (Default + Servers map); Load/Save for ~/.config/ffm/tunnel.json (0o600); Lookup(name) and DefaultServer() helpers
-    frpc.go               → frpc container lifecycle: Start/Stop/Restart/IsRunning/Status via docker run (not compose); container named ffm-<bench>-frpc on ffm-<bench>_default network; RenderFrpcToml() + WriteFrpcToml() (0o600); PublicURL/PublicURLFromParts helpers; dev mode: both proxies use localIP=frappe; prod mode: socketio proxy uses localIP=socketio
-
-  config/                 → path resolution (bench dirs, state file, acme email file, tunnel config file), respects FFM_BENCHES_DIR and FFM_CONFIG_DIR env vars; AcmeEmailFile() → ~/.config/ffm/.acme_email; TunnelConfigFile() → ~/.config/ffm/tunnel.json
-  state/                  → JSON-file state store (~/.config/ffm/benches.json); Bench struct includes Mode ("dev"/"prod", empty=dev for backward compat), DBType ("mariadb"/"postgres", empty=mariadb for backward compat), Domain, Tunnel (*TunnelState, nil=no tunnel), IsProd()/IsDev()/DBEngine()/IsPostgres() helpers, ProxyHost; Store.Update(name, fn) applies a mutation and saves
-  version/                → build-time version variables
+    config.go             → Server + Config; ~/.config/ffm/tunnel.json (0o600)
+    frpc.go               → frpc container via docker run (not compose); RenderFrpcToml (0o600)
+  config/paths.go         → honours FFM_BENCHES_DIR / FFM_CONFIG_DIR: BenchesDir, BenchDir,
+                            StateFile, AcmeEmailFile, TunnelConfigFile, DashboardConfigFile,
+                            DashboardPIDFile, DashboardLogFile, JobsFile
+  state/store.go          → JSON state store; Bench includes Mode, DBType, Domain, ProxyHost,
+                            MatchHostUser, Tunnel (*TunnelState); IsProd/IsDev/DBEngine/IsPostgres
+  version/version.go      → build-time version variables
 ```
 
 ### Key patterns
 
-- **`bench.Runner`** is the central abstraction for docker compose operations. All CLI commands that touch Docker go through it. Four output modes: silent (`ExecSilent`), verbose-conditional (`withOutput`), always-interactive (`composeWithIO`), and quiet-with-error-dump (`Build()` / `Run()`). `Build()` and `Run()` capture output in quiet mode and only dump it to stderr when the command fails.
-- **State store** (`state.Store`) is a flat JSON file, not a database. Load-modify-save pattern; not concurrency-safe (OK for a CLI). `Bench.IsProd()` returns true when `Mode == "prod"`; empty Mode is treated as dev (backward compat).
-- **Port allocation** starts at web=8000 / socketio=9000 and increments by 10 per bench. Each pair is checked against both the state store and a live host port probe.
-- **Compose + Dockerfile templates** are embedded at compile time via `//go:embed` from `templates/dev/` or `templates/prod/` based on `ComposeData.Mode`. Changes to either template require rebuild.
-- **bench init runs at container runtime** — The dev Docker image is tools-only (zsh, starship, Go, ffc, pnpm, Claude Code — no Frappe source). `ffm create --mode dev` runs `docker compose run --rm frappe bash -c "bench init ... /tmp && cp to /workspace/frappe-bench && patch venv paths && copy skills"` as a one-off container. The prod image is minimal (no tools), so bench init skips the skills copy step. `bench init` exits 0 even on failure, so `ffm create` explicitly checks for `apps/` after init.
-- **Bind mount for bench data** — bench files live at `~/frappe/<bench>/workspace/frappe-bench/` on the host. The compose file bind-mounts `./workspace:/workspace`. `ffm delete` calls `down -v` (removes named volumes) then `os.RemoveAll(benchDir)`.
-- **CWD auto-detection** — `resolveBenchName(args, title)` in `pick.go` resolves the bench name in order: (1) explicit `args[0]`; (2) `benchNameFromCWD()` — if CWD is under `~/frappe/<name>/` and `<name>` is in the state store, returns it silently; (3) `pickBench()` interactive picker. Escape and ctrl+c abort via a custom `huh.KeyMap`.
-- **Mode-aware commands**: `shell.go` uses zsh for dev, bash for prod. `start.go` skips skills install + bench start for prod (compose `command:` handles services). `restart.go` passes `Mode` and `DBType` to `bench.ComposeData` when rebuilding. `setproxy.go` works for both modes — dev restarts bench start, prod prints an `ffm restart` hint; `--reset` restores mode-appropriate defaults. `list.go` shows MODE and DB columns. `status.go` shows DB engine and domain URL.
-- **Production create pipeline**: After containers start and site is created, prod skips developer mode, runs `bench build` (asset compilation), always sets `host_name` to `https://<domain>` (or `http://` if no-ssl). `socketio_port` is set to 443 (ssl) or 80 (no-ssl). `socketio_frappe_url` is set to `http://frappe:8000` so the socketio container authenticates against gunicorn over the internal Docker network instead of the browser's origin. Dev server (`nohup bench start`) and ffc setup are skipped.
-- **Let's Encrypt**: `ffm create --mode prod` calls `proxy.EnsureHTTPS(email)` (unless `--no-ssl`), which ensures the Traefik container has port 443 bound and ACME HTTP-01 configured. ACME email is persisted to `~/.config/ffm/.acme_email` after first use. No global HTTP→HTTPS redirect — each prod bench applies per-bench redirect labels in its compose template.
-- **Prod with existing Caddy/Nginx on 80/443**: Use `--no-ssl`. `EnsureNetwork()` is called instead of `EnsureHTTPS()`, so Traefik does not try to bind port 443. The compose exposes `WebPort` and `SocketIOPort` directly on the host. The user points Caddy at those ports. After create, `socketio_port` defaults to 80; if Caddy handles HTTPS run `ffm set-proxy <name> --host <domain>` (sets socketio_port 443, use_ssl 1, host_name https://<domain>) then `ffm restart <name>`.
-- **zsh shell** — `ffm shell` execs into `zsh` for dev `frappe` containers (bash for prod + all other services). The shell is pre-configured with zinit, zsh-autosuggestions, zsh-syntax-highlighting, history search, fixed key bindings, and starship — baked into the dev image via heredocs in `Dockerfile.tmpl`.
-- **ffc integration** — dev benches only. Every new dev bench gets `ffc` baked into the image, API keys auto-generated during `ffm create`, and ffc config written. `ffm ffc [name]` can regenerate keys on a running dev bench.
-- **Claude/agent skills** — dev benches only. 60 Frappe Claude skills + ffc skill are pre-fetched into the dev Docker image at build time and copied during bench init. On every `ffm start` / `ffm restart`, `runStart` checks for `.claude/skills/foxmayn-frappe-cli/SKILL.md` and runs the full copy if missing (idempotent back-fill).
-- **Private repo support** — `--apps` accepts short names, SSH URLs, HTTPS URLs, and `url@branch` or `name@branch` suffix. SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set (dev only). For private HTTPS repos, `--github-token` configures a temporary git credential helper for app installs (cleaned up via `defer`). The bench init step runs in a one-off `docker compose run --rm` container that `ConfigureGitHubToken` (which uses `exec`) cannot reach, so when a token is set the credential setup (`printf` to `/tmp/.git-credentials` + `git config credential.helper`) is prepended directly into the bench init bash command — no cleanup needed since the container is `--rm`.
-- **Custom Frappe repo** — `--frappe-repo` lets `bench init` clone a fork or mirror instead of the official `frappe/frappe`. The value is parsed with `bench.ParseAppSpec` (same `@branch` syntax as `--apps`): the URL becomes `--frappe-path`, and an optional `@branch` suffix overrides `--frappe-branch` for the Frappe checkout only (apps still default to `--frappe-branch`). Empty `--frappe-repo` keeps the default behavior. Both `--frappe-repo` and `--github-token` are exposed in the interactive create forms (token masked via `huh.EchoModePassword`).
-- The `create` command has automatic rollback: a named-return defer tears down containers and removes the bench directory on any failure. State is saved only on success.
-- **VPS tunnel** — `ffm tunnel <name>` exposes a bench over a public URL via a user-owned VPS running frps + Caddy. The frpc client runs as a standalone Docker container (`ffm-<name>-frpc`) on the bench's `ffm-<name>_default` network — NOT managed by compose, so it isn't affected by compose stops. Lifecycle: `tunnel.Start/Stop/Restart()` in `internal/tunnel/frpc.go` use `docker run/stop/rm` (same pattern as `internal/proxy/proxy.go`). `ffm start` / `ffm delete` are tunnel-aware: `start.go` calls `tunnel.Start()` if `b.Tunnel != nil && b.Tunnel.Enabled`; `delete.go` calls `tunnel.Stop()` before `compose down`. Tunnel server profiles (VPS host, port, token, base_domain) live in `~/.config/ffm/tunnel.json` (mode 0o600). Per-bench tunnel state (`Server`, `Subdomain`, `Enabled`) is stored as `*TunnelState` on `state.Bench` — nil pointer means no tunnel, omitted from old benches.json entries.
+- **`manager.Service` is the seam.** New behaviour goes in `internal/manager/`, not `internal/cli/`.
+  The CLI passes `CLIProgress{}`; the dashboard passes a `BufferProgress` so the same pipeline can
+  stream into an async job. `Service` serialises all state-store access behind a mutex; the raw
+  `state.Store` is still not concurrency-safe on its own.
+- **`bench.Runner`** is the low-level docker compose abstraction. Output modes: silent-capture
+  (`ExecSilent`), capture-and-return (`LogsString`), verbose-conditional (`withOutput`),
+  always-interactive (`composeWithIO`), stream-without-TTY (`ExecOutputInDir`), fire-and-forget
+  (`ExecDetached`), and quiet-with-error-dump (`Build()` / `Run()` — capture in non-verbose mode,
+  dump to stderr only on failure). `internal/proxy` and `internal/tunnel` bypass compose entirely
+  and use raw `docker run`.
+- **Port allocation** starts at web=8000 / socketio=9000, +10 per bench, capped at 50 benches.
+  Each pair is checked against the state store and a live host probe. Each bench publishes a
+  **6-port range** (`WebPort`..`WebPort+5`), so explicit `--web-port` values must be ≥10 apart —
+  `CheckTCPPortsFree` only probes the two base ports and will not catch a range collision.
+- **Non-interactive safety** — every huh form and spinner is guarded by `isInteractive()`, which
+  probes `/dev/tty` (the descriptor huh itself uses) rather than stat-ing stdin, because
+  `/dev/null` is a character device and would read as interactive. Without a terminal, commands
+  fail with a message naming the flag to pass instead of hanging forever.
+- **Compose + Dockerfile templates** are embedded via `//go:embed` from `templates/dev/` or
+  `templates/prod/` based on `ComposeData.Mode`. Changing either requires a rebuild, and existing
+  benches only pick up **Dockerfile** changes via `restart --rebuild`; the **compose** file is
+  regenerated only by `ffm recreate`.
+- **Container/host uid mismatch** — `frappe/bench` runs as uid 1000. On a host with a different
+  uid the `./workspace` bind mount is unwritable in both directions: bench init cannot write into
+  the directory the host created, and the host cannot write `wsgi.py` into the directory the
+  container created. `--match-host-user` renders a remap layer as the Dockerfile's first
+  instruction. Persisted as `MatchHostUser` so `restart --rebuild` and `recreate` keep it.
+  Invisible on macOS — Docker Desktop rewrites ownership across the virtiofs boundary.
+- **bench init runs at container runtime** — the dev image is tools-only. `create` runs
+  `docker compose run --rm frappe bash -c "bench init … /tmp/ffm-bench-init && cp -a to
+  /workspace/frappe-bench && patch venv paths && copy skills"`. `bench init` exits 0 even on
+  failure, so `create` explicitly checks for `apps/` afterwards.
+- **ffm rewrites Frappe source on the host.** `PatchAuthenticateJs` and `PatchUtilsJs` modify
+  `apps/frappe/realtime/*` so socket.io auth works from inside Docker (`PatchUtilsJs` has separate
+  v15 and v16 branches — v16 rewrote `get_url()`). `PatchProcfileWorker` wraps the dev `worker:`
+  line in a self-restarting loop so an idle-Redis worker exit doesn't make honcho tear down the
+  whole stack. All are idempotent and re-applied on every start and rebuild. If you are wondering
+  why a bench's `realtime/utils.js` differs from upstream, this is why.
+- **Production create pipeline** uses a **two-phase start**. Phase 1 brings up only DB + redis +
+  frappe so scheduler/worker containers don't crash-loop on app modules that aren't installed
+  yet. Then site creation, app install, `bench build`. The frappe container is then *restarted* —
+  not SIGHUP'd, because PID 1 is `bash -c` and forked gunicorn workers would inherit the
+  pre-install `sys.path`. Phase 2 starts socketio, workers, scheduler. Prod skips developer mode,
+  always sets `host_name`, sets `socketio_port` to 443/80 and `socketio_frappe_url` to
+  `http://frappe:8000`. **`bench build` runs in BOTH modes** — dev needs it too since bench init
+  moved to container runtime, or Desk renders unstyled.
+- **create rollback** — a named-return defer dumps DB *and* frappe container logs to stderr, then
+  tears down containers and removes the bench directory. `--keep-on-failure` /
+  `$FFM_KEEP_ON_FAILURE` stops the teardown and prints the literal cleanup command instead,
+  because state is saved only on success and `ffm delete` cannot reach an unregistered bench.
+- **CWD auto-detection** — `resolveBenchName` resolves: (1) `args[0]`; (2) `benchNameFromCWD()`
+  if under `~/frappe/<name>/`; (3) `pickBench()`. `pickBench` errors when no benches exist and
+  **auto-selects when exactly one is tracked** — the picker only appears with 2+.
+- **Mode-aware behaviour** lives in `manager/`: `lifecycle.go` gates the dev-only start steps,
+  `restart.go` re-renders mode-appropriate files, `setproxy.go` has mode-specific reset defaults.
+  Only `cli/shell.go` still branches on mode itself (zsh vs bash).
+- **Let's Encrypt** — `--mode prod` without `--no-ssl` calls `proxy.EnsureHTTPS(email)`, which
+  talks to the **production** ACME API. Never do that from CI or against a domain you don't
+  control. `--no-ssl` calls `EnsureNetwork()` instead and publishes ports directly.
+- **Claude/agent skills + ffc** — dev benches only. Skills are pre-fetched into the dev image and
+  copied during bench init; `Service.Start` back-fills them idempotently if
+  `.claude/skills/foxmayn-frappe-cli/SKILL.md` is missing, and also rewrites `.mcp.json` (wiring
+  Claude Code to `ffc mcp --site <name>`) and re-applies the three patches above.
+- **Private repos** — `--apps` takes short names, SSH URLs, HTTPS URLs, and `@branch` suffixes.
+  SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set (dev only). `--github-token`
+  configures a credential helper; because bench init runs in a one-off `compose run` container
+  that `exec`-based setup cannot reach, the credential setup is prepended into the bench init
+  bash command instead. `--frappe-repo` maps to `bench init --frappe-path` with the same
+  `@branch` syntax.
+- **VPS tunnel** — frpc runs as a standalone container (`ffm-<name>-frpc`), not under compose, so
+  it survives compose stops. `Service.Start` starts it when `b.Tunnel.Enabled` (warning and
+  skipping if the named server profile is gone from tunnel.json); `TeardownBenchFiles` stops it
+  before `compose down`.
+
+### Undocumented-elsewhere gotchas
+
+- `ffm create` has seven prod-tuning flags with no coverage outside `--help`:
+  `--mariadb-buffer-pool` (1G), `--gunicorn-workers` (2), `--worker-long-replicas` (1),
+  `--worker-short-replicas` (1), `--redis-cache-maxmem` (512mb, allkeys-lru),
+  `--redis-queue-maxmem` (512mb, noeviction), `--slow-query-log` (creates `<bench>/mysql-logs/`).
+- Credentials default to `--admin-password admin` and `--db-password ffm123456`. Prod rejects the
+  former. Failure paths interpolate `CombinedOutput` into errors, so a failed `bench new-site`
+  can print the DB root password.
+- `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
+  repo is itself skill-managed.
 
 ### Dependencies
 
 - `github.com/spf13/cobra` — CLI framework
 - `charm.land/lipgloss/v2` — terminal styling (list/status output)
-- `github.com/charmbracelet/huh` — interactive prompts (create form, bench picker, delete confirmation)
-- `github.com/charmbracelet/huh/spinner` — spinner animation during update download/install
-- `github.com/charmbracelet/bubbles` — key bindings for huh KeyMap (Escape to quit)
-- `github.com/go-resty/resty/v2` — HTTP client for GitHub releases API (update command + background check)
+- `github.com/charmbracelet/huh` + `huh/spinner` — interactive prompts
+- `github.com/charmbracelet/bubbles` — key bindings for `benchPickKeyMap`
+- `github.com/go-resty/resty/v2` — HTTP client for the GitHub releases API
+
+The dashboard and server add **no** dependencies — stdlib `net/http`, `html/template`, `embed`,
+`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.1; the router uses Go 1.22 method+pattern
+syntax.
 
 ## Release
 
@@ -130,19 +283,29 @@ git push origin v0.1.0
 
 ```
 ~/frappe/<bench-name>/
-  docker-compose.yml     # generated per bench (dev: 4 services, prod: 7+ services)
+  docker-compose.yml     # generated per bench (dev: 4 services, prod: 8 services)
   Dockerfile             # dev: tools image; prod: minimal image
-  frpc.toml              # written when tunnel is enabled (mode 0o600 — contains token)
-  workspace/             # bind-mounted into container at /workspace; bench lives at workspace/frappe-bench/
+  frpc.toml              # written when tunnel is enabled (0o600 — contains token)
+  mysql-logs/            # prod + MariaDB + --slow-query-log only
+  workspace/             # bind-mounted into container at /workspace
     frappe-bench/
-      .agents/skills/    # dev only: 60 Frappe Claude skills + ffc skill
+      .mcp.json          # Claude Code MCP config → `ffc mcp --site <bench>`
+      .agents/skills/    # dev only: Frappe Claude skills + ffc skill
       .claude/skills/    # dev only: same skills for Claude Code
+      sites/wsgi.py      # prod only: gunicorn entrypoint forcing single-site routing
   .devcontainer/         # dev only
-    devcontainer.json    # VS Code dev container config
+    devcontainer.json
 
 ~/.config/ffm/
   benches.json           # state file
-  .update_check.json     # cached latest release tag (refreshed every 24 h by background goroutine)
-  .acme_email            # saved Let's Encrypt email (auto-used on subsequent prod bench creations)
-  tunnel.json            # VPS tunnel server profiles (mode 0o600 — contains tokens)
+  .update_check.json     # cached latest release tag (24 h TTL; skipped when $CI is set)
+  .acme_email            # saved Let's Encrypt email
+  tunnel.json            # VPS tunnel server profiles (0o600 — contains tokens)
+  dashboard.json         # dashboard listen addr + admin password (0600 when a password is set)
+  dashboard.pid          # PID of a backgrounded `ffm dashboard start --daemon`
+  dashboard.log          # dashboard daemon log
+  jobs.json              # async job state for the dashboard
 ```
+
+Both roots are overridable: `FFM_BENCHES_DIR` and `FFM_CONFIG_DIR`. Setting them per job is how
+you isolate concurrent runs, since `benches.json` is a whole-file read-modify-write.

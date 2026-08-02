@@ -1,5 +1,24 @@
 FROM docker.io/frappe/bench:latest
 
 USER root
+{{- if .HostUID}}
+
+# Remap the in-container `frappe` user (uid 1000 in frappe/bench) onto the host
+# user's ids so files crossing the ./workspace bind mount are owned consistently
+# in both directions. Required wherever the host uid is not 1000 — notably
+# GitHub-hosted runners, where `runner` is uid 1001: without this, bench init
+# cannot write into the workspace directory the host created, and the host
+# cannot write wsgi.py into the sites/ directory the container created.
+RUN set -eu; \
+    if [ "$(id -u frappe)" != "{{.HostUID}}" ] || [ "$(id -g frappe)" != "{{.HostGID}}" ]; then \
+        if getent group {{.HostGID}} >/dev/null 2>&1; then \
+            usermod -g {{.HostGID}} frappe; \
+        else \
+            groupmod -g {{.HostGID}} frappe; \
+        fi; \
+        usermod -u {{.HostUID}} frappe; \
+        chown -R {{.HostUID}}:{{.HostGID}} /home/frappe; \
+    fi
+{{- end}}
 RUN corepack enable pnpm
 USER frappe

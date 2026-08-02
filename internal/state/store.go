@@ -44,6 +44,15 @@ type Bench struct {
 	Mode string `json:"mode,omitempty"`
 	// Domain is the public domain for production benches (e.g. "erp.example.com").
 	Domain string `json:"domain,omitempty"`
+	// MatchHostUser records that the image was built with the in-container
+	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
+	// Absent in records written before this option existed, which is correct —
+	// those benches were built against the stock uid 1000.
+	//
+	// Persisted so that `restart --rebuild` and `recreate` re-render the same
+	// Dockerfile; without it a rebuild would silently revert to uid 1000 and
+	// break the bind mount on a host that needed the remap.
+	MatchHostUser bool `json:"match_host_user,omitempty"`
 	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
 	Tunnel    *TunnelState `json:"tunnel,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`

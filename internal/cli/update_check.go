@@ -33,6 +33,16 @@ func updateCheckPath() string {
 // (or missing) it starts a background goroutine to refresh it; Execute()
 // waits for that goroutine before the process exits.
 func runUpdateCheck() {
+	// Opt out entirely for automation. The check reaches api.github.com on every
+	// subcommand and Execute() then drains the goroutine for up to 2 s; on an
+	// egress-restricted runner that is a hang, and on shared CI egress IPs it
+	// burns unauthenticated rate limit for a notice nobody reads. This matters
+	// most when $FFM_CONFIG_DIR is isolated per job, because the cache file is
+	// then always absent and every invocation starts a cold fetch.
+	if envEnabled("FFM_NO_UPDATE_CHECK") || envEnabled("CI") {
+		return
+	}
+
 	path := updateCheckPath()
 
 	data, err := os.ReadFile(path)

@@ -29,6 +29,10 @@ create, start, stop, and delete Frappe development benches with a single command
 
 	// --verbose (no -v shorthand; -v is reserved for --version)
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "Show docker compose output")
+	root.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false,
+		"Never open interactive prompts; fail with a message naming the missing flag instead. "+
+			"Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal "+
+			"(set $FFM_INTERACTIVE=1 to force prompting back on)")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		// Skip when the user is already running `ffm update` to avoid duplicate output.
