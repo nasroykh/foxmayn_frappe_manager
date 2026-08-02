@@ -12,9 +12,14 @@
 # 1001-owned directory there. Only a native Linux bind mount shows the truth,
 # which is the entire reason this workflow exists.
 #
-# Expected result: the `without-remap` leg FAILS and `with-remap` SUCCEEDS.
-# If `without-remap` unexpectedly succeeds, the diagnosis is wrong and the job
-# fails loudly on purpose — that is the point of running it.
+# Expected result: dev-without-remap FAILS; dev-with-remap and prod-with-remap
+# SUCCEED. If dev-without-remap unexpectedly succeeds, the diagnosis is wrong
+# and the job fails loudly on purpose — that is the point of running it.
+#
+# Confirmed by run 30750146122 for the two dev legs: the base image really is
+# uid 1000, the runner really is uid 1001, the bind mount does not translate
+# ownership (0:0 on both sides), and create failed with
+# "rm: cannot remove '/workspace/frappe-bench': Permission denied".
 #
 # Delete this file once the question is settled.
 name: uid-probe
@@ -30,11 +35,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: without-remap
-            flags: ""
+          # Dev, stock uid: fails at `rm -rf /workspace/frappe-bench` inside bench
+          # init, because the host created /workspace as uid 1001 at 0755.
+          - name: dev-without-remap
+            args: "--mode dev --frappe-branch version-15"
             expect: failure
-          - name: with-remap
-            flags: "--match-host-user"
+          - name: dev-with-remap
+            args: "--mode dev --frappe-branch version-15 --match-host-user"
+            expect: success
+          # Prod exercises the OTHER direction of the same mismatch, which the dev
+          # legs never reach: WriteWsgiWrapper writes from the host into sites/, a
+          # directory the container created, and that one is a hard error rather
+          # than a warning. --no-ssl is mandatory here — without it, create calls
+          # proxy.EnsureHTTPS and would hit the real Let's Encrypt API from CI.
+          - name: prod-with-remap
+            args: "--mode prod --no-ssl --domain probe.ci.invalid --admin-password $ADMIN_PW --frappe-branch version-15 --match-host-user"
             expect: success
 
     name: ${{ matrix.name }}
@@ -50,6 +65,9 @@ jobs:
         run: |
           echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
           echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+          # Prod mode rejects the default admin password. Generated per run rather
+          # than committed; the bench is torn down and the domain is .invalid.
+          echo "ADMIN_PW=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v5
 
@@ -82,12 +100,11 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          # --mode comes from matrix.args; do not add one here or the legs collide.
           "$RUNNER_TEMP/ffm" create probe \
-            --mode dev \
             --verbose \
-            --frappe-branch version-15 \
             --keep-on-failure \
-            ${{ matrix.flags }}
+            ${{ matrix.args }}
 
       # --keep-on-failure means the workspace survives a failed create, so the
       # ownership that caused it is still inspectable.
