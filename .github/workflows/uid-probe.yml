@@ -21,7 +21,9 @@
 # ownership (0:0 on both sides), and create failed with
 # "rm: cannot remove '/workspace/frappe-bench': Permission denied".
 #
-# Delete this file once the question is settled.
+# STATUS: settled. Run 30750146122 confirmed the dev legs; run 30750894001 added
+# prod-with-remap and all three passed. Kept as a regression test for the remap;
+# delete once that is no longer wanted.
 name: uid-probe
 
 on:
