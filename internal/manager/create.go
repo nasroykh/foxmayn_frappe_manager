@@ -110,6 +110,32 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return err
 	}
 
+	// Domain aliases. Normalised up front so a bad hostname fails before any
+	// container is built, and so the values written into Traefik labels are
+	// always the validated form.
+	primaryHost := name + ".localhost"
+	if mode == "prod" {
+		primaryHost = domain
+	}
+	aliases, err := normalizeAliases(in.DomainAliases, primaryHost)
+	if err != nil {
+		return err
+	}
+	aliasTLS := in.AliasTLS
+	if aliasTLS {
+		if mode != "prod" {
+			return fmt.Errorf("--alias-tls requires --mode prod (dev benches are served over plain HTTP)")
+		}
+		if noSSL {
+			return fmt.Errorf("--alias-tls cannot be combined with --no-ssl")
+		}
+	}
+	if len(aliases) > 0 {
+		if err := s.checkAliasesFree(aliases, name); err != nil {
+			return err
+		}
+	}
+
 	s.lock()
 	_, existsErr := s.Store.Get(name)
 	s.unlock()
@@ -283,6 +309,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		RedisCacheMaxmem:  redisCacheMaxmem,
 		RedisQueueMaxmem:  redisQueueMaxmem,
 		SlowQueryLog:      slowQueryLog && mode == "prod" && dbType == "mariadb",
+		DomainAliases:     aliases,
+		AliasTLS:          aliasTLS,
 	}
 	if data.SlowQueryLog {
 		if err := os.MkdirAll(filepath.Join(benchDir, "mysql-logs"), 0o755); err != nil {
@@ -644,8 +672,21 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		ProxyHost:     resolvedProxyHost,
 		Mode:          mode,
 		Domain:        domain,
+		DomainAliases: aliases,
+		AliasTLS:      aliasTLS,
 		MatchHostUser: in.MatchHostUser,
 		CreatedAt:     time.Now(),
+		// Everything below is what a later compose re-render needs in order to
+		// reproduce this exact bench. Without it, recreate and `ffm domain`
+		// would silently reset the prod tuning knobs to their defaults.
+		TLSMode:           tlsModeFor(mode, noSSL),
+		MariaDBBufferPool: mariadbBufferPool,
+		GunicornWorkers:   gunicornWorkers,
+		WorkerLongCount:   workerLongCount,
+		WorkerShortCount:  workerShortCount,
+		RedisCacheMaxmem:  redisCacheMaxmem,
+		RedisQueueMaxmem:  redisQueueMaxmem,
+		SlowQueryLog:      data.SlowQueryLog,
 	}
 	if err := s.AddBench(rec); err != nil {
 		return fmt.Errorf("save state: %w", err)

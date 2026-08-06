@@ -25,6 +25,11 @@ type CreateInput struct {
 	SlowQueryLog      bool
 	FixedWebPort      int
 	FixedSocketIOPort int
+	// DomainAliases are extra hostnames Traefik routes to this bench on top of
+	// the mode's primary host. Same effect as `ffm domain add` after creation.
+	DomainAliases []string
+	// AliasTLS serves the aliases over HTTPS with Let's Encrypt. Prod + SSL only.
+	AliasTLS bool
 	// MatchHostUser rebuilds the image with the in-container `frappe` user
 	// remapped onto the host user's uid/gid. Needed on hosts whose uid is not
 	// 1000 (e.g. GitHub-hosted runners, uid 1001), where the ./workspace bind
@@ -44,6 +49,16 @@ type RecreateInput struct {
 	GithubToken       string
 	ProxyPortOverride *int
 	ProxyHostOverride *string
+}
+
+// DomainInput adds or removes a domain alias on a bench.
+type DomainInput struct {
+	Name   string
+	Domain string
+	// TLS switches the bench's aliases to HTTPS with Let's Encrypt. Only
+	// meaningful on DomainAdd, and only for a prod bench that already serves its
+	// primary domain over HTTPS.
+	TLS bool
 }
 
 // SetProxyInput configures reverse-proxy settings for a bench.

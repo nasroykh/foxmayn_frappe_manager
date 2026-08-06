@@ -114,6 +114,23 @@ services:
       - "traefik.http.middlewares.{{.Name}}-redirect.redirectscheme.scheme=https"
       - "traefik.http.routers.{{.Name}}-redirect.middlewares={{.Name}}-redirect"
 {{- end}}
+{{- if .HasAliases}}
+      # Domain aliases (LAN names, secondary hostnames). Kept on their own router
+      # instead of being added to the primary rule: Traefik derives one ACME
+      # certificate request per router, so folding a name that Let's Encrypt
+      # cannot reach into the primary rule would fail the order and leave the
+      # real domain with no certificate at all.
+      - "traefik.http.routers.{{.Name}}-alias.rule={{.AliasRule}}"
+      - "traefik.http.routers.{{.Name}}-alias.entrypoints={{.AliasEntrypoint}}"
+      - "traefik.http.routers.{{.Name}}-alias.service={{.Name}}"
+{{- if .AliasTLS}}
+      - "traefik.http.routers.{{.Name}}-alias.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{.Name}}-alias-redirect.rule={{.AliasRule}}"
+      - "traefik.http.routers.{{.Name}}-alias-redirect.entrypoints=web"
+      - "traefik.http.routers.{{.Name}}-alias-redirect.service={{.Name}}"
+      - "traefik.http.routers.{{.Name}}-alias-redirect.middlewares={{.Name}}-redirect"
+{{- end}}
+{{- end}}
 
   socketio:
     build:
@@ -151,6 +168,26 @@ services:
       - "traefik.http.routers.{{.Name}}-socketio.middlewares={{.Name}}-socketio-origin"
       - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
       - "traefik.http.middlewares.{{.Name}}-socketio-origin.headers.customRequestHeaders.Origin=https://{{.Domain}}"
+{{- end}}
+{{- if .HasAliases}}
+      # Socket.IO over a domain alias. Traefik's default priority is rule length,
+      # so this beats the plain alias router on the frappe container for
+      # /socket.io — the same ordering the primary domain already relies on.
+      - "traefik.http.routers.{{.Name}}-alias-socketio.rule=({{.AliasRule}}) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.{{.Name}}-alias-socketio.entrypoints={{.AliasEntrypoint}}"
+      - "traefik.http.routers.{{.Name}}-alias-socketio.service={{.Name}}-socketio"
+{{- if .AliasTLS}}
+      - "traefik.http.routers.{{.Name}}-alias-socketio.tls.certresolver=letsencrypt"
+{{- end}}
+      - "traefik.http.routers.{{.Name}}-alias-socketio.middlewares={{.Name}}-alias-socketio-headers"
+      # Remove Origin instead of pinning it. The primary router sets a fixed
+      # Origin, which would not match an alias Host and would be rejected by
+      # realtime/middlewares/authenticate.js; ffm's patch skips the check when
+      # Origin is absent (an empty customRequestHeaders value deletes the header).
+      # X-Frappe-Site-Name then keeps the socket.io namespace check passing on a
+      # hostname that is not the site name.
+      - "traefik.http.middlewares.{{.Name}}-alias-socketio-headers.headers.customRequestHeaders.Origin="
+      - "traefik.http.middlewares.{{.Name}}-alias-socketio-headers.headers.customRequestHeaders.X-Frappe-Site-Name={{.SiteName}}"
 {{- end}}
 
   worker-long:

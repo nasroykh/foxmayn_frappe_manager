@@ -69,7 +69,12 @@ services:
       # Scope routing to the shared ffm-proxy network to prevent Traefik from
       # randomly selecting the wrong network when a container has multiple NICs.
       - "traefik.docker.network=ffm-proxy"
-      - "traefik.http.routers.{{.Name}}.rule=Host(`{{.Name}}.localhost`)"
+      # Matches <name>.localhost plus any domain alias. Dev has a single plain
+      # HTTP router, so aliases just join the rule. Socket.IO is deliberately
+      # NOT routed through Traefik here: the dev client appends socketio_port to
+      # the page origin, so it reaches the published 9000-9005 range directly,
+      # and moving it onto :80 would break plain http://localhost:<web-port>.
+      - "traefik.http.routers.{{.Name}}.rule={{.RouterRule}}"
       - "traefik.http.routers.{{.Name}}.entrypoints=web"
       - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
 

@@ -45,7 +45,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 17 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 18 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
                             parses anything, then runs cobra, then waitForUpdateCheck()
@@ -73,6 +73,8 @@ internal/
     proxy.go              → ffm proxy start/stop/status (bare 'ffm proxy' shows status)
     setproxy.go           → ffm set-proxy flags (--port default 443, --host, --no-ssl, --reset,
                             --print-caddy, --print-nginx); behaviour in manager/setproxy.go
+    domain.go             → ffm domain list/add/remove (bare 'ffm domain' lists);
+                            'add' takes --tls. Behaviour in manager/domains.go
     tunnel.go             → ffm tunnel flags; bare 'ffm tunnel' PRINTS STATUS, it does not enable
     tunnel_server.go      → ffm tunnel server list/add/set/remove/use
     dashboard.go          → ffm dashboard start/stop/status/logs; --daemon re-execs the binary
@@ -100,6 +102,9 @@ internal/
                             rewrites wsgi.py for prod, re-applies the JS patches, rebuilds
     benches.go            → LiveStatus / ListBenchViews / GetBenchDetail / DashboardOverview
     setproxy.go           → SetProxy, mode-aware reset defaults, Caddy/Nginx snippets
+    domains.go            → DomainList/Add/Remove + composeDataFor (rebuilds ComposeData from
+                            state) + applyDomainChange (re-render compose, `up -d`, no data loss).
+                            Also tlsModeFor / prodNoSSL / hostLANIP / domainNameWarning
     tunnel_ops.go         → TunnelEnable / TunnelDisable
     proxy_ops.go          → ProxyStatus / ProxyStart / ProxyStop
     ffc.go                → SetupFFC: API keys + ~/.config/ffc/config.yaml + .mcp.json.
@@ -158,7 +163,8 @@ internal/
                             StateFile, AcmeEmailFile, TunnelConfigFile, DashboardConfigFile,
                             DashboardPIDFile, DashboardLogFile, JobsFile
   state/store.go          → JSON state store; Bench includes Mode, DBType, Domain, ProxyHost,
-                            MatchHostUser, Tunnel (*TunnelState); IsProd/IsDev/DBEngine/IsPostgres
+                            MatchHostUser, DomainAliases, AliasTLS, TLSMode, the prod tuning
+                            knobs, Tunnel (*TunnelState); IsProd/IsDev/DBEngine/IsPostgres
   version/version.go      → build-time version variables
 ```
 
@@ -198,10 +204,44 @@ internal/
   failure, so `create` explicitly checks for `apps/` afterwards.
 - **ffm rewrites Frappe source on the host.** `PatchAuthenticateJs` and `PatchUtilsJs` modify
   `apps/frappe/realtime/*` so socket.io auth works from inside Docker (`PatchUtilsJs` has separate
-  v15 and v16 branches — v16 rewrote `get_url()`). `PatchProcfileWorker` wraps the dev `worker:`
-  line in a self-restarting loop so an idle-Redis worker exit doesn't make honcho tear down the
-  whole stack. All are idempotent and re-applied on every start and rebuild. If you are wondering
-  why a bench's `realtime/utils.js` differs from upstream, this is why.
+  v15 and v16 branches — v16 rewrote `get_url()`). `PatchAuthenticateJs` makes **two** edits:
+  (1) skip the Host-vs-Origin comparison when Origin is absent, and (2) drop the
+  localhost/127.0.0.1 restriction on the `conf.default_site` branch of `get_site_name()`. Edit 2
+  is what makes domain aliases possible at all — the browser connects to the namespace
+  `/<frappe.boot.sitename>` and the server rejects it as "Invalid namespace" unless the resolved
+  site matches, and without the patch the site is resolved from the request Host/Origin. Sound
+  here because every ffm bench is single-site. `RealtimeAcceptsAnyHost` reports whether edit 2
+  landed. `PatchProcfileWorker` wraps the dev `worker:` line in a self-restarting loop so an
+  idle-Redis worker exit doesn't make honcho tear down the whole stack. All are idempotent;
+  `Service.Start` re-applies the two realtime patches in **both** modes (prod needs them too),
+  and `restart --rebuild` re-applies them as well. If you are wondering why a bench's
+  `realtime/utils.js` differs from upstream, this is why.
+- **Domain aliases** (`ffm domain add`, `ffm create --domain-alias`) route extra hostnames — LAN
+  names like `erp.internal` — to a bench alongside its primary host. ffm only configures Traefik;
+  pointing DNS at the host is the user's job and `domain add` prints the records to create.
+  - **dev** folds aliases into the single existing router rule (`Host(a) || Host(b)`). Socket.IO
+    is deliberately *not* put behind Traefik: the dev client appends `socketio_port` to the page
+    origin, so it reaches the published 9000-9005 range directly, and moving it to :80 would
+    break plain `http://localhost:<web-port>`. That port must be reachable from the LAN.
+  - **prod** gives aliases their *own* routers (`<name>-alias`, `<name>-alias-socketio`), never
+    merged into the primary rule — Traefik derives one ACME request per router, so a LAN-only
+    name in the primary rule would fail the order and leave the real domain with no cert.
+    Default is plain HTTP on the `web` entrypoint; `--tls` / `--alias-tls` opts into websecure +
+    letsencrypt and is rejected for dev and for `--no-ssl` benches. The alias socketio router
+    **strips** Origin (empty `customRequestHeaders` value deletes the header) rather than reusing
+    the primary's fixed-Origin middleware, which would never match an alias Host, and injects
+    `X-Frappe-Site-Name` so the namespace check passes even if the JS patch above did not land.
+  - Applying a change re-renders `docker-compose.yml` and runs `up -d` — **not** `recreate`,
+    which is destructive. Volumes and `./workspace` are untouched. Dev additionally relaunches
+    honcho, since `up -d` replaces the frappe container and `bench start` is exec-driven.
+  - Hostnames go through `bench.NormalizeDomain`, which is strict on purpose: the value lands in
+    a Traefik label between backticks, so a backtick or quote would inject router config.
+- **Compose re-rendering needs persisted inputs.** `state.Bench` records `TLSMode` and the prod
+  tuning knobs (`GunicornWorkers`, `MariaDBBufferPool`, worker replicas, redis maxmem,
+  `SlowQueryLog`) precisely so that `recreate` and `ffm domain` reproduce the bench instead of
+  resetting it to defaults. Records written before these fields existed have zero values, which
+  fall through to the create-time defaults. `TLSMode` also fixes an inference bug: deriving
+  no-SSL from `ProxyHost`'s scheme is wrong once `ffm set-proxy --port 80` rewrites it.
 - **Production create pipeline** uses a **two-phase start**. Phase 1 brings up only DB + redis +
   frappe so scheduler/worker containers don't crash-loop on app modules that aren't installed
   yet. Then site creation, app install, `bench build`. The frappe container is then *restarted* —

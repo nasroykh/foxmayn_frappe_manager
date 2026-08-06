@@ -73,7 +73,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 		}
 	}
 
-	noSSL := inferProdNoSSL(b)
+	noSSL := b.IsProd() && prodNoSSL(b)
 	acmeEmail := ""
 
 	var fixedWeb, fixedSio int
@@ -82,8 +82,12 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 		fixedSio = b.SocketIOPort
 	}
 
-	mariadbBufferPool := ""
-	if b.IsProd() {
+	// Reuse the recorded tuning rather than the create-time defaults, so a bench
+	// built with e.g. --gunicorn-workers 8 does not silently come back with 2.
+	// Empty/zero values fall through to Create's defaults, which is the right
+	// behaviour for records written before these fields were persisted.
+	mariadbBufferPool := b.MariaDBBufferPool
+	if mariadbBufferPool == "" && b.IsProd() {
 		mariadbBufferPool = "1G"
 	}
 
@@ -109,11 +113,16 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 		NoSSL:             noSSL,
 		AcmeEmail:         acmeEmail,
 		MariaDBBufferPool: mariadbBufferPool,
-		GunicornWorkers:   2,
-		WorkerLongCount:   1,
-		WorkerShortCount:  1,
+		GunicornWorkers:   b.GunicornWorkers,
+		WorkerLongCount:   b.WorkerLongCount,
+		WorkerShortCount:  b.WorkerShortCount,
+		RedisCacheMaxmem:  b.RedisCacheMaxmem,
+		RedisQueueMaxmem:  b.RedisQueueMaxmem,
+		SlowQueryLog:      b.SlowQueryLog,
 		FixedWebPort:      fixedWeb,
 		FixedSocketIOPort: fixedSio,
 		MatchHostUser:     b.MatchHostUser,
+		DomainAliases:     b.DomainAliases,
+		AliasTLS:          b.AliasTLS,
 	}, pw)
 }
