@@ -9,6 +9,16 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 )
 
+// TLS modes recorded in Bench.TLSMode.
+const (
+	// TLSLetsEncrypt serves the primary domain over HTTPS with certificates
+	// issued by Traefik's Let's Encrypt resolver.
+	TLSLetsEncrypt = "letsencrypt"
+	// TLSNone serves the primary domain over plain HTTP (`--no-ssl`), leaving
+	// TLS termination to an external proxy.
+	TLSNone = "none"
+)
+
 // TunnelState holds the tunnel configuration for a bench.
 // Zero value means no tunnel configured.
 type TunnelState struct {
@@ -44,6 +54,31 @@ type Bench struct {
 	Mode string `json:"mode,omitempty"`
 	// Domain is the public domain for production benches (e.g. "erp.example.com").
 	Domain string `json:"domain,omitempty"`
+	// DomainAliases are extra hostnames Traefik routes to this bench on top of
+	// the mode's primary host. Managed by `ffm domain add` / `remove`.
+	DomainAliases []string `json:"domain_aliases,omitempty"`
+	// AliasTLS serves the aliases over HTTPS with Let's Encrypt instead of plain
+	// HTTP. Prod + SSL only; requires every alias to be publicly resolvable.
+	AliasTLS bool `json:"alias_tls,omitempty"`
+	// TLSMode records how the primary domain is served: TLSLetsEncrypt or
+	// TLSNone. Empty on records written before this field existed, where callers
+	// must fall back to inferring it from ProxyHost's scheme.
+	//
+	// Persisted because that inference is wrong after `ffm set-proxy --port 80`
+	// rewrites ProxyHost to an http:// URL: a later re-render would then drop
+	// the bench's TLS router.
+	TLSMode string `json:"tls_mode,omitempty"`
+	// Prod tuning as passed to create. Persisted so that regenerating
+	// docker-compose.yml (recreate, or a domain change) reproduces the bench the
+	// user asked for instead of silently resetting every knob to its default.
+	// Zero/empty means "not recorded" and the create-time defaults apply.
+	MariaDBBufferPool string `json:"mariadb_buffer_pool,omitempty"`
+	GunicornWorkers   int    `json:"gunicorn_workers,omitempty"`
+	WorkerLongCount   int    `json:"worker_long_count,omitempty"`
+	WorkerShortCount  int    `json:"worker_short_count,omitempty"`
+	RedisCacheMaxmem  string `json:"redis_cache_maxmem,omitempty"`
+	RedisQueueMaxmem  string `json:"redis_queue_maxmem,omitempty"`
+	SlowQueryLog      bool   `json:"slow_query_log,omitempty"`
 	// MatchHostUser records that the image was built with the in-container
 	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
 	// Absent in records written before this option existed, which is correct —

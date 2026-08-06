@@ -35,6 +35,8 @@ func newCreateCmd() *cobra.Command {
 		keepOnFailure     bool
 		webPort           int
 		socketIOPort      int
+		domainAliases     []string
+		aliasTLS          bool
 	)
 
 	cmd := &cobra.Command{
@@ -94,6 +96,7 @@ func newCreateCmd() *cobra.Command {
 				SlowQueryLog: slowQueryLog, MatchHostUser: matchHostUser,
 				KeepOnFailure: keepOnFailure,
 				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
+				DomainAliases: domainAliases, AliasTLS: aliasTLS,
 			}, manager.CLIProgress{})
 		},
 	}
@@ -130,6 +133,13 @@ func newCreateCmd() *cobra.Command {
 			"(= web port + 1000). Each bench publishes a 6-port range, so parallel benches must be at least 10 apart.")
 	cmd.Flags().IntVar(&socketIOPort, "socketio-port", 0,
 		"Fixed host Socket.IO port. Must equal --web-port + 1000.")
+	cmd.Flags().StringArrayVar(&domainAliases, "domain-alias", nil,
+		"Extra hostname the bench also answers on, e.g. erp.internal. Repeatable. "+
+			"Requires the shared proxy ('ffm proxy start') and DNS pointing the name at this host. "+
+			"Same as 'ffm domain add' after creation.")
+	cmd.Flags().BoolVar(&aliasTLS, "alias-tls", false,
+		"Serve --domain-alias names over HTTPS with Let's Encrypt instead of plain HTTP. "+
+			"Production with SSL only; every alias must be publicly resolvable.")
 
 	return cmd
 }

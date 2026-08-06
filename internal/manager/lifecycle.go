@@ -28,6 +28,17 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
 
+	// Both modes: a `bench update` inside the bench restores the upstream realtime
+	// sources, so re-apply the socket.io patches on every start. Prod needs them
+	// as much as dev — the alias socket.io router strips Origin, which upstream
+	// authenticate.js rejects.
+	if err := bench.PatchAuthenticateJs(b.Dir); err != nil && s.Verbose {
+		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+	}
+	if err := bench.PatchUtilsJs(b.Dir); err != nil && s.Verbose {
+		fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+	}
+
 	if b.IsDev() {
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
 			"[ -f /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/SKILL.md ] ||"+
@@ -43,12 +54,6 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
 		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
-		}
-		if err := bench.PatchAuthenticateJs(b.Dir); err != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
-		}
-		if err := bench.PatchUtilsJs(b.Dir); err != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
 		}
 		// Self-restarting worker: stops an idle-Redis-timeout worker exit (rc=0)
 		// from making honcho SIGTERM the whole stack (502 Bad Gateway). Must run

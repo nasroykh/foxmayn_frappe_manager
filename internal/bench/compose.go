@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -72,6 +73,18 @@ type ComposeData struct {
 	// SlowQueryLog enables MariaDB slow query logging (MariaDB + prod only).
 	// runCreate must create <benchDir>/mysql-logs/ when this is true.
 	SlowQueryLog bool
+	// DomainAliases are extra hostnames Traefik should route to this bench, on
+	// top of the mode's primary host (<name>.localhost for dev, Domain for prod).
+	// Typically LAN names such as "erp.internal" that a local DNS server points
+	// at this host. Every entry must have passed NormalizeDomain — the values are
+	// interpolated into Traefik labels inside backticks, so an unvalidated string
+	// could inject arbitrary router configuration into the generated compose file.
+	DomainAliases []string
+	// AliasTLS routes the aliases through the websecure entrypoint with the
+	// Let's Encrypt resolver instead of plain HTTP. Prod + SSL only, and only
+	// safe when every alias is publicly resolvable — Traefik puts them in the
+	// same certificate request, so one unreachable name fails the whole order.
+	AliasTLS bool
 	// HostUID and HostGID, when both non-zero, make the Dockerfile remap the
 	// in-container `frappe` user (uid/gid 1000 in the frappe/bench base image)
 	// onto these ids. Zero — the default — leaves the base image untouched and
@@ -83,6 +96,93 @@ type ComposeData struct {
 	// manager.hostUserIDs enforces that.
 	HostUID int
 	HostGID int
+}
+
+// domainLabelRe matches a single DNS label: alphanumeric, inner hyphens only.
+var domainLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// NormalizeDomain lower-cases and validates a hostname for use in a Traefik
+// Host() matcher. Any scheme prefix, trailing dot, or :port suffix is an error
+// rather than silently stripped, so a typo never becomes a router that quietly
+// matches the wrong name.
+//
+// Validation is deliberately strict: the result is written into a compose label
+// between backticks, so accepting a backtick, quote, or comma would let a
+// domain string inject arbitrary Traefik configuration.
+func NormalizeDomain(raw string) (string, error) {
+	d := strings.ToLower(strings.TrimSpace(raw))
+	if d == "" {
+		return "", fmt.Errorf("domain is empty")
+	}
+	if strings.Contains(d, "://") {
+		return "", fmt.Errorf("invalid domain %q: drop the scheme (use erp.internal, not http://erp.internal)", raw)
+	}
+	if strings.Contains(d, "/") {
+		return "", fmt.Errorf("invalid domain %q: a path is not allowed", raw)
+	}
+	if strings.Contains(d, ":") {
+		return "", fmt.Errorf("invalid domain %q: a port is not allowed — Traefik matches the hostname only", raw)
+	}
+	if len(d) > 253 {
+		return "", fmt.Errorf("invalid domain %q: longer than 253 characters", raw)
+	}
+	// Report labels from the caller's own spelling — echoing the lower-cased form
+	// back reads like a second, unrelated error. Lower-casing preserves the label
+	// count, so the indexes line up.
+	original := strings.Split(strings.TrimSpace(raw), ".")
+	for i, label := range strings.Split(d, ".") {
+		shown := label
+		if i < len(original) {
+			shown = original[i]
+		}
+		if len(label) > 63 {
+			return "", fmt.Errorf("invalid domain %q: label %q is longer than 63 characters", raw, shown)
+		}
+		if !domainLabelRe.MatchString(label) {
+			return "", fmt.Errorf("invalid domain %q: %q is not a valid hostname label "+
+				"(letters, digits and inner hyphens only)", raw, shown)
+		}
+	}
+	return d, nil
+}
+
+// PrimaryHost returns the hostname the bench's main Traefik router matches.
+func (d ComposeData) PrimaryHost() string {
+	if d.Mode == "prod" {
+		return d.Domain
+	}
+	return d.Name + ".localhost"
+}
+
+// hostMatcher renders a Traefik v3 rule matching any of the given hostnames.
+func hostMatcher(hosts []string) string {
+	parts := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		parts = append(parts, fmt.Sprintf("Host(`%s`)", h))
+	}
+	return strings.Join(parts, " || ")
+}
+
+// RouterRule is the dev router rule: the primary host plus any aliases. Dev has
+// a single HTTP router, so aliases are folded straight into it.
+func (d ComposeData) RouterRule() string {
+	return hostMatcher(append([]string{d.PrimaryHost()}, d.DomainAliases...))
+}
+
+// AliasRule matches the alias hostnames only. Prod keeps aliases on separate
+// routers from the primary domain so that a LAN-only alias can never end up in
+// the primary domain's ACME certificate request.
+func (d ComposeData) AliasRule() string { return hostMatcher(d.DomainAliases) }
+
+// HasAliases reports whether any alias hostname is configured.
+func (d ComposeData) HasAliases() bool { return len(d.DomainAliases) > 0 }
+
+// AliasEntrypoint is the Traefik entrypoint the prod alias routers bind to.
+func (d ComposeData) AliasEntrypoint() string {
+	if d.AliasTLS {
+		return "websecure"
+	}
+	return "web"
 }
 
 // WriteCompose renders the compose template into the bench directory.
@@ -151,24 +251,82 @@ func WriteWsgiWrapper(benchDir, siteName string) error {
 	return os.WriteFile(dest, []byte(content), 0o644)
 }
 
-// PatchAuthenticateJs patches Frappe's realtime authenticate middleware so that
-// socket.io connections without an Origin header (same-origin requests where
-// browsers omit Origin on GET) are allowed instead of rejected with "Invalid
-// origin". The file is at a fixed path under the bind-mounted workspace, so the
-// patch survives container restarts. It must be re-applied after bench update.
-func PatchAuthenticateJs(benchDir string) error {
-	path := filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe",
+// authenticateJsPath is Frappe's realtime auth middleware inside the workspace
+// bind mount, so edits survive container restarts.
+func authenticateJsPath(benchDir string) string {
+	return filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe",
 		"realtime", "middlewares", "authenticate.js")
+}
+
+// siteNamePatched is the shape get_site_name() has after the default-site
+// relaxation below. Used both to detect an already-patched file and to report
+// whether alias hostnames will work (see RealtimeAcceptsAnyHost).
+const siteNamePatched = "} else if (conf.default_site) {"
+
+// PatchAuthenticateJs applies two edits to Frappe's realtime authenticate
+// middleware. Both are idempotent and must be re-applied after a bench update.
+//
+//  1. Origin check. Upstream rejects a connection whenever the Host and Origin
+//     hostnames differ — including when Origin is absent, which is exactly what
+//     browsers do for same-origin GETs. Guard the comparison on Origin being
+//     present so those connections are allowed instead of failing with
+//     "Invalid origin". This is also what lets ffm strip the Origin header on
+//     the prod alias socket.io router, where Host is an alias and any fixed
+//     Origin value would necessarily mismatch.
+//
+//  2. Namespace check. The browser connects to the namespace
+//     "/<frappe.boot.sitename>" (frappe/public/js/frappe/socketio_client.js),
+//     and the server compares it against get_site_name(socket), which resolves
+//     the site from the X-Frappe-Site-Name header, then conf.default_site — but
+//     only when Host is localhost/127.0.0.1 — then the Origin or Host hostname.
+//     So reaching a bench on any hostname that is not literally the site name
+//     (an alias domain, a LAN IP) fails with "Invalid namespace". Dropping the
+//     localhost restriction makes conf.default_site authoritative, which is
+//     correct here because every ffm bench hosts exactly one site: create runs
+//     `bench use <site>`, which writes default_site into common_site_config.json.
+//
+// Either edit is skipped when its target text is absent (already patched, or a
+// Frappe version that reformatted the function), matching PatchUtilsJs.
+func PatchAuthenticateJs(benchDir string) error {
+	path := authenticateJsPath(benchDir)
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	original := `if (get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
-	patched := `if (socket.request.headers.origin && get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
-	if !strings.Contains(string(content), original) {
-		return nil // already patched or file changed; leave it alone
+	text := string(content)
+	changed := false
+
+	const originOriginal = `if (get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
+	const originPatched = `if (socket.request.headers.origin && get_hostname(socket.request.headers.host) != get_hostname(socket.request.headers.origin))`
+	if strings.Contains(text, originOriginal) {
+		text = strings.Replace(text, originOriginal, originPatched, 1)
+		changed = true
 	}
-	return os.WriteFile(path, []byte(strings.Replace(string(content), original, patched, 1)), 0o644)
+
+	const siteNameOriginal = "} else if (\n\t\tconf.default_site &&\n\t\t" +
+		"[\"localhost\", \"127.0.0.1\"].indexOf(get_hostname(socket.request.headers.host)) !== -1\n\t) {"
+	if strings.Contains(text, siteNameOriginal) {
+		text = strings.Replace(text, siteNameOriginal, siteNamePatched, 1)
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+	return os.WriteFile(path, []byte(text), 0o644)
+}
+
+// RealtimeAcceptsAnyHost reports whether authenticate.js resolves the site from
+// conf.default_site regardless of the request Host — i.e. whether edit 2 above
+// is in effect. Callers use it to warn when adding a domain alias to a dev
+// bench, where socket.io connects straight to the published port and Traefik
+// cannot inject an X-Frappe-Site-Name header as a fallback.
+func RealtimeAcceptsAnyHost(benchDir string) bool {
+	content, err := os.ReadFile(authenticateJsPath(benchDir))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(content), siteNamePatched)
 }
 
 // PatchUtilsJs patches Frappe's realtime utils so that get_url always uses
