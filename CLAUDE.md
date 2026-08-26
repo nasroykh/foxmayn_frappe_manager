@@ -32,7 +32,8 @@ rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_te
 dashboard handlers (`internal/dashboard/handler_test.go`), the archive format
 (`internal/archive/archive_test.go` — hostile tars built in memory), and the backup/restore
 manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
-`internal/manager/backup_preflight_test.go`). All of those run without Docker. The create
+`internal/manager/backup_preflight_test.go`), and the backup failure formatter
+(`internal/manager/backup_failure_test.go`). All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 
 `.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
@@ -319,6 +320,25 @@ internal/
   `TeardownBenchFiles` runs `os.RemoveAll(b.Dir)`, so `ffm recreate` would otherwise destroy
   the backups that make it survivable. They hold credentials in plaintext at 0600, and
   `honoursFileModes` warns when the filesystem ignores that (a Windows drive under WSL2).
+
+- **Waiting for the database means waiting from the frappe container.** `WaitForMariaDB` /
+  `WaitForPostgres` exec *inside the database container* and talk to it over loopback, so they
+  pass whenever the database process is up — including when nothing can reach it.
+  Container-to-container traffic crosses the bridge and is filtered by the `FORWARD` chain, and
+  Docker's per-bridge rules can go missing while the bridge stays up (an iptables reload, a
+  firewall restart, a partially restored rule set). `manager.waitForDBReady` therefore runs both
+  waits: the database-side one, then `Runner.WaitForDBFromFrappe`, a python3 TCP probe from the
+  frappe container. Without the second, `create` and `backup` sail past the wait in 0s and fail
+  much later with a Frappe error that blames the site.
+- **`bench backup` reports every failure as corruption.** It wraps the operation in a bare
+  `except Exception` and prints "Database or site_config.json may be corrupted" for a dropped
+  packet, a full disk and a real corruption alike; the traceback is printed only under
+  `--verbose`. `runBenchBackup` therefore always passes `--verbose` — the output is captured and
+  discarded on success — and `benchBackupFailure` reduces it to Frappe's own message plus the
+  traceback's final line. It never prints the frames by default: `frappe.get_traceback` runs
+  `with_context=True`, so each frame dumps its locals, which includes the site's database
+  password in clear. `ffm --verbose backup` shows the whole traceback, with the credentials
+  redacted either way.
 
 - **CWD auto-detection** — `resolveBenchName` resolves: (1) `args[0]`; (2) `benchNameFromCWD()`
   if under `~/frappe/<name>/`; (3) `pickBench()`. `pickBench` errors when no benches exist and
