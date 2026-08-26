@@ -28,9 +28,18 @@ make clean          # removes ./bin/ffm
 Version info is injected at build time via `-ldflags` (see `Makefile` LDFLAGS).
 
 Tests are sparse but present — `make test` runs `go test ./...`. Coverage today is template
-rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`) and
-dashboard handlers (`internal/dashboard/handler_test.go`). The create pipeline and most of the
-CLI are untested.
+rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`),
+dashboard handlers (`internal/dashboard/handler_test.go`), the archive format
+(`internal/archive/archive_test.go` — hostile tars built in memory), and the backup/restore
+manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
+`internal/manager/backup_preflight_test.go`). All of those run without Docker. The create
+pipeline and most of the CLI are still untested.
+
+`.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
+existed, neither ran anywhere. `.github/workflows/backup-roundtrip.yml` is a
+workflow_dispatch end-to-end proof: create → plant a marker row → backup → delete → restore
+under a different name → assert the marker came back. It asserts on data, not exit codes,
+because every interesting failure in this area exits 0.
 
 ## Architecture
 
@@ -45,7 +54,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 18 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 20 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
                             parses anything, then runs cobra, then waitForUpdateCheck()
@@ -55,6 +64,14 @@ internal/
     interactive_unix.go / interactive_windows.go → hasControllingTerminal() per platform
     create.go             → create flags + the interactive forms (runCreateForm,
                             runCreateFormFull); calls manager.Service.Create
+    backup.go             → ffm backup: --out / --label / --no-files / --skip-space-check
+    restore.go            → ffm restore <archive> [name]: --dry-run / --no-files / --pin-apps /
+                            --allow-missing-encryption-key / --encryption-key / --domain /
+                            --no-ssl / --acme-email / --reallocate-ports / --web-port /
+                            --socketio-port / --admin-password / --github-token /
+                            --skip-migrate / --keep-on-failure / --skip-space-check.
+                            arg0 is the ARCHIVE, arg1 the new bench name — so it does NOT
+                            call resolveBenchName: the target must not exist yet
     recreate.go           → ffm recreate: --force / --reallocate-ports / --github-token /
                             --proxy-port / --proxy-host
     delete.go             → confirmation prompt (--force skips), then manager.Service.Delete
@@ -94,7 +111,17 @@ internal/
     types.go              → CreateInput / RecreateInput / RestartInput / SetProxyInput /
                             ExecInput / CleanLogsInput / BenchView / BenchDetail / DashboardStats
     create.go             → THE create pipeline (see Key patterns). Also ReadSavedAcmeEmail /
-                            SaveAcmeEmail
+                            SaveAcmeEmail. SkipAppInstall / SkipAssetBuild are set only by
+                            Restore
+    backup.go             → Service.Backup: reads site identity host-side, runs `bench backup`
+                            into an in-container staging dir, streams members out
+    restore.go            → Service.Restore: preflight → Create → data → reconcile. Fresh
+                            bench only, so it borrows Create's rollback
+    backup_manifest.go    → Header / Manifest / SiteInfo / AppInfo / Secrets + schema gates
+    backup_preflight.go   → checkArchive / verifyMembers / appsForRestore / scrubSecrets /
+                            checkNameFree / honoursFileModes
+    diskfree_unix.go / diskfree_windows.go → freeBytes(); no-op on Windows rather than
+                            pulling in golang.org/x/sys
     recreate.go           → teardown + Create with stored inputs; reuses the old port pair
     lifecycle.go          → Start / Stop / Delete / TeardownBenchFiles; Start also back-fills
                             skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
@@ -116,6 +143,12 @@ internal/
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
 
+  archive/                → the ffm backup archive format. Plain tar; members compressed
+                            individually. Header FIRST (cheap preflight), manifest LAST (its
+                            absence IS the definition of a truncated archive). Stdlib only.
+    archive.go            → Writer (atomic .partial→rename, 0600 from creation), PeekHeader
+    safe_extract.go       → Extract/ExtractReader with traversal, type and size guards
+
   dashboard/              → the /admin web UI. Stdlib only: html/template, embed, net/http.
     handler.go            → //go:embed templates + static, basic auth, rendering
     handler_actions.go    → POST endpoints for every bench operation
@@ -136,10 +169,12 @@ internal/
                             WriteWsgiWrapper, PatchAuthenticateJs, PatchUtilsJs, PatchProcfileWorker
     docker.go             → Runner: build/up/down/exec/logs/ps, UpServices, RestartService,
                             ExecDetached, LogsString, WaitForMariaDB/WaitForPostgres, WaitForHTTP,
-                            ConfigureGitHubToken/CleanupGitHubToken
+                            ConfigureGitHubToken/CleanupGitHubToken, ExecStream (unbuffered
+                            stdout — never ExecSilent for a multi-GB dump), CopyTo
     frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName)
     port.go               → AllocatePorts (web 8000 / socketio 9000, +10 per bench, max 50) plus
-                            ValidBenchPortPair / CheckTCPPortsFree for --web-port/--socketio-port
+                            ValidBenchPortPair / CheckTCPPortsFree for --web-port/--socketio-port,
+                            and CheckBenchPortRangeFree, which probes all 12 published ports
     templates/
       dev/
         docker-compose.yml.tmpl  → 4 services (DB, redis×2, frappe); DB conditional on DBType;
@@ -159,9 +194,10 @@ internal/
   tunnel/
     config.go             → Server + Config; ~/.config/ffm/tunnel.json (0o600)
     frpc.go               → frpc container via docker run (not compose); RenderFrpcToml (0o600)
-  config/paths.go         → honours FFM_BENCHES_DIR / FFM_CONFIG_DIR: BenchesDir, BenchDir,
-                            StateFile, AcmeEmailFile, TunnelConfigFile, DashboardConfigFile,
-                            DashboardPIDFile, DashboardLogFile, JobsFile
+  config/paths.go         → honours FFM_BENCHES_DIR / FFM_CONFIG_DIR / FFM_BACKUPS_DIR:
+                            BenchesDir, BenchDir, StateFile, AcmeEmailFile, TunnelConfigFile,
+                            DashboardConfigFile, DashboardPIDFile, DashboardLogFile, JobsFile,
+                            BackupsDir / BenchBackupsDir / EnsureBenchBackupsDir
   state/store.go          → JSON state store; Bench includes Mode, DBType, Domain, ProxyHost,
                             MatchHostUser, DomainAliases, AliasTLS, TLSMode, the prod tuning
                             knobs, Tunnel (*TunnelState); IsProd/IsDev/DBEngine/IsPostgres
@@ -254,6 +290,36 @@ internal/
   tears down containers and removes the bench directory. `--keep-on-failure` /
   `$FFM_KEEP_ON_FAILURE` stops the teardown and prints the literal cleanup command instead,
   because state is saved only on success and `ffm delete` cannot reach an unregistered bench.
+- **Backup is logical, restore is a fresh bench.** `ffm backup` captures Frappe's own dump,
+  the file tarballs, the site/common config and each app's git commit — not the app source,
+  the venv or the built assets. Measured on a frappe+erpnext dev bench that is 857 KiB versus
+  ~1.7 GB for the workspace and 268 MB for the DB volume, and unlike a physical copy it
+  restores across hosts, architectures and host uids. `ffm restore` therefore rebuilds by
+  calling **`manager.Create`** (with `SkipAppInstall`/`SkipAssetBuild`) and then running
+  `bench restore` into the new site, which is why it inherits the image build, uid remap,
+  bench init, get-app, Traefik wiring and Create's rollback defer for free. It only ever
+  creates a bench; there is no in-place overwrite, which is what makes the rollback sound.
+  Five Frappe behaviours the pipeline exists to work around, each verified on a live bench:
+  - `bench restore --admin-password` is a **no-op** — `install_app` returns early because the
+    restored DB already lists frappe, so `after_install` never applies it. Restore runs
+    `bench set-admin-password` separately and reconciles `state.Bench.AdminPassword`.
+  - `encryption_key` is generated **lazily**, so one failed decrypt mints and persists a new
+    key and orphans every Password field. Restore writes the archived key into site_config
+    host-side *before anything reads the site*.
+  - An encrypted backup keeps the name `…database.sql.gz` while being GPG/AES256, so members
+    record an `Encoding` and readers must never infer it from the extension.
+  - `bench restore` leaves `installed_apps` in site_config stale (it says `["frappe"]` while
+    the DB says frappe+erpnext). Restore rewrites it, and writes the DB's list back into
+    `state.Bench.Apps`, which drifts from the site's truth over a bench's life.
+  - `bench get-app --branch <sha>` cannot work — git rejects a SHA where it wants a branch.
+    `--pin-apps` does a post-clone `git checkout` + `bench setup requirements` instead, and
+    the commits come from `git rev-parse HEAD`, never `sites/apps.json` (which records
+    `commit_hash: null` for frappe itself on any ffm bench).
+  Archives live in `config.BackupsDir()`, deliberately **outside** the bench dir:
+  `TeardownBenchFiles` runs `os.RemoveAll(b.Dir)`, so `ffm recreate` would otherwise destroy
+  the backups that make it survivable. They hold credentials in plaintext at 0600, and
+  `honoursFileModes` warns when the filesystem ignores that (a Windows drive under WSL2).
+
 - **CWD auto-detection** — `resolveBenchName` resolves: (1) `args[0]`; (2) `benchNameFromCWD()`
   if under `~/frappe/<name>/`; (3) `pickBench()`. `pickBench` errors when no benches exist and
   **auto-selects when exactly one is tracked** — the picker only appears with 2+.
@@ -336,6 +402,9 @@ git push origin v0.1.0
   .devcontainer/         # dev only
     devcontainer.json
 
+~/frappe/_backups/<bench-name>/
+  <bench>_<UTC>.ffm.tar  # ffm backup archives (0600 in a 0700 dir; FFM_BACKUPS_DIR overrides)
+
 ~/.config/ffm/
   benches.json           # state file
   .update_check.json     # cached latest release tag (24 h TTL; skipped when $CI is set)
@@ -347,5 +416,5 @@ git push origin v0.1.0
   jobs.json              # async job state for the dashboard
 ```
 
-Both roots are overridable: `FFM_BENCHES_DIR` and `FFM_CONFIG_DIR`. Setting them per job is how
+All three roots are overridable: `FFM_BENCHES_DIR`, `FFM_CONFIG_DIR` and `FFM_BACKUPS_DIR`. Setting them per job is how
 you isolate concurrent runs, since `benches.json` is a whole-file read-modify-write.
