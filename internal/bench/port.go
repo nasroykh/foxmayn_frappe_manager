@@ -66,3 +66,28 @@ func probePort(port int) error {
 	ln.Close()
 	return nil
 }
+
+// PublishedPortSpan is how many consecutive host ports a bench publishes from
+// each base. The dev compose template maps "<web>-<web+5>:8000-8005" and the
+// same for Socket.IO, so a bench occupies six ports per base, not one.
+const PublishedPortSpan = 6
+
+// BenchPortRange returns every host port a bench publishes for a port pair.
+func BenchPortRange(webPort, socketIOPort int) []int {
+	ports := make([]int, 0, PublishedPortSpan*2)
+	for i := 0; i < PublishedPortSpan; i++ {
+		ports = append(ports, webPort+i, socketIOPort+i)
+	}
+	return ports
+}
+
+// CheckBenchPortRangeFree probes every port a bench would publish, not just the
+// two base ports.
+//
+// CheckTCPPortsFree only checks the ports it is handed, and every caller hands
+// it the bases — so a port pair can pass validation and then fail at
+// `docker compose up` with a bind error on, say, 8003. Restore reuses a
+// recorded pair, which makes it the most likely command to hit exactly that.
+func CheckBenchPortRangeFree(webPort, socketIOPort int) error {
+	return CheckTCPPortsFree(BenchPortRange(webPort, socketIOPort)...)
+}

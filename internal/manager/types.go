@@ -39,6 +39,18 @@ type CreateInput struct {
 	// Create fails, instead of rolling them back. Intended for unattended runs
 	// where the rollback would otherwise destroy the only diagnostic evidence.
 	KeepOnFailure bool
+	// SkipAppInstall clones each app but does not install it on the site.
+	//
+	// Set only by Restore: the restored database already lists its apps as
+	// installed, so installing them first is minutes of work that the dump then
+	// overwrites. The app code still has to be present, which is why the clone
+	// is not skipped too.
+	SkipAppInstall bool
+	// SkipAssetBuild omits `bench build`.
+	//
+	// Set only by Restore, which builds once after the data is in place rather
+	// than once here and again after migrate.
+	SkipAssetBuild bool
 }
 
 // RecreateInput holds parameters for recreating a bench from saved state.
