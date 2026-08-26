@@ -1,0 +1,128 @@
+# End-to-end proof that `ffm backup` and `ffm restore` compose correctly.
+#
+# The unit tests cover the archive format, the manifest and the preflight gates
+# without Docker. This covers the part they cannot: that a real bench, backed up
+# and restored into a DIFFERENT bench under a DIFFERENT site name, comes back
+# with its data intact.
+#
+# The assertion is a planted marker row rather than "the command exited 0",
+# because every interesting failure mode here — a dump that restores into the
+# wrong database, an app whose tables never arrive, a site_config that says one
+# thing while the database says another — exits 0.
+#
+# workflow_dispatch only: it builds a full Frappe bench twice and takes ~30
+# minutes. --match-host-user is mandatory, since GitHub runners are uid 1001
+# while the frappe/bench image is uid 1000 (see uid-probe.yml).
+name: backup-roundtrip
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: "true"
+
+    steps:
+      - name: Resolve bench paths
+        run: |
+          echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
+          echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+          echo "FFM_BACKUPS_DIR=$RUNNER_TEMP/ffm-backups" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build ffm
+        run: go build -o "$RUNNER_TEMP/ffm" ./cmd/ffm
+
+      # A second app is not optional here. With frappe alone, the reconciled
+      # installed_apps and the stale one Frappe leaves behind are both
+      # ["frappe"], so the assertion below could not tell them apart.
+      - name: Create the source bench
+        run: |
+          mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          "$RUNNER_TEMP/ffm" create src --verbose --match-host-user --apps erpnext
+
+      - name: Plant a marker the restore must bring back
+        run: |
+          docker compose -p ffm-src -f "$FFM_BENCHES_DIR/src/docker-compose.yml" \
+            exec -T frappe bash -c 'cd /workspace/frappe-bench && \
+              bench --site src.localhost mariadb -e \
+              "INSERT INTO \`tabToDo\` (name, description, status, owner, creation, modified, modified_by, docstatus, idx) \
+               VALUES (\"ffm-ci-marker\", \"FFM-ROUNDTRIP-MARKER\", \"Open\", \"Administrator\", NOW(), NOW(), \"Administrator\", 0, 1);"'
+
+      - name: Back it up
+        run: |
+          "$RUNNER_TEMP/ffm" backup src --label ci-roundtrip
+
+      - name: Validate the archive without restoring
+        run: |
+          ARCHIVE=$(ls "$FFM_BACKUPS_DIR"/src/*.ffm.tar | head -1)
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --dry-run
+
+      # Deleting the source first proves the archive is self-sufficient, and
+      # frees the port range so the restore can reuse it.
+      - name: Delete the source bench
+        run: |
+          "$RUNNER_TEMP/ffm" delete src --force
+
+      - name: Restore into a new bench
+        run: |
+          "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --verbose
+
+      - name: Assert the marker survived
+        run: |
+          COUNT=$(docker compose -p ffm-dst -f "$FFM_BENCHES_DIR/dst/docker-compose.yml" \
+            exec -T frappe bash -c 'cd /workspace/frappe-bench && \
+              bench --site dst.localhost mariadb -N -e \
+              "SELECT COUNT(*) FROM \`tabToDo\` WHERE description = \"FFM-ROUNDTRIP-MARKER\";"' | tr -d '[:space:]')
+          echo "marker rows in the restored site: $COUNT"
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::the planted marker did not survive the round trip (found $COUNT rows)"
+            exit 1
+          fi
+
+      - name: Assert the site is coherent with itself
+        run: |
+          # `bench restore` leaves site_config's installed_apps saying ["frappe"]
+          # while the database says frappe+erpnext; ffm is supposed to repair it.
+          # Asserting the MULTI-app list is the only shape that distinguishes
+          # "reconciled" from "stale".
+          CONFIG_APPS=$(python3 -c "import json;print(sorted(json.load(open('$FFM_BENCHES_DIR/dst/workspace/frappe-bench/sites/dst.localhost/site_config.json'))['installed_apps']))")
+          echo "site_config installed_apps: $CONFIG_APPS"
+          if [ "$CONFIG_APPS" != "['erpnext', 'frappe']" ]; then
+            echo "::error::installed_apps was not reconciled after the restore (got $CONFIG_APPS)"
+            exit 1
+          fi
+
+      - name: Assert an ERPNext table came across
+        run: |
+          COUNT=$(docker compose -p ffm-dst -f "$FFM_BENCHES_DIR/dst/docker-compose.yml" \
+            exec -T frappe bash -c 'cd /workspace/frappe-bench && \
+              bench --site dst.localhost mariadb -N -e \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE \"tabSales%\";"' | tr -d '"'"'[:space:]'"'"')
+          echo "tabSales* tables in the restored site: $COUNT"
+          if [ "$COUNT" = "0" ]; then
+            echo "::error::no ERPNext tables in the restored site"
+            exit 1
+          fi
+
+      - name: Teardown
+        if: always()
+        run: |
+          for b in src dst; do
+            if [ -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" ]; then
+              docker compose -p "ffm-$b" -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" down -v || true
+            fi
+          done
+          rm -rf "$FFM_BENCHES_DIR"

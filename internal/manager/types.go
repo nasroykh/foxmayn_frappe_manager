@@ -39,6 +39,18 @@ type CreateInput struct {
 	// Create fails, instead of rolling them back. Intended for unattended runs
 	// where the rollback would otherwise destroy the only diagnostic evidence.
 	KeepOnFailure bool
+	// SkipAppInstall clones each app but does not install it on the site.
+	//
+	// Set only by Restore: the restored database already lists its apps as
+	// installed, so installing them first is minutes of work that the dump then
+	// overwrites. The app code still has to be present, which is why the clone
+	// is not skipped too.
+	SkipAppInstall bool
+	// SkipAssetBuild omits `bench build`.
+	//
+	// Set only by Restore, which builds once after the data is in place rather
+	// than once here and again after migrate.
+	SkipAssetBuild bool
 }
 
 // RecreateInput holds parameters for recreating a bench from saved state.
@@ -143,4 +155,75 @@ type ProxyStatusView struct {
 	Network   string
 	Running   bool
 	Dashboard string
+}
+
+// BackupInput holds parameters for archiving a bench.
+type BackupInput struct {
+	BenchName string
+	// Out is either a directory to write the archive into or an explicit .tar
+	// path. Empty means config.BenchBackupsDir(BenchName).
+	Out string
+	// NoFiles omits the site's public and private attachments, producing a
+	// database-only archive.
+	NoFiles bool
+	// Label is a short human note recorded in the archive header and printed
+	// by 'ffm restore --dry-run'.
+	Label string
+	// SkipSpaceCheck bypasses the free-space preflight.
+	SkipSpaceCheck bool
+}
+
+// RestoreInput holds parameters for restoring an archive into a NEW bench.
+//
+// Restore never writes into an existing bench: the target name must be free.
+// That is what lets the whole operation reuse Create's rollback defer, so a
+// failed restore leaves the host exactly as it found it.
+type RestoreInput struct {
+	// Archive is the path to a .ffm.tar file.
+	Archive string
+	// TargetName is the bench to create. Empty means the name recorded in the
+	// archive.
+	TargetName string
+	// WithFiles restores public and private attachments, when the archive
+	// carries them. There is no defaulting: the zero value means a
+	// database-only restore, so a caller building this struct directly must set
+	// it. The CLI sets it from --no-files.
+	WithFiles bool
+	// DryRun validates the archive and prints the plan without touching Docker.
+	DryRun bool
+	// AllowMissingEncryptionKey proceeds when the archive has no site
+	// encryption_key, accepting that Password fields become undecryptable.
+	AllowMissingEncryptionKey bool
+	// EncryptionKey decrypts a GPG-encrypted dump when the archive does not
+	// carry the key itself.
+	EncryptionKey string
+	// Domain overrides the production domain recorded in the archive.
+	Domain string
+	// NoSSL serves the restored production bench over plain HTTP.
+	NoSSL bool
+	// AcmeEmail is the Let's Encrypt account address for a production restore.
+	AcmeEmail string
+	// ReallocatePorts assigns a fresh port pair instead of reusing the
+	// archive's, which is required when the original bench is still running.
+	ReallocatePorts bool
+	WebPort         int
+	SocketIOPort    int
+	// AdminPassword sets a new Administrator password. Empty keeps the one from
+	// the archive.
+	AdminPassword string
+	// GithubToken authenticates private app clones during provisioning.
+	GithubToken string
+	// SkipMigrate omits 'bench migrate' after the data is in place. Only useful
+	// when restoring onto exactly the app versions the backup was taken from.
+	SkipMigrate bool
+	// PinApps checks each app out at the commit recorded in the archive instead
+	// of leaving it at branch HEAD.
+	PinApps bool
+	// KeepOnFailure leaves a failed restore's containers and directory in place
+	// for diagnosis.
+	KeepOnFailure bool
+	// MaxExtractBytes caps extraction. Zero means the archive package default.
+	MaxExtractBytes int64
+	// SkipSpaceCheck bypasses the free-space preflight.
+	SkipSpaceCheck bool
 }

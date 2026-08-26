@@ -73,3 +73,31 @@ func EnsureDataDir() error {
 	}
 	return os.MkdirAll(ConfigDir(), 0o755)
 }
+
+// BackupsDir returns the root directory for backup archives, honouring
+// FFM_BACKUPS_DIR. It deliberately sits OUTSIDE any bench directory: deleting
+// or recreating a bench runs os.RemoveAll on <benchDir>, so archives stored
+// under it would be destroyed by the very operations they exist to make
+// survivable.
+func BackupsDir() string {
+	if d := os.Getenv("FFM_BACKUPS_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(BenchesDir(), "_backups")
+}
+
+// BenchBackupsDir returns the backup directory for a single bench.
+func BenchBackupsDir(name string) string {
+	return filepath.Join(BackupsDir(), name)
+}
+
+// EnsureBenchBackupsDir creates a bench's backup directory. Mode 0o700 — the
+// archives inside carry the database root password, the Administrator password
+// and the site's Fernet encryption key.
+func EnsureBenchBackupsDir(name string) (string, error) {
+	dir := BenchBackupsDir(name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}

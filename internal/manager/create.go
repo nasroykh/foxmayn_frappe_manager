@@ -583,6 +583,13 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			return fmt.Errorf("bench get-app %s: %w\n%s", displayName, err, out)
 		}
 
+		if in.SkipAppInstall {
+			// Restore path: the dump already has the app installed, so this
+			// would be undone moments later.
+			step(fmt.Sprintf("Skipping install of %q (it comes from the archive)", displayName))
+			continue
+		}
+
 		step(fmt.Sprintf("Installing app %q on site %q", displayName, siteName))
 		installCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s install-app %s --force",
@@ -596,14 +603,20 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// Compile JS/CSS bundles. Prod has always needed this; dev needs it too after
 	// bind-mounted runtime bench init (commit that moved bench init out of the image):
 	// without it, Desk can load as unstyled / effectively raw HTML until bench build.
-	if mode == "prod" {
-		step("Building production assets (bench build) — this may take a few minutes")
+	if in.SkipAssetBuild {
+		// Restore path: the assets are built once after the data lands, rather
+		// than here and then again after bench migrate.
+		step("Skipping asset build (the restore builds once, after migrating)")
 	} else {
-		step("Building web assets (bench build) — this may take a few minutes")
-	}
-	if out, err := runner.ExecSilent("frappe", "bash", "-c",
-		"cd /workspace/frappe-bench && bench build"); err != nil {
-		return fmt.Errorf("bench build: %w\n%s", err, out)
+		if mode == "prod" {
+			step("Building production assets (bench build) — this may take a few minutes")
+		} else {
+			step("Building web assets (bench build) — this may take a few minutes")
+		}
+		if out, err := runner.ExecSilent("frappe", "bash", "-c",
+			"cd /workspace/frappe-bench && bench build"); err != nil {
+			return fmt.Errorf("bench build: %w\n%s", err, out)
+		}
 	}
 
 	// Prod: restart the frappe container so gunicorn starts fresh and picks up

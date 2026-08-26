@@ -291,3 +291,44 @@ func WaitForHTTP(url string, timeout time.Duration) error {
 	}
 	return fmt.Errorf("server at %s did not become reachable within %s", url, timeout)
 }
+
+// ExecStream runs a command in a service container and streams its stdout to w
+// without buffering it.
+//
+// ExecSilent cannot be used to move a database dump out of a container: it
+// collects the whole output with CombinedOutput, so a multi-gigabyte dump would
+// be held in memory in its entirety — and merged with stderr, corrupting the
+// bytes. Here stderr is captured separately and surfaces only in the error.
+func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) error {
+	args := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml",
+		"exec", "-T", service}, shellArgs...)
+	cmd := exec.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	cmd.Stdout = w
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%w\n%s", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
+// CopyTo copies a host file into a service container.
+//
+// Used by restore to hand the database dump and file tarballs to Frappe without
+// staging them inside the ./workspace bind mount, where they would be visible
+// to the user, swept into the next backup's size estimate, and left behind as
+// litter if the restore were interrupted.
+func (r *Runner) CopyTo(service, src, dest string) error {
+	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml",
+		"cp", src, service + ":" + dest}
+	cmd := exec.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}

@@ -340,6 +340,73 @@ ffm set-proxy myprod  --host erp.example.com    --print-nginx
 
 Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the bench container. Dev benches only. Run if ffc setup failed during `ffm create` or to regenerate keys.
 
+### `ffm backup [name]`
+
+Writes the bench's database, file attachments and configuration into one portable archive.
+
+```bash
+ffm backup                                  # the bench in the current directory
+ffm backup mybench
+ffm backup mybench --out ~/archives
+ffm backup mybench --no-files --label "before the v16 upgrade"
+```
+
+```
+Flags:  --out <path>          Directory to write into, or an explicit path ending in .tar
+        --label <text>        Short note recorded in the archive
+        --no-files            Database only, no attachments
+        --skip-space-check    Do not check free disk space first
+```
+
+The archive holds Frappe's own database dump, the site's public and private files, the site
+and bench configuration, and each installed app's git commit. It does **not** hold the app
+source, the Python virtualenv or the built assets — those are rebuilt at restore time, which
+is what keeps a full ERPNext bench's backup under a megabyte instead of ~2 GB, and what lets
+it restore onto a different machine, architecture or host user.
+
+A stopped bench is started for the backup and stopped again afterwards.
+
+> The archive contains the database root password, the Administrator password and the site's
+> encryption key in plain text. It is written `0600` inside a `0700` directory. ffm warns when
+> the filesystem cannot enforce that — notably a Windows drive mounted into WSL2.
+
+### `ffm restore <archive> [name]`
+
+Rebuilds a bench from an archive. Always creates a **new** bench; it never writes into an
+existing one, so a failed restore leaves the machine as it found it.
+
+```bash
+ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
+ffm restore mybench_20260826T090000Z.ffm.tar staging     # under a different name
+ffm restore mybench_20260826T090000Z.ffm.tar --dry-run   # validate only
+```
+
+```
+Flags:  --dry-run                       Validate the archive and print the plan
+        --no-files                      Restore the database only
+        --pin-apps                      Check apps out at the archived commits, not branch head
+        --allow-missing-encryption-key  Restore without the site key (Password fields will not decrypt)
+        --encryption-key <key>          Key for a GPG-encrypted dump
+        --domain <domain>               Override the production domain
+        --no-ssl / --acme-email <addr>  TLS handling for a production restore
+        --reallocate-ports              Always take a fresh port pair
+        --web-port / --socketio-port    Explicit host ports
+        --admin-password <pw>           Set a new Administrator password
+        --github-token <token>          Token for private app clones
+        --skip-migrate                  Skip `bench migrate` after restoring
+        --keep-on-failure               Leave a failed restore in place for diagnosis
+        --skip-space-check              Do not check free disk space first
+```
+
+The bench is provisioned by the same pipeline as `ffm create` — same image, apps, mode, ports
+and proxy wiring — and the archived data is restored into it. Ports are reused when they are
+free, so URLs stay stable on a fresh machine.
+
+What a restore cannot bring back, and says so when it happens: uncommitted changes in an app's
+working tree, the VPS tunnel (its token lives in this host's `tunnel.json`, not the archive),
+the ffc API secret (Frappe mints a new one on every request), and absolute URLs stored *inside*
+the database when the site is renamed.
+
 ### `ffm delete [name]`
 
 Stops and removes all containers, volumes, and the bench directory.
@@ -378,6 +445,10 @@ Prints the build version, commit hash, and build date.
         .claude/skills/  # dev only: same skills for Claude Code
     .devcontainer/       # dev only
       devcontainer.json  # VS Code dev container config
+
+  _backups/
+    <bench-name>/
+      <bench>_<UTC timestamp>.ffm.tar   # `ffm backup` archives (0600, in a 0700 directory)
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches
@@ -425,6 +496,7 @@ Configured entirely via CLI flags — no config file on disk. Uses `--restart=un
 |--|--|--|
 | `FFM_BENCHES_DIR` | `~/frappe` | Where bench directories are stored |
 | `FFM_CONFIG_DIR` | `~/.config/ffm` | Where the state file is stored |
+| `FFM_BACKUPS_DIR` | `~/frappe/_backups` | Where `ffm backup` archives are written |
 
 ## Building from source
 

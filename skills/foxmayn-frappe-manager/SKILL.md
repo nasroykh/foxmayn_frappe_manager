@@ -136,6 +136,46 @@ ffm restart mybench --rebuild   # rebuild Docker image first (picks up new tool 
 
 For production benches, `ffm start` runs `docker compose up -d` only — services start automatically via their compose `command:` entries.
 
+### Backing up and restoring
+
+```bash
+ffm backup mybench                       # -> ~/frappe/_backups/mybench/mybench_<UTC>.ffm.tar
+ffm backup mybench --out ~/archives
+ffm backup mybench --no-files            # database only
+ffm backup mybench --label "pre-upgrade"
+
+ffm restore <archive>                    # rebuild under the archive's own bench name
+ffm restore <archive> staging            # rebuild under a different name
+ffm restore <archive> staging --dry-run  # validate and print the plan, change nothing
+ffm restore <archive> staging --pin-apps # apps at the archived commits, not branch head
+```
+
+The archive holds the database, the site's public and private files, the site and bench
+configuration, and each app's git commit. It does **not** hold the app source, the Python
+virtualenv or the built assets — restore rebuilds those, which is why a full ERPNext bench
+backs up to well under a megabyte and restores onto a different machine, architecture or
+host user.
+
+`ffm restore` always creates a **new** bench and never writes into an existing one, so a
+failed restore leaves the machine as it found it. The target name must be free.
+
+Take a backup before `ffm delete` or `ffm recreate` — `recreate` runs `docker compose down -v`
+and deletes the bench directory, so it is the one command that destroys data by design. A
+stopped bench is started for the backup and stopped again afterwards, so a broken bench can
+still be archived.
+
+**What a restore cannot bring back** (it says so when it applies): uncommitted changes in an
+app's working tree; the VPS tunnel, whose token lives in this host's `tunnel.json` rather than
+the archive; the ffc API secret, which Frappe reissues on every request; and absolute URLs
+stored *inside* the database (Website Settings, Email Accounts, webhooks, print formats) when
+the site is renamed.
+
+> The archive contains the database root password, the Administrator password and the site's
+> encryption key in plain text. It is written `0600` in a `0700` directory, and ffm warns when
+> the filesystem cannot enforce that — a Windows drive mounted into WSL2, for instance.
+
+---
+
 ### Deleting a bench
 
 ```bash
@@ -330,6 +370,9 @@ code ~/frappe/mybench
 | Stop a bench                               | `ffm stop mybench`                                                                                   |
 | Restart a bench                            | `ffm restart mybench`                                                                                |
 | Rebuild + restart                          | `ffm restart mybench --rebuild`                                                                      |
+| Back up a bench                            | `ffm backup mybench`                                                                                 |
+| Restore into a new bench                   | `ffm restore <archive> newname`                                                                      |
+| Validate an archive without restoring      | `ffm restore <archive> newname --dry-run`                                                            |
 | Delete a bench                             | `ffm delete mybench --force`                                                                         |
 | Interactive shell (dev)                    | `ffm shell mybench` (zsh)                                                                            |
 | Interactive shell (prod)                   | `ffm shell myprod` (bash)                                                                            |
@@ -352,6 +395,7 @@ code ~/frappe/mybench
 | ----------------- | --------------- | ---------------------------------- |
 | `FFM_BENCHES_DIR` | `~/frappe`      | Where bench directories are stored |
 | `FFM_CONFIG_DIR`  | `~/.config/ffm` | Where the state file is stored     |
+| `FFM_BACKUPS_DIR` | `~/frappe/_backups` | Where `ffm backup` archives are written |
 
 ---
 
