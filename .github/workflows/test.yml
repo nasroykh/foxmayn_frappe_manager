@@ -1,0 +1,34 @@
+# Unit tests and vet on every push and pull request.
+#
+# Neither ran anywhere before this workflow: release.yml is tag-only and
+# uid-probe.yml is workflow_dispatch-only, so a compile error or a broken test
+# could reach main unnoticed. Everything here is Docker-free and takes seconds;
+# the Docker-dependent backup/restore round trip lives in backup-roundtrip.yml.
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
