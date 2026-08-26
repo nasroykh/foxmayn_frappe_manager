@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -313,7 +314,14 @@ func runBenchBackup(runner *bench.Runner, siteName, staging string, withFiles bo
 		db:   staging + "/database.sql.gz",
 		conf: staging + "/site_config_backup.json",
 	}
-	cmd := fmt.Sprintf("mkdir -p %s && cd /workspace/frappe-bench && bench --site %s backup --compress"+
+	// --verbose is not for the happy path: the output is captured and thrown
+	// away on success. It is the only way to get a cause out of a failure.
+	// `bench backup` wraps the whole operation in a bare `except Exception` and
+	// prints "Database or site_config.json may be corrupted" for everything —
+	// a dropped packet between containers, a full disk, a real corruption —
+	// then prints the traceback only when verbose is set. Without it the
+	// exception is discarded before ffm ever sees it.
+	cmd := fmt.Sprintf("mkdir -p %s && cd /workspace/frappe-bench && bench --site %s backup --verbose --compress"+
 		" --backup-path-db %s --backup-path-conf %s", staging, siteName, d.db, d.conf)
 	if withFiles {
 		d.public = staging + "/public-files.tgz"
@@ -321,10 +329,65 @@ func runBenchBackup(runner *bench.Runner, siteName, staging string, withFiles bo
 		cmd += fmt.Sprintf(" --with-files --backup-path-files %s --backup-path-private-files %s",
 			d.public, d.private)
 	}
-	if out, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
-		return dumpSet{}, fmt.Errorf("bench backup: %w\n%s", err, out)
+	out, err := runner.ExecSilent("frappe", "bash", "-c", cmd)
+	if err == nil {
+		return d, nil
 	}
-	return d, nil
+	return dumpSet{}, fmt.Errorf("bench backup: %w\n%s", err, benchBackupFailure(out, runner.Verbose))
+}
+
+const tracebackMarker = "Traceback (most recent call last)"
+
+// exceptionLine matches the last line of a Python traceback: the exception's
+// dotted type followed by its message.
+var exceptionLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception|Exit|Interrupt)(: .*)?$`)
+
+// secretAssignment matches the ways a credential appears in a Python frame
+// dump: a keyword argument (password='x') and a dictionary entry
+// ('password': 'x' or "password": "x"), where the key itself is quoted — in
+// either style — and so sits between the name and the separator.
+var secretAssignment = regexp.MustCompile(
+	`(?i)(['"]?[a-z_]*(?:password|passwd|secret|token|encryption_key)['"]?\s*[=:]\s*)('[^']*'|"[^"]*")`)
+
+// benchBackupFailure turns `bench backup --verbose` output into an error body.
+//
+// The traceback cannot be shown as-is. frappe.get_traceback runs with
+// with_context=True, so every frame is followed by a dump of its locals: it
+// runs to hundreds of lines on a real backup, and the database frames carry the
+// site's database password in clear. So the default is Frappe's own messages
+// plus the traceback's final line, which is the part that names the cause;
+// --verbose opts into the whole thing, still with the passwords removed.
+func benchBackupFailure(out string, verbose bool) string {
+	out = secretAssignment.ReplaceAllString(out, "${1}'[redacted]'")
+	head, traceback, found := strings.Cut(out, tracebackMarker)
+	if !found {
+		return strings.TrimSpace(out)
+	}
+	parts := []string{strings.TrimSpace(head)}
+	if verbose {
+		parts = append(parts, tracebackMarker+traceback)
+	} else if cause := lastExceptionLine(traceback); cause != "" {
+		parts = append(parts, cause,
+			"(run ffm --verbose backup for Frappe's full traceback)")
+	}
+	var body []string
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			body = append(body, p)
+		}
+	}
+	return strings.Join(body, "\n")
+}
+
+// lastExceptionLine returns the final "SomeError: message" line of a traceback.
+func lastExceptionLine(traceback string) string {
+	lines := strings.Split(traceback, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); exceptionLine.MatchString(line) {
+			return line
+		}
+	}
+	return ""
 }
 
 // probeEncodings asks file(1) what each backup file actually is.
