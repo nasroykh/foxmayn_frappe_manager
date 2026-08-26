@@ -435,17 +435,15 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
-	// Wait for database
+	// Wait for the database — both from its own container and from the frappe
+	// container, which is the one that actually has to reach it.
 	if dbType == "postgres" {
 		step("Waiting for PostgreSQL to be ready...")
-		if err := runner.WaitForPostgres(dbPassword, 90*time.Second, os.Stderr); err != nil {
-			return fmt.Errorf("wait for PostgreSQL: %w", err)
-		}
 	} else {
 		step("Waiting for MariaDB to be ready...")
-		if err := runner.WaitForMariaDB(dbPassword, 90*time.Second, os.Stderr); err != nil {
-			return fmt.Errorf("wait for MariaDB: %w", err)
-		}
+	}
+	if err := waitForDBReady(runner, dbType == "postgres", dbPassword, os.Stderr); err != nil {
+		return err
 	}
 	pw.Println()
 

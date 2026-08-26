@@ -254,6 +254,62 @@ func (r *Runner) WaitForPostgres(password string, timeout time.Duration, progres
 	return fmt.Errorf("PostgreSQL did not become ready within %s", timeout)
 }
 
+// WaitForDBFromFrappe probes the database port from inside the frappe
+// container, which is the only place the check means anything.
+//
+// WaitForMariaDB and WaitForPostgres both exec *inside the database container*
+// and talk to it over its own loopback, so they pass whenever the database
+// process is up — including when nothing else can reach it. Container-to-
+// container traffic crosses the bridge and is filtered by the FORWARD chain,
+// and Docker's per-bridge rules can go missing while the bridge itself stays
+// up: the daemon installs them per network, and an iptables reload, a firewall
+// restart or a partially-restored rule set leaves a network whose containers
+// resolve each other by DNS and then time out on connect. Frappe reports that
+// as "Database or site_config.json may be corrupted", which sends you looking
+// at the wrong thing entirely.
+func (r *Runner) WaitForDBFromFrappe(host string, port int, timeout time.Duration) error {
+	script := fmt.Sprintf("import socket; socket.create_connection((%q, %d), 5).close()", host, port)
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		out, err := r.ExecSilent("frappe", "python3", "-c", script)
+		if err == nil {
+			return nil
+		}
+		lastErr = fmt.Errorf("%w: %s", err, lastLine(out))
+		if !time.Now().Add(2 * time.Second).Before(deadline) {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("the frappe container cannot reach %s:%d, even though the database is "+
+		"accepting connections on its own side.\n"+
+		"This is a Docker networking fault, not a broken site: the two containers are on the "+
+		"same network, but nothing gets through between them.\n"+
+		"It is usually Docker's per-bridge iptables rules having gone missing — check whether "+
+		"this bench's bridge appears in the DOCKER-FORWARD chain:\n"+
+		"    docker run --rm --net=host --privileged alpine sh -c 'apk add -q iptables; iptables -S DOCKER-FORWARD'\n"+
+		"Recreating the network reinstalls them (docker compose down && up -d, or `ffm restart`); "+
+		"restarting the Docker daemon fixes every network at once.\nlast probe: %w",
+		host, port, lastErr)
+}
+
+// lastLine returns the final non-empty line of a command's output.
+//
+// The probe is a one-line Python program, so when it fails the last line of its
+// traceback is the exception that names the cause — a name resolution failure,
+// a refused connection, a timeout. The frames above it only ever point back at
+// the probe itself.
+func lastLine(out string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return strings.TrimSpace(out)
+}
+
 // ConfigureGitHubToken sets up a git credential helper inside the frappe
 // container so that HTTPS github.com URLs authenticate with the given token.
 func (r *Runner) ConfigureGitHubToken(token string) error {

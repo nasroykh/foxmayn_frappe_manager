@@ -619,16 +619,27 @@ func dbService(b state.Bench) string {
 
 // waitForDB blocks until the bench's database accepts connections.
 func (s *Service) waitForDB(runner *bench.Runner, b state.Bench, pw ProgressWriter) error {
-	if b.IsPostgres() {
-		if err := runner.WaitForPostgres(b.DBPassword, 90*time.Second, pw.Stderr()); err != nil {
+	return waitForDBReady(runner, b.IsPostgres(), b.DBPassword, pw.Stderr())
+}
+
+// waitForDBReady waits for the database twice over: once from inside the
+// database container, and once from the frappe container that has to reach it.
+//
+// The second probe is not redundant. The first one talks to the database over
+// its own loopback and so cannot observe the network between the two
+// containers; when that network is broken the wait passes in zero seconds and
+// the failure surfaces much later, as a Frappe error blaming the site.
+func waitForDBReady(runner *bench.Runner, isPostgres bool, dbPassword string, w io.Writer) error {
+	host, port := "mariadb", 3306
+	if isPostgres {
+		host, port = "postgres", 5432
+		if err := runner.WaitForPostgres(dbPassword, 90*time.Second, w); err != nil {
 			return fmt.Errorf("wait for PostgreSQL: %w", err)
 		}
-		return nil
-	}
-	if err := runner.WaitForMariaDB(b.DBPassword, 90*time.Second, pw.Stderr()); err != nil {
+	} else if err := runner.WaitForMariaDB(dbPassword, 90*time.Second, w); err != nil {
 		return fmt.Errorf("wait for MariaDB: %w", err)
 	}
-	return nil
+	return runner.WaitForDBFromFrappe(host, port, 60*time.Second)
 }
 
 // backupDestination resolves --out into a concrete archive path.
