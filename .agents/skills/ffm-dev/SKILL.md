@@ -122,16 +122,17 @@ Create `internal/cli/<command_name>.go` in package `cli`. Use snake_case for fil
 
 ### 2. Follow this structure
 
+The CLI file is a thin wrapper. **All bench logic lives in `internal/manager`** so that the
+web dashboard runs the identical code path — a command that talks to `state.Store` or
+`bench.Runner` directly from `internal/cli` is unreachable from the dashboard and is a bug.
+
 ```go
 package cli
 
 import (
-    "fmt"
-
     "github.com/spf13/cobra"
 
-    "github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
-    "github.com/nasroykh/foxmayn_frappe_manager/internal/state"
+    "github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 func newMyCmd() *cobra.Command {
@@ -143,45 +144,48 @@ func newMyCmd() *cobra.Command {
         Long:  `Longer description with usage notes.`,
         Args:  cobra.MaximumNArgs(1),
         RunE: func(cmd *cobra.Command, args []string) error {
-            // 1. Resolve bench name (CWD auto-detect or interactive picker if omitted)
+            // Resolve the bench: args[0], else CWD, else an interactive picker.
             name, err := resolveBenchName(args, "Select a bench")
             if err != nil {
                 return err
             }
-            return runMyCommand(name, someFlag)
+            return manager.New(verbose).MyCommand(manager.MyCommandInput{
+                BenchName: name,
+                SomeFlag:  someFlag,
+            }, manager.CLIProgress{})
         },
     }
 
     cmd.Flags().StringVar(&someFlag, "some-flag", "default", "Description")
     return cmd
 }
+```
 
-func runMyCommand(name, someFlag string) error {
-    // 2. Load state
-    store := state.Default()
-    b, err := store.Get(name)
+And the matching `internal/manager/my_command.go`:
+
+```go
+// MyCommand does the thing. Input struct first, ProgressWriter last.
+func (s *Service) MyCommand(in MyCommandInput, pw ProgressWriter) error {
+    if pw == nil {
+        pw = CLIProgress{}
+    }
+    b, err := s.GetBench(in.BenchName)   // never s.Store directly — GetBench holds the mutex
     if err != nil {
         return err
     }
 
-    // 3. Check mode if behavior differs
-    if b.IsProd() {
-        // prod-specific behavior
-    }
-
-    // 4. Create runner for docker compose operations
-    runner := bench.NewRunner(b.Name, b.Dir, verbose)
-
-    // 5. Do work (exec into container, update state, etc.)
-    out, err := runner.ExecSilent("frappe", "bash", "-c", "some command")
-    if err != nil {
+    runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+    pw.Step("Doing the thing")
+    if out, err := runner.ExecSilent("frappe", "bash", "-c", "some command"); err != nil {
         return fmt.Errorf("my-command: %w\n%s", err, out)
     }
-
-    fmt.Printf("Done: %s\n", out)
     return nil
 }
 ```
+
+Never write output with `fmt.Printf` in `internal/manager` — everything goes through
+`ProgressWriter`, or the dashboard's job runner cannot capture it. The CLI passes
+`CLIProgress{}`; the dashboard passes `&BufferProgress{}`.
 
 ### 3. Register in root.go
 
@@ -602,8 +606,10 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 
 1. Create `internal/cli/<name>.go` with the `newXxxCmd()` factory pattern
 2. Register in `root.go` via `root.AddCommand(newXxxCmd())`
-3. If it needs docker compose operations, use `bench.Runner` methods
-4. If it needs persistent state, use `state.Store` (Load/Save/Add/Remove/Get/Update)
+3. Put the behaviour in `internal/manager/`, not `internal/cli/`; use `bench.Runner`
+   for docker compose operations
+4. If it needs persistent state, go through `Service` (GetBench/AddBench/UpdateBench/
+   RemoveBench) — never `state.Store` directly, which is not concurrency-safe
 5. If behavior differs by mode, check `b.IsProd()` / `b.IsDev()` after `store.Get(name)`
 6. If it modifies compose or Dockerfile templates, edit `internal/bench/templates/dev/` or `prod/`
 7. If it touches config paths, update `internal/config/paths.go`
@@ -613,4 +619,17 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 
 ## Testing
 
-**There are no tests yet.** No test framework or test files exist. To verify changes, create a test bench with `ffm create testbench --verbose` and manually exercise the new functionality.
+`make test` runs `go test ./...`, and `.github/workflows/test.yml` runs `go vet` + `go test`
+on every push and PR. Docker-free coverage lives in `internal/archive/` (hostile tars built in
+memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.go`,
+`internal/bench/*_test.go` (template rendering) and `internal/dashboard/handler_test.go`.
+
+The create pipeline and most of the CLI are still untested, because they shell out to Docker.
+When adding behaviour there, pull the decidable part into a pure function and test that — the
+way `checkArchive`, `verifyMembers`, `appsForRestore` and `parseDirtyPaths` are pure so the
+whole backup/restore gate matrix is testable without a container.
+
+For anything that genuinely needs Docker, `.github/workflows/backup-roundtrip.yml` is the
+model: workflow_dispatch, `FFM_BENCHES_DIR`/`FFM_CONFIG_DIR` pointed at `$RUNNER_TEMP`,
+`--match-host-user` (runners are uid 1001), and an assertion on **data** rather than on an
+exit code.
