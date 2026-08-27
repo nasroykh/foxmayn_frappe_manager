@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -76,9 +75,8 @@ func Execute() error {
 	}
 	err := NewRootCmd().Execute()
 	waitForUpdateCheck()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return err
-	}
-	return nil
+	// cobra has already written the error to stderr — SilenceErrors is not set —
+	// so printing it here too showed every failure twice. Return it for the exit
+	// code alone.
+	return err
 }
