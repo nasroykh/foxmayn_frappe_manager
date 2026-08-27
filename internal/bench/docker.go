@@ -276,6 +276,12 @@ func (r *Runner) WaitForDBFromFrappe(host string, port int, timeout time.Duratio
 		if err == nil {
 			return nil
 		}
+		// A probe that never ran says nothing about the network, so report what
+		// actually stopped it rather than spending the whole timeout and then
+		// blaming Docker's firewall rules for it.
+		if reason := execRefused(out); reason != "" {
+			return fmt.Errorf("could not probe %s:%d from the frappe container: %s", host, port, reason)
+		}
 		lastErr = fmt.Errorf("%w: %s", err, lastLine(out))
 		if !time.Now().Add(2 * time.Second).Before(deadline) {
 			break
@@ -292,6 +298,25 @@ func (r *Runner) WaitForDBFromFrappe(host string, port int, timeout time.Duratio
 		"Recreating the network reinstalls them (docker compose down && up -d, or `ffm restart`); "+
 		"restarting the Docker daemon fixes every network at once.\nlast probe: %w",
 		host, port, lastErr)
+}
+
+// execRefused names the reason `docker compose exec` could not run the command
+// at all, or "" when the command ran and the failure is its own.
+//
+// The two cases are not the same failure. A probe that could not start tells
+// you nothing about whether the database is reachable, and retrying it until
+// the deadline only delays a message that would point at the wrong thing.
+func execRefused(out string) string {
+	lower := strings.ToLower(out)
+	switch {
+	case strings.Contains(lower, "is not running"), strings.Contains(lower, "no container found"):
+		return "the frappe container is not running"
+	case strings.Contains(lower, "no such service"):
+		return "this bench has no frappe service — its docker-compose.yml may be from an older ffm"
+	case strings.Contains(lower, "executable file not found"):
+		return "python3 is missing from the frappe image"
+	}
+	return ""
 }
 
 // lastLine returns the final non-empty line of a command's output.
