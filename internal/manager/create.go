@@ -630,7 +630,10 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
 		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
-			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
+			// Not fatal: the bench itself is built and the rollback defer would
+			// destroy it over a web server that may still be coming up. Say why
+			// rather than leaving the user to go looking.
+			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", webServerUnreachable(runner, false, err))
 		}
 	}
 
@@ -656,7 +659,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
 		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
-			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", err)
+			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", webServerUnreachable(runner, true, err))
 		}
 
 		step("Generating API keys and configuring ffc")

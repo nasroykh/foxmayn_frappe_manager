@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
@@ -67,9 +68,13 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 			return fmt.Errorf("bench start: %w", err)
 		}
 
+		// Fatal, not a warning. The dev server is the bench: honcho tears the
+		// whole stack down when any of its processes exits, so a bench whose
+		// `bench start` died serves nothing at all. Printing "Bench is running"
+		// underneath a warning is the one outcome that helps nobody.
 		url := fmt.Sprintf("http://localhost:%d", b.WebPort)
-		if err := bench.WaitForHTTP(url, 30*time.Second); err != nil {
-			pw.Printf("warning: %v\n", err)
+		if err := bench.WaitForHTTP(url, 90*time.Second); err != nil {
+			return webServerUnreachable(runner, b.IsDev(), err)
 		}
 	}
 
@@ -97,6 +102,38 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		}
 	}
 	return nil
+}
+
+// webServerUnreachable explains a WaitForHTTP failure with the bench's own
+// account of it.
+//
+// The wait can only report that nothing answered. What the user needs is the
+// reason, and the bench already has it: in dev, honcho's log names the process
+// that died and took the rest down with it; in prod, the frappe container's log
+// carries whatever gunicorn said on the way out.
+func webServerUnreachable(runner *bench.Runner, isDev bool, waitErr error) error {
+	var detail string
+	if isDev {
+		if out, err := runner.ExecSilent("frappe", "tail", "-n", "20",
+			"/home/frappe/bench-start.log"); err == nil {
+			detail = strings.TrimSpace(out)
+		}
+	} else {
+		detail = tailLines(runner.LogsString("frappe"), 20)
+	}
+	if detail == "" {
+		return waitErr
+	}
+	return fmt.Errorf("%w\n\n%s", waitErr, detail)
+}
+
+// tailLines returns the last n lines of s.
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // Stop stops compose services for a bench.

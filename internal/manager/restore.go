@@ -597,7 +597,9 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 			return fmt.Errorf("start the dev server: %w", err)
 		}
 		if err := bench.WaitForHTTP(fmt.Sprintf("http://localhost:%d", b.WebPort), 60*time.Second); err != nil {
-			fmt.Fprintf(pw.Stderr(), "warning: %v\n", err)
+			// Not fatal — the data is already restored, and failing here would
+			// tear that down over a dev server that has not finished booting.
+			fmt.Fprintf(pw.Stderr(), "warning: %v\n", webServerUnreachable(runner, true, err))
 		}
 		// The API key/secret are reissued rather than restored: Frappe mints a
 		// new secret on every generate_keys call, so the archived pair cannot be

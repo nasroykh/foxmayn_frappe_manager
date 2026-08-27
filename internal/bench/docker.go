@@ -3,7 +3,7 @@ package bench
 import (
 	"fmt"
 	"io"
-	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -328,24 +328,40 @@ func (r *Runner) CleanupGitHubToken() {
 		"rm -f /tmp/.git-credentials && git config --global --unset credential.helper")
 }
 
-// WaitForHTTP polls until the given URL returns a non-error response.
+// WaitForHTTP polls until the server at the given URL answers a request.
+//
+// This has to be a real request. A TCP dial proves nothing about a published
+// container port: docker-proxy holds the host-side listener for as long as the
+// container exists, so the connect succeeds whether or not anything inside the
+// container is listening. A bench whose `bench start` died on boot still
+// accepts connections on every port in its published range, and a dial-based
+// wait reports it as up in milliseconds.
+//
+// Any HTTP status counts as alive — a 404 or a 500 is still a server that
+// answered. Redirects are not followed: the response itself is the evidence,
+// and following one leads off to the proxy's hostname.
 func WaitForHTTP(url string, timeout time.Duration) error {
-	// We use a TCP probe instead of an HTTP client to avoid importing net/http.
-	// Frappe's dev server binds the port before it fully responds; a small extra
-	// sleep in the caller accounts for that.
-	host := strings.TrimPrefix(url, "http://")
-	host = strings.Split(host, "/")[0]
-
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", host, 2*time.Second)
+	var lastErr error
+	for {
+		resp, err := client.Get(url)
 		if err == nil {
-			conn.Close()
+			resp.Body.Close()
 			return nil
+		}
+		lastErr = err
+		if !time.Now().Add(2 * time.Second).Before(deadline) {
+			break
 		}
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("server at %s did not become reachable within %s", url, timeout)
+	return fmt.Errorf("the server at %s did not answer within %s: %w", url, timeout, lastErr)
 }
 
 // ExecStream runs a command in a service container and streams its stdout to w
