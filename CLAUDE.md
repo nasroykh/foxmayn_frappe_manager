@@ -32,8 +32,11 @@ rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_te
 dashboard handlers (`internal/dashboard/handler_test.go`), the archive format
 (`internal/archive/archive_test.go` — hostile tars built in memory), and the backup/restore
 manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
-`internal/manager/backup_preflight_test.go`), and the backup failure formatter
-(`internal/manager/backup_failure_test.go`). All of those run without Docker. The create
+`internal/manager/backup_preflight_test.go`), the backup failure formatter
+(`internal/manager/backup_failure_test.go`), the HTTP readiness wait and the
+database-probe classifier (`internal/bench/waithttp_test.go`,
+`internal/bench/dbprobe_test.go`) and the log tail helper
+(`internal/manager/lifecycle_test.go`). All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 
 `.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
@@ -58,7 +61,9 @@ internal/
     root.go               → registers all 20 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
-                            parses anything, then runs cobra, then waitForUpdateCheck()
+                            parses anything, then runs cobra, then waitForUpdateCheck(); it
+                            returns cobra's error unprinted (cobra already wrote it — printing
+                            it again showed every failure twice)
     interactive.go        → isInteractive() / mustNotPrompt() / cancelled() / withSpinner().
                             $CI and $FFM_NON_INTERACTIVE imply non-interactive; $FFM_INTERACTIVE
                             forces prompting back on; --non-interactive always wins
@@ -339,6 +344,17 @@ internal/
   `with_context=True`, so each frame dumps its locals, which includes the site's database
   password in clear. `ffm --verbose backup` shows the whole traceback, with the credentials
   redacted either way.
+
+- **A published port that accepts is not a running server.** `docker-proxy` holds the host-side
+  listener for every published port for as long as the container exists, so a TCP dial to
+  `localhost:<web-port>` succeeds whether or not anything inside the container is listening — a
+  bench whose `bench start` died still accepts on all six ports in its range. `WaitForHTTP`
+  therefore issues a real request through `net/http` and requires a response; any status counts,
+  redirects are not followed. `Service.Start` treats a failure as **fatal** and returns
+  `webServerUnreachable`, which appends the tail of `bench-start.log` (dev) or the frappe
+  container's log (prod) — honcho kills the whole stack when any process exits, so the log names
+  the process that took it down. `create` and `restore` keep it non-fatal, with the same tail:
+  failing there would trigger the rollback and destroy a bench that is otherwise complete.
 
 - **CWD auto-detection** — `resolveBenchName` resolves: (1) `args[0]`; (2) `benchNameFromCWD()`
   if under `~/frappe/<name>/`; (3) `pickBench()`. `pickBench` errors when no benches exist and
