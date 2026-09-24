@@ -174,6 +174,27 @@ and deletes the bench directory, so it is the one command that destroys data by 
 stopped bench is started for the backup and stopped again afterwards, so a broken bench can
 still be archived.
 
+**Scheduled backups** keep a bounded set of archives automatically:
+
+```bash
+ffm backup schedule mybench --every 24h                # daily, ~3-4 weeks of history
+ffm backup schedule mybench --every 1h --files weekly  # hourly DB, weekly attachments
+ffm backup schedule mybench --every weekly --keep 3
+ffm backup schedule mybench --off                      # stop; archives are kept
+ffm backup schedule                                    # status of every schedule
+ffm backup list mybench                                # archives + full paths for ffm restore
+ffm backup prune mybench --dry-run                     # preview retention
+ffm backup scheduler status                            # is the hourly job installed and valid?
+```
+
+Retention keeps the newest scheduled archive per hour/day/week tier plus the newest 3 always.
+Only archives made by the schedule are ever deleted — manual `ffm backup` archives never are.
+A scheduled run **skips** a stopped bench instead of starting it. One tagged crontab line runs
+`ffm backup run-due` hourly for all benches; it is installed with the first schedule and
+removed with the last, and its results go to `~/.config/ffm/backup-scheduler.log`. After
+moving the ffm binary or changing `FFM_*` variables, run `ffm backup scheduler install` again.
+On Windows, `ffm backup scheduler print` gives the Task Scheduler command.
+
 **What a restore cannot bring back** (it says so when it applies): uncommitted changes in an
 app's working tree; the VPS tunnel, whose token lives in this host's `tunnel.json` rather than
 the archive; the ffc API secret, which Frappe reissues on every request; and absolute URLs

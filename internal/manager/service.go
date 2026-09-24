@@ -2,6 +2,7 @@ package manager
 
 import (
 	"sync"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
@@ -11,6 +12,17 @@ type Service struct {
 	Store   *state.Store
 	Verbose bool
 	mu      sync.Mutex
+
+	// now overrides the clock in tests; nil means time.Now.
+	now func() time.Time
+}
+
+// clock returns the current time, through the test override when set.
+func (s *Service) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // Default returns a Service using the standard state file.

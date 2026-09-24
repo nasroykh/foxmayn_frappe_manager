@@ -101,3 +101,32 @@ func EnsureBenchBackupsDir(name string) (string, error) {
 	}
 	return dir, nil
 }
+
+// LocksDir holds ffm's process-exclusive lock files.
+func LocksDir() string {
+	return filepath.Join(ConfigDir(), "locks")
+}
+
+// BenchLockFile is held while a bench is backed up, restored into, deleted or
+// recreated, so those operations never overlap across ffm processes.
+func BenchLockFile(name string) string {
+	return filepath.Join(LocksDir(), "bench-"+name+".lock")
+}
+
+// BackupRunLockFile is held by `ffm backup run-due` so two hourly ticks never
+// overlap.
+func BackupRunLockFile() string {
+	return filepath.Join(LocksDir(), "backup-run-due.lock")
+}
+
+// BackupSchedulerLogFile is where `ffm backup run-due` records each run.
+func BackupSchedulerLogFile() string {
+	return filepath.Join(ConfigDir(), "backup-scheduler.log")
+}
+
+// BackupRunStateFile records the last scheduled attempt for one bench. It
+// lives beside the archives, not in benches.json, so the hourly job never
+// writes the state file every other ffm command reads and rewrites.
+func BackupRunStateFile(name string) string {
+	return filepath.Join(BenchBackupsDir(name), ".schedule.json")
+}

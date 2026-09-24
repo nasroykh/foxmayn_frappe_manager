@@ -1,4 +1,5 @@
-# End-to-end proof that `ffm backup` and `ffm restore` compose correctly.
+# End-to-end proof that `ffm backup`, scheduled backups (`ffm backup run-due`)
+# and `ffm restore` compose correctly.
 #
 # The unit tests cover the archive format, the manifest and the preflight gates
 # without Docker. This covers the part they cannot: that a real bench, backed up
@@ -50,7 +51,7 @@ jobs:
       - name: Create the source bench
         run: |
           mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
-          "$RUNNER_TEMP/ffm" create src --verbose --match-host-user --apps erpnext
+          "$RUNNER_TEMP/ffm" create src --mode dev --verbose --match-host-user --apps erpnext
 
       - name: Plant a marker the restore must bring back
         run: |
@@ -64,9 +65,34 @@ jobs:
         run: |
           "$RUNNER_TEMP/ffm" backup src --label ci-roundtrip
 
+      # The scheduled path: run-due must write exactly one archive, a second
+      # run inside the interval must be a no-op, and the archive it wrote is
+      # the one restored below — so the round trip proves a SCHEDULED archive
+      # restores, not just a manual one. --no-install: the job is driven
+      # directly rather than through the runner's crontab.
+      - name: Take a scheduled backup
+        run: |
+          "$RUNNER_TEMP/ffm" backup schedule src --every 1h --no-install
+          "$RUNNER_TEMP/ffm" backup run-due --verbose
+          "$RUNNER_TEMP/ffm" backup run-due --verbose
+          "$RUNNER_TEMP/ffm" backup schedule
+          "$RUNNER_TEMP/ffm" backup list src
+          AUTO=$(ls "$FFM_BACKUPS_DIR"/src/*.auto.ffm.tar | wc -l)
+          if [ "$AUTO" != "1" ]; then
+            echo "::error::expected exactly one scheduled archive after two run-due calls, found $AUTO"
+            exit 1
+          fi
+          # Pruning must leave the manual archive alone.
+          "$RUNNER_TEMP/ffm" backup prune src
+          MANUAL=$(ls "$FFM_BACKUPS_DIR"/src/*.ffm.tar | grep -vc '\.auto\.ffm\.tar$')
+          if [ "$MANUAL" != "1" ]; then
+            echo "::error::the manual archive did not survive pruning"
+            exit 1
+          fi
+
       - name: Validate the archive without restoring
         run: |
-          ARCHIVE=$(ls "$FFM_BACKUPS_DIR"/src/*.ffm.tar | head -1)
+          ARCHIVE=$(ls "$FFM_BACKUPS_DIR"/src/*.auto.ffm.tar | head -1)
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --dry-run
 

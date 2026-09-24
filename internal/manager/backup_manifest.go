@@ -47,7 +47,21 @@ type Header struct {
 	FrappeVersion    string    `json:"frappe_version,omitempty"`
 	Tiers            []string  `json:"tiers"`
 	Label            string    `json:"label,omitempty"`
+	// Trigger records what made the archive: TriggerManual or
+	// TriggerScheduled. Additive and optional, so the schema version is
+	// unchanged; archives without it (older ffm) are treated as manual, which
+	// is what keeps them out of reach of scheduled pruning.
+	Trigger string `json:"trigger,omitempty"`
 }
+
+// Archive triggers recorded in Header.Trigger.
+const (
+	TriggerManual    = "manual"
+	TriggerScheduled = "scheduled"
+)
+
+// IsScheduled reports whether the archive was written by a scheduled run.
+func (h Header) IsScheduled() bool { return h.Trigger == TriggerScheduled }
 
 // AppInfo is an app's provenance at backup time.
 //

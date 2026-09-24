@@ -59,7 +59,8 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
     root.go               → registers all 20 subcommands; global --verbose and --non-interactive;
-                            PersistentPreRunE runs the update check (skipped for 'update');
+                            PersistentPreRunE runs the update check (skipped for 'update' and
+                            for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
                             parses anything, then runs cobra, then waitForUpdateCheck(); it
                             returns cobra's error unprinted (cobra already wrote it — printing
@@ -70,7 +71,16 @@ internal/
     interactive_unix.go / interactive_windows.go → hasControllingTerminal() per platform
     create.go             → create flags + the interactive forms (runCreateForm,
                             runCreateFormFull); calls manager.Service.Create
-    backup.go             → ffm backup: --out / --label / --no-files / --skip-space-check
+    backup.go             → ffm backup: --out / --label / --no-files / --skip-space-check.
+                            Has subcommands, so `ffm backup list` is the subcommand, never a
+                            bench called "list" — hence bench.ValidateNewName's reserved names
+    backup_manage.go      → ffm backup list [bench] / ffm backup prune <bench> [--dry-run]
+    backup_schedule.go    → ffm backup schedule [bench] (presets, --keep shorthand, per-tier
+                            counts, --files, --off, --no-install) and ffm backup run-due
+                            [--dry-run] [--log FILE] (rotated at 1 MiB, one old generation)
+    backup_scheduler.go   → ffm backup scheduler install|uninstall|status|print; syncSchedulerJob
+                            installs the crontab line with the first schedule, removes it with
+                            the last
     restore.go            → ffm restore <archive> [name]: --dry-run / --no-files / --pin-apps /
                             --allow-missing-encryption-key / --encryption-key / --domain /
                             --no-ssl / --acme-email / --reallocate-ports / --web-port /
@@ -112,8 +122,16 @@ internal/
   manager/                → the shared service layer. All bench operations live here. Output goes
                             through ProgressWriter, never straight to stdout, so the CLI and the
                             dashboard's job runner share one pipeline.
-    service.go            → Service{Store, Verbose, mu}; serialises all store access behind a
-                            mutex because the dashboard is concurrent
+    service.go            → Service{Store, Verbose, mu, now}; serialises all store
+                            access behind a mutex because the dashboard is concurrent; clock()
+                            is the test-overridable time source
+    benchlock.go          → lockBench: exclusive, non-blocking, and deliberately NOT re-entrant —
+                            the dashboard shares one Service across requests and jobs, so
+                            re-entry per Service would let a Delete pass a running Recreate.
+                            Callers already holding the lock use backupLocked / deleteLocked
+                            (run-due, Restore's rollback). Taken by Backup, Restore (target),
+                            Delete, Recreate, PruneBackups and run-due. ErrBenchBusy,
+                            ErrBenchStopped
     types.go              → CreateInput / RecreateInput / RestartInput / SetProxyInput /
                             ExecInput / CleanLogsInput / BenchView / BenchDetail / DashboardStats
     create.go             → THE create pipeline (see Key patterns). Also ReadSavedAcmeEmail /
@@ -126,8 +144,13 @@ internal/
     backup_manifest.go    → Header / Manifest / SiteInfo / AppInfo / Secrets + schema gates
     backup_preflight.go   → checkArchive / verifyMembers / appsForRestore / scrubSecrets /
                             checkNameFree / honoursFileModes
-    diskfree_unix.go / diskfree_windows.go → freeBytes(); no-op on Windows rather than
-                            pulling in golang.org/x/sys
+    backup_policy.go      → PresetPolicy / ParseEvery / ValidatePolicy / ApplyKeepShorthand
+    backup_retention.go   → ScanArchives / selectRetained (tiered + RetentionFloor) /
+                            PruneBackups; only readable, trigger=scheduled, same-bench archives
+                            are ever candidates
+    backup_schedule.go    → RunDue / runOne / ScheduleStatuses / SetBackupSchedule; RunState in
+                            <backups>/<bench>/.schedule.json
+    diskfree_unix.go / diskfree_windows.go → freeBytes(); no-op on Windows
     recreate.go           → teardown + Create with stored inputs; reuses the old port pair
     lifecycle.go          → Start / Stop / Delete / TeardownBenchFiles; Start also back-fills
                             skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
@@ -195,6 +218,12 @@ internal/
                                    HTTP→HTTPS redirect; optional ./mysql-logs bind
         Dockerfile.tmpl          → minimal: frappe/bench + corepack pnpm + optional remap layer
 
+  lock/                   → TryAcquire: non-blocking exclusive file lock (flock / LockFileEx via
+                            golang.org/x/sys). The OS drops it when the process dies — no
+                            stale-lock handling exists or is needed
+  scheduler/              → the single crontab line for run-due: CurrentJob / Job.Line /
+                            Merge / Remove / Find / Install / Uninstall / WindowsCommand. Tagged
+                            `# ffm-backup-tick`; other crontab lines are kept byte for byte
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
                             IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
   tunnel/
@@ -203,10 +232,14 @@ internal/
   config/paths.go         → honours FFM_BENCHES_DIR / FFM_CONFIG_DIR / FFM_BACKUPS_DIR:
                             BenchesDir, BenchDir, StateFile, AcmeEmailFile, TunnelConfigFile,
                             DashboardConfigFile, DashboardPIDFile, DashboardLogFile, JobsFile,
-                            BackupsDir / BenchBackupsDir / EnsureBenchBackupsDir
+                            BackupsDir / BenchBackupsDir / EnsureBenchBackupsDir, LocksDir /
+                            BenchLockFile / BackupRunLockFile / BackupSchedulerLogFile /
+                            BackupRunStateFile
   state/store.go          → JSON state store; Bench includes Mode, DBType, Domain, ProxyHost,
                             MatchHostUser, DomainAliases, AliasTLS, TLSMode, the prod tuning
-                            knobs, Tunnel (*TunnelState); IsProd/IsDev/DBEngine/IsPostgres
+                            knobs, Tunnel (*TunnelState), BackupSchedule (*BackupPolicy);
+                            IsProd/IsDev/DBEngine/IsPostgres. Save is atomic (temp + fsync +
+                            rename) and 0600 — the file holds every bench's passwords
   version/version.go      → build-time version variables
 ```
 
@@ -326,6 +359,31 @@ internal/
   the backups that make it survivable. They hold credentials in plaintext at 0600, and
   `honoursFileModes` warns when the filesystem ignores that (a Windows drive under WSL2).
 
+- **Scheduled backups: one hourly job, tiered retention, no second source of truth.**
+  `ffm backup run-due`, run by a single tagged crontab line, backs up each bench whose
+  `BackupSchedule` is due and then prunes it. Rules that are load-bearing:
+  - run-due only **reads** `benches.json`. The policy is written by the user-invoked
+    `ffm backup schedule`; last success is the newest `trigger=scheduled` archive on disk;
+    the last attempt goes to `<backups>/<bench>/.schedule.json`. The store is still a
+    whole-file read-modify-write without a cross-process lock, so an hourly writer would race
+    every other command.
+  - Pruning deletes only archives whose **header** says `trigger=scheduled` for that bench,
+    only after a successful backup, and never below `RetentionFloor` (3). Manual archives,
+    archives from an ffm older than scheduling (no `trigger`), foreign and unreadable files are
+    never candidates.
+  - The weekly tier counts the **current** week, so presets below weekly keep 5 weekly
+    archives: with 4, coverage was measured at 18 days on some weekdays.
+  - Daily and weekly buckets keep the newest archive **with attachments** when the bucket has
+    one. Keeping plain "newest per day" under `--every 1h --files daily` left three weeks of
+    database-only history, and pruning the one archive with attachments made the files
+    cadence fire again at the next run (`--files weekly` ran ~daily).
+  - A scheduled run never starts a stopped bench (`SkipIfStopped`), but `LiveStatus` "unknown"
+    — docker unreachable, usually a cron PATH without it — is a **failure**, not a skip.
+  - The crontab line carries the absolute ffm path, a PATH reaching docker and any
+    FFM_*/DOCKER_* variables from install time; cron's environment is nearly empty.
+  - `Recreate` re-adds the schedule after `Create` writes a fresh record; `Restore` never
+    carries one over (the schedule travels in the archive's bench record but is ignored).
+
 - **Waiting for the database means waiting from the frappe container.** `WaitForMariaDB` /
   `WaitForPostgres` exec *inside the database container* and talk to it over loopback, so they
   pass whenever the database process is up — including when nothing can reach it.
@@ -440,9 +498,13 @@ git push origin v0.1.0
 
 ~/frappe/_backups/<bench-name>/
   <bench>_<UTC>.ffm.tar  # ffm backup archives (0600 in a 0700 dir; FFM_BACKUPS_DIR overrides)
+  <bench>_<UTC>.auto.ffm.tar  # scheduled archives; only these are ever pruned
+  .schedule.json         # last scheduled attempt (written by run-due only)
 
 ~/.config/ffm/
-  benches.json           # state file
+  benches.json           # state file (0600, atomic writes)
+  backup-scheduler.log   # run-due results, rotated at 1 MiB (.1 kept)
+  locks/                 # bench-<name>.lock and backup-run-due.lock (OS file locks)
   .update_check.json     # cached latest release tag (24 h TTL; skipped when $CI is set)
   .acme_email            # saved Let's Encrypt email
   tunnel.json            # VPS tunnel server profiles (0o600 — contains tokens)

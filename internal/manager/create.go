@@ -109,6 +109,11 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if err := bench.ValidateName(name); err != nil {
 		return err
 	}
+	if !in.recreating {
+		if err := bench.ValidateNewName(name); err != nil {
+			return err
+		}
+	}
 
 	// Domain aliases. Normalised up front so a bad hostname fails before any
 	// container is built, and so the values written into Traefik labels are

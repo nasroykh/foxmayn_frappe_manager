@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
@@ -27,6 +28,22 @@ type TunnelState struct {
 	// Subdomain is the public subdomain slug (e.g. "mydev" → mydev.tunnel.example.com).
 	Subdomain string `json:"subdomain,omitempty"`
 	Enabled   bool   `json:"enabled,omitempty"`
+}
+
+// BackupPolicy is a bench's scheduled-backup and retention policy.
+//
+// Retention is tiered: of the scheduled archives, the newest one in each of
+// the last KeepHourly hours, KeepDaily days and KeepWeekly ISO weeks is kept,
+// plus a fixed floor of the newest few whatever their age.
+type BackupPolicy struct {
+	Enabled    bool `json:"enabled"`
+	EveryHours int  `json:"every_hours"`
+	KeepHourly int  `json:"keep_hourly,omitempty"`
+	KeepDaily  int  `json:"keep_daily,omitempty"`
+	KeepWeekly int  `json:"keep_weekly,omitempty"`
+	// Files is how often a scheduled run includes attachments:
+	// "every-run", "daily", "weekly" or "never".
+	Files string `json:"files,omitempty"`
 }
 
 // Bench holds the persisted state for a single managed bench.
@@ -89,8 +106,11 @@ type Bench struct {
 	// break the bind mount on a host that needed the remap.
 	MatchHostUser bool `json:"match_host_user,omitempty"`
 	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
-	Tunnel    *TunnelState `json:"tunnel,omitempty"`
-	CreatedAt time.Time    `json:"created_at"`
+	Tunnel *TunnelState `json:"tunnel,omitempty"`
+	// BackupSchedule is the scheduled-backup policy set by `ffm backup
+	// schedule`. Nil means no scheduled backups.
+	BackupSchedule *BackupPolicy `json:"backup_schedule,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
 }
 
 // IsProd reports whether the bench was created in production mode.
@@ -113,8 +133,9 @@ func (b Bench) DBEngine() string {
 func (b Bench) IsPostgres() bool { return b.DBEngine() == "postgres" }
 
 // Store is a thin wrapper around the benches.json state file.
-// It is not concurrency-safe across processes; we rely on short-lived CLI
-// invocations and don't need a full lock file for v0.1.
+// Writes are atomic (see Save), but read-modify-write sequences are not
+// serialised across processes: two processes updating the file at the same
+// moment can still lose one update.
 type Store struct {
 	path string
 }
@@ -142,6 +163,14 @@ func (s *Store) Load() ([]Bench, error) {
 }
 
 // Save persists the full bench slice, replacing any existing file.
+//
+// The write is atomic: a temp file in the same directory is written, synced
+// and renamed over the state file. A reader in another process (the hourly
+// `ffm backup run-due`, the dashboard) therefore sees either the old file or
+// the new one, never a truncated half-write.
+//
+// The file is 0600 because every record carries the bench's Administrator and
+// database root passwords. Saving also tightens a file an older ffm left 0644.
 func (s *Store) Save(benches []Bench) error {
 	if err := config.EnsureDataDir(); err != nil {
 		return err
@@ -150,7 +179,42 @@ func (s *Store) Save(benches []Bench) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	return writeFileAtomic(s.path, data, 0o600)
+}
+
+// writeFileAtomic writes data to path through a synced temp file and a rename.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { os.Remove(tmpName) }
+	keepOwner(tmp, path)
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
 }
 
 // Add appends a new bench record and saves.

@@ -175,6 +175,23 @@ func (s *Service) Delete(name string, pw ProgressWriter) error {
 	if pw == nil {
 		pw = CLIProgress{}
 	}
+	if _, err := s.GetBench(name); err != nil {
+		return err
+	}
+	release, err := s.lockBench(name)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return s.deleteLocked(name, pw)
+}
+
+// deleteLocked is Delete for a caller that already holds the bench's lock
+// (a failed Restore removing its own half-built target).
+func (s *Service) deleteLocked(name string, pw ProgressWriter) error {
+	if pw == nil {
+		pw = CLIProgress{}
+	}
 	b, err := s.GetBench(name)
 	if err != nil {
 		return err

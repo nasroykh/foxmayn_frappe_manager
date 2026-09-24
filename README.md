@@ -370,6 +370,56 @@ A stopped bench is started for the backup and stopped again afterwards.
 > encryption key in plain text. It is written `0600` inside a `0700` directory. ffm warns when
 > the filesystem cannot enforce that — notably a Windows drive mounted into WSL2.
 
+### Scheduled backups
+
+`ffm backup schedule` backs a bench up automatically and keeps a **bounded** set of archives,
+so old backups neither pile up nor eat the disk.
+
+```bash
+ffm backup schedule mybench --every 24h                 # daily; ~3-4 weeks of history
+ffm backup schedule mybench --every 1h --files weekly   # hourly database, weekly attachments
+ffm backup schedule mybench --every weekly --keep 3     # three weekly archives
+ffm backup schedule mybench --off                       # stop (archives are kept)
+ffm backup schedule                                     # every schedule, last success, next run
+ffm backup list [bench]                                 # archives with their full paths
+ffm backup prune mybench --dry-run                      # preview the retention policy
+```
+
+Retention is tiered: of the **scheduled** archives, ffm keeps the newest one in each of the
+last N hours, N days and N weeks, plus the newest 3 whatever their age — so a bench whose
+backups have been failing for a month is never pruned down to nothing. With only `--every`,
+a preset applies:
+
+| `--every` | Keeps | Archives on disk | History | Attachments |
+|--|--|--|--|--|
+| `1h` | 24 hourly, 7 daily, 5 weekly | 32–34 | 3–4 weeks | daily |
+| `6h` | 4 hourly, 7 daily, 5 weekly | 12–14 | 3–4 weeks | daily |
+| `24h` | 7 daily, 5 weekly | 10–11 | 3–4 weeks | every run |
+| `168h` | 4 weekly | 4 | 3 weeks | every run |
+
+```
+Flags:  --every <interval>      1h, 6h, 24h, 168h (whole hours), or hourly/daily/weekly
+        --keep <n>              Keep n archives of the tier matching --every
+        --keep-hourly/-daily/-weekly <n>   Set each tier explicitly
+        --files <cadence>       Attachments: every-run, daily, weekly or never
+        --off                   Stop scheduled backups for the bench
+        --no-install            Save the policy without touching the hourly job
+```
+
+- **Manual archives are never deleted.** Only archives a scheduled run wrote (recorded in the
+  archive header) are pruned, and only after a new backup has succeeded.
+- **A stopped bench is skipped**, not started: it has not changed since its last backup.
+- **Attachments are usually most of an archive's size.** `--files daily` or `weekly` keeps
+  frequent runs small; a database-only archive restores without attachments.
+- **One hourly job runs everything.** The first schedule installs a single tagged line in your
+  crontab running `ffm backup run-due`; the last `--off` removes it. `ffm backup scheduler
+  status` checks it. The line carries the ffm path, a `PATH` that reaches docker and any
+  `FFM_*` settings — re-run `ffm backup scheduler install` after moving ffm or changing them.
+  Runs are logged to `~/.config/ffm/backup-scheduler.log`. On Windows, `ffm backup scheduler
+  print` gives the Task Scheduler command to run once.
+- Archives stay on this machine. They protect against a broken site, not a lost disk — copy
+  them off the host if that matters.
+
 ### `ffm restore <archive> [name]`
 
 Rebuilds a bench from an archive. Always creates a **new** bench; it never writes into an
@@ -449,9 +499,13 @@ Prints the build version, commit hash, and build date.
   _backups/
     <bench-name>/
       <bench>_<UTC timestamp>.ffm.tar   # `ffm backup` archives (0600, in a 0700 directory)
+      <bench>_<UTC timestamp>.auto.ffm.tar  # scheduled archives (pruned by retention)
+      .schedule.json                     # last scheduled attempt
 
 ~/.config/ffm/
-  benches.json           # state file tracking all managed benches
+  benches.json           # state file tracking all managed benches (0600: holds passwords)
+  backup-scheduler.log   # one line per bench per scheduled run
+  locks/                 # per-bench and run-due lock files
   .update_check.json     # cached latest release tag (refreshed every 24 h)
   .acme_email            # saved Let's Encrypt email (auto-used on subsequent prod benches)
 ```

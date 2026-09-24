@@ -48,7 +48,7 @@ func devProxyArgsForRecreate(b state.Bench, portOverride *int, hostOverride *str
 }
 
 // Recreate tears down and reprovisions a bench from saved state.
-func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
+func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr error) {
 	if pw == nil {
 		pw = CLIProgress{}
 	}
@@ -56,6 +56,11 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	release, err := s.lockBench(in.Name)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	mode := b.Mode
 	if mode == "" {
@@ -97,7 +102,17 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 		return fmt.Errorf("update state: %w", err)
 	}
 
+	// Create writes a fresh bench record; carry the backup schedule over, or
+	// a recreate would silently stop the bench's scheduled backups.
+	schedule := b.BackupSchedule
+	defer func() {
+		if recreateErr == nil && schedule != nil {
+			recreateErr = s.UpdateBench(b.Name, func(rec *state.Bench) { rec.BackupSchedule = schedule })
+		}
+	}()
+
 	return s.Create(CreateInput{
+		recreating:        true,
 		Name:              b.Name,
 		FrappeBranch:      b.FrappeBranch,
 		FrappeRepo:        b.FrappeRepo,

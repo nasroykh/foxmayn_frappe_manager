@@ -59,7 +59,7 @@ func checkArchive(m Manifest, targetName string, in RestoreInput) []Problem {
 		})
 	}
 
-	if err := bench.ValidateName(targetName); err != nil {
+	if err := bench.ValidateNewName(targetName); err != nil {
 		problems = append(problems, Problem{
 			Message: fmt.Sprintf("invalid target bench name %q: %v", targetName, err),
 		})
