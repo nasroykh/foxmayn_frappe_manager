@@ -218,7 +218,7 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 	}
 
 	// Hold the bench across backup AND prune, so nothing deletes, recreates
-	// or restores into it between the two. Backup re-enters this lock.
+	// or restores into it between the two.
 	release, err := s.lockBench(b.Name)
 	if err != nil {
 		res.Result, res.Err = RunSkippedBusy, err
@@ -227,7 +227,7 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 	}
 	defer release()
 
-	err = s.Backup(BackupInput{
+	err = s.backupLocked(BackupInput{
 		BenchName:     b.Name,
 		NoFiles:       !res.WithFiles,
 		Trigger:       TriggerScheduled,

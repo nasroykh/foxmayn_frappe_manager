@@ -32,7 +32,22 @@ const stagingRoot = "/tmp/ffm-backup"
 // database volume and the workspace, it needs no downtime, and it restores onto
 // a different host, a different architecture and a different host uid — none of
 // which a physical copy of a MariaDB data directory or a Python venv can do.
-func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
+func (s *Service) Backup(in BackupInput, pw ProgressWriter) error {
+	b, err := s.GetBench(in.BenchName)
+	if err != nil {
+		return err
+	}
+	release, err := s.lockBench(b.Name)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return s.backupLocked(in, pw)
+}
+
+// backupLocked is Backup for a caller that already holds the bench's lock
+// (run-due, which holds it across backup and prune).
+func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr error) {
 	if pw == nil {
 		pw = CLIProgress{}
 	}
@@ -47,11 +62,6 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 	if trigger != TriggerManual && trigger != TriggerScheduled {
 		return fmt.Errorf("unknown backup trigger %q", trigger)
 	}
-	release, err := s.lockBench(b.Name)
-	if err != nil {
-		return err
-	}
-	defer release()
 	if _, err := os.Stat(b.Dir); err != nil {
 		return fmt.Errorf("bench directory %s is missing — nothing to back up", b.Dir)
 	}

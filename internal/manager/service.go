@@ -13,11 +13,6 @@ type Service struct {
 	Verbose bool
 	mu      sync.Mutex
 
-	// benchLocksMu guards benchLocks, the cross-process bench locks this
-	// Service currently holds (see lockBench).
-	benchLocksMu sync.Mutex
-	benchLocks   map[string]*heldBenchLock
-
 	// now overrides the clock in tests; nil means time.Now.
 	now func() time.Time
 }

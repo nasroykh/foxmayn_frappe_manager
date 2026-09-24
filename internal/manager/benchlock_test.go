@@ -9,31 +9,28 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
-func TestLockBenchIsReentrantWithinAService(t *testing.T) {
+// TestLockBenchExcludesWithinOneService is the dashboard case: every request
+// and job shares one Service, so a second operation on the same bench from
+// that Service must be refused, not waved through as re-entry.
+func TestLockBenchExcludesWithinOneService(t *testing.T) {
 	t.Setenv("FFM_CONFIG_DIR", t.TempDir())
 	s := New(false)
 
-	outer, err := s.lockBench("alpha")
+	held, err := s.lockBench("alpha")
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := s.lockBench("alpha")
-	if err != nil {
-		t.Fatalf("nested lock in the same Service: %v", err)
+	if _, err := s.lockBench("alpha"); !errors.Is(err, ErrBenchBusy) {
+		t.Fatalf("second lock on the same Service = %v, want ErrBenchBusy", err)
 	}
-	inner()
-
-	// Still held after the inner release: another Service (another handle,
-	// as another process would have) must be refused.
-	other := New(false)
-	if _, err := other.lockBench("alpha"); !errors.Is(err, ErrBenchBusy) {
-		t.Fatalf("lock from another Service while held = %v, want ErrBenchBusy", err)
+	if _, err := New(false).lockBench("alpha"); !errors.Is(err, ErrBenchBusy) {
+		t.Fatalf("lock from another Service = %v, want ErrBenchBusy", err)
 	}
-	outer()
+	held()
 
-	release, err := other.lockBench("alpha")
+	release, err := s.lockBench("alpha")
 	if err != nil {
-		t.Fatalf("lock after full release: %v", err)
+		t.Fatalf("lock after release: %v", err)
 	}
 	release()
 }
@@ -60,7 +57,8 @@ func TestBackupRefusesBusyBench(t *testing.T) {
 	if err := s.AddBench(state.Bench{Name: "alpha", Dir: dir + "/benches/alpha"}); err != nil {
 		t.Fatal(err)
 	}
-	held, err := New(false).lockBench("alpha")
+	// Held through the SAME Service, as a dashboard job would hold it.
+	held, err := s.lockBench("alpha")
 	if err != nil {
 		t.Fatal(err)
 	}

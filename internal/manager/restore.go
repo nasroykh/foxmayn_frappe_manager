@@ -84,8 +84,8 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 		return fmt.Errorf("invalid bench name %q: %w", target, err)
 	}
 
-	// Held for the whole restore, rollback included: the Delete in the failure
-	// path below re-enters it (lockBench is re-entrant within a Service).
+	// Held for the whole restore, rollback included: the failure path below
+	// removes the target with deleteLocked, under this same lock.
 	release, err := s.lockBench(target)
 	if err != nil {
 		return err
@@ -177,7 +177,7 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 			return
 		}
 		fmt.Fprintln(pw.Stderr(), "\nRestore failed — removing the half-restored bench...")
-		if err := s.Delete(target, DiscardProgress{}); err != nil {
+		if err := s.deleteLocked(target, DiscardProgress{}); err != nil {
 			fmt.Fprintf(pw.Stderr(), "warning: could not remove bench %q: %v\n", target, err)
 		}
 	}()
