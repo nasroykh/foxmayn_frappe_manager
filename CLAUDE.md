@@ -458,7 +458,9 @@ internal/
   `bench.ValidateDBPassword` refuses `$`, `"`, `\`, whitespace and control characters; the
   Administrator password may be anything on one line not starting with `-` (set-admin-password
   takes it positionally). Restore's `checkManifestValues` applies the same two validators to
-  archive credentials, so whatever create accepts also restores.
+  archive credentials, so whatever create accepts also restores. A prod `--domain` becomes the
+  site name, so `Create` runs it through `bench.NormalizeDomain` too (restore always did).
+  `ffm exec` is the one deliberate exception: it runs the user's own command.
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
 

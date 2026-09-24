@@ -609,7 +609,7 @@ func shortCommit(commit string) string {
 // failing the backup.
 func collectInstalledApps(runner *bench.Runner, frappeBench, siteName string, siteCfg map[string]any) ([]string, string) {
 	out, err := runner.ExecSilent("frappe", "bash", "-c",
-		fmt.Sprintf("cd /workspace/frappe-bench && bench --site %s list-apps --format json", siteName))
+		"cd /workspace/frappe-bench && bench --site "+bench.ShellQuote(siteName)+" list-apps --format json")
 	if err == nil {
 		var parsed map[string]any
 		if json.Unmarshal([]byte(out), &parsed) == nil {

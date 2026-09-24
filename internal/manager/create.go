@@ -101,6 +101,14 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		if domain == "" {
 			return fmt.Errorf("--domain is required for production mode (e.g. --domain erp.example.com)")
 		}
+		// The domain becomes the site name, a directory name, shell arguments
+		// and a Traefik rule between backticks, so it must be a hostname. Restore
+		// already applied this to archived domains; create did not.
+		if !in.recreating {
+			if _, err := bench.NormalizeDomain(domain); err != nil {
+				return fmt.Errorf("--domain: %w", err)
+			}
+		}
 		if adminPassword == "admin" {
 			return fmt.Errorf("default admin password is not allowed in production — set --admin-password to a strong password")
 		}
@@ -516,7 +524,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 
 	step("Setting default site")
-	useSiteCmd := fmt.Sprintf("cd /workspace/frappe-bench && bench use %s", siteName)
+	useSiteCmd := "cd /workspace/frappe-bench && bench use " + bench.ShellQuote(siteName)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", useSiteCmd); err != nil {
 		return fmt.Errorf("bench use: %w\n%s", err, out)
 	}
@@ -526,7 +534,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step("Enabling developer mode")
 		devModeCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1",
-			siteName,
+			bench.ShellQuote(siteName),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
 			return fmt.Errorf("enable developer mode: %w\n%s", err, out)
@@ -601,7 +609,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Installing app %q on site %q", displayName, siteName))
 		installCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s install-app %s --force",
-			siteName, displayName,
+			bench.ShellQuote(siteName), bench.ShellQuote(displayName),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
 			return fmt.Errorf("bench install-app %s: %w\n%s", displayName, err, out)
