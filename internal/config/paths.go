@@ -101,3 +101,14 @@ func EnsureBenchBackupsDir(name string) (string, error) {
 	}
 	return dir, nil
 }
+
+// LocksDir holds ffm's process-exclusive lock files.
+func LocksDir() string {
+	return filepath.Join(ConfigDir(), "locks")
+}
+
+// BenchLockFile is held while a bench is backed up, restored into, deleted or
+// recreated, so those operations never overlap across ffm processes.
+func BenchLockFile(name string) string {
+	return filepath.Join(LocksDir(), "bench-"+name+".lock")
+}

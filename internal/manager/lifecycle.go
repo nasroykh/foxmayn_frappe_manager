@@ -179,6 +179,11 @@ func (s *Service) Delete(name string, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	release, err := s.lockBench(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	pw.Printf("Deleting bench %q...\n", name)
 	s.TeardownBenchFiles(b)
 	if err := s.RemoveBench(name); err != nil {

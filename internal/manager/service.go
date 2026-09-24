@@ -11,6 +11,11 @@ type Service struct {
 	Store   *state.Store
 	Verbose bool
 	mu      sync.Mutex
+
+	// benchLocksMu guards benchLocks, the cross-process bench locks this
+	// Service currently holds (see lockBench).
+	benchLocksMu sync.Mutex
+	benchLocks   map[string]*heldBenchLock
 }
 
 // Default returns a Service using the standard state file.

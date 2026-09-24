@@ -84,6 +84,14 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 		return fmt.Errorf("invalid bench name %q: %w", target, err)
 	}
 
+	// Held for the whole restore, rollback included: the Delete in the failure
+	// path below re-enters it (lockBench is re-entrant within a Service).
+	release, err := s.lockBench(target)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	staging := filepath.Join(config.BenchesDir(), fmt.Sprintf("_restore-%s-%d", target, time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 

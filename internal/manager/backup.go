@@ -40,6 +40,18 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 	if err != nil {
 		return err
 	}
+	trigger := in.Trigger
+	if trigger == "" {
+		trigger = TriggerManual
+	}
+	if trigger != TriggerManual && trigger != TriggerScheduled {
+		return fmt.Errorf("unknown backup trigger %q", trigger)
+	}
+	release, err := s.lockBench(b.Name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if _, err := os.Stat(b.Dir); err != nil {
 		return fmt.Errorf("bench directory %s is missing — nothing to back up", b.Dir)
 	}
@@ -67,6 +79,9 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 	// before `ffm delete` or `ffm recreate`.
 	startedForBackup := false
 	if s.LiveStatus(b) != "running" {
+		if in.SkipIfStopped {
+			return ErrBenchStopped
+		}
 		pw.Step("Starting the bench for the backup (it was stopped)")
 		if err := runner.UpServices(dbService(b), "frappe"); err != nil {
 			return fmt.Errorf("start bench for backup: %w", err)
@@ -136,7 +151,7 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 		return err
 	}
 
-	dest, err := backupDestination(in, b.Name, now)
+	dest, err := backupDestination(in, b.Name, trigger, now)
 	if err != nil {
 		return err
 	}
@@ -160,6 +175,7 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 	}()
 
 	header := NewHeader(b, b.SiteName, frappeVersion, in.Label, tiers, now)
+	header.Trigger = trigger
 	headerJSON, err := json.MarshalIndent(header, "", "  ")
 	if err != nil {
 		return err
@@ -706,9 +722,18 @@ func waitForDBReady(runner *bench.Runner, isPostgres bool, dbPassword string, w 
 }
 
 // backupDestination resolves --out into a concrete archive path.
-func backupDestination(in BackupInput, benchName string, now time.Time) (string, error) {
-	stamp := now.Format("20060102T150405Z")
-	base := fmt.Sprintf("%s_%s.ffm.tar", benchName, stamp)
+func backupDestination(in BackupInput, benchName, trigger string, now time.Time) (string, error) {
+	base := archiveFileName(benchName, trigger, now)
+	if trigger == TriggerScheduled {
+		// Scheduled archives always land in the bench's own backup directory:
+		// that directory is the only place pruning looks, so an archive written
+		// anywhere else would never be rotated.
+		dir, err := config.EnsureBenchBackupsDir(benchName)
+		if err != nil {
+			return "", fmt.Errorf("create backup directory: %w", err)
+		}
+		return filepath.Join(dir, base), nil
+	}
 
 	if in.Out == "" {
 		dir, err := config.EnsureBenchBackupsDir(benchName)
@@ -729,6 +754,17 @@ func backupDestination(in BackupInput, benchName string, now time.Time) (string,
 		return "", err
 	}
 	return filepath.Join(in.Out, base), nil
+}
+
+// archiveFileName names an archive. Scheduled ones carry ".auto" so a human
+// listing the directory can tell them apart; the header, not the name, is what
+// pruning trusts.
+func archiveFileName(benchName, trigger string, now time.Time) string {
+	stamp := now.UTC().Format("20060102T150405Z")
+	if trigger == TriggerScheduled {
+		return fmt.Sprintf("%s_%s.auto.ffm.tar", benchName, stamp)
+	}
+	return fmt.Sprintf("%s_%s.ffm.tar", benchName, stamp)
 }
 
 // checkBackupSpace refuses to start writing an archive that cannot fit.

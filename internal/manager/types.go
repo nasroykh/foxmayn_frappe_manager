@@ -2,6 +2,10 @@ package manager
 
 // CreateInput holds parameters for provisioning a new bench.
 type CreateInput struct {
+	// recreating is set by Recreate, which rebuilds an EXISTING bench and so
+	// must not be refused a name that has since become reserved.
+	recreating bool
+
 	Name              string
 	FrappeBranch      string
 	FrappeRepo        string
@@ -171,6 +175,13 @@ type BackupInput struct {
 	Label string
 	// SkipSpaceCheck bypasses the free-space preflight.
 	SkipSpaceCheck bool
+	// Trigger is recorded in the archive header: TriggerManual (the default)
+	// or TriggerScheduled. Only scheduled archives are ever pruned.
+	Trigger string
+	// SkipIfStopped returns ErrBenchStopped instead of starting a stopped
+	// bench. Scheduled runs set it: a stopped bench has not changed since its
+	// last backup, and starting a bench nobody asked for is a surprise.
+	SkipIfStopped bool
 }
 
 // RestoreInput holds parameters for restoring an archive into a NEW bench.

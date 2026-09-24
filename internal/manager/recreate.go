@@ -56,6 +56,11 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	release, err := s.lockBench(in.Name)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	mode := b.Mode
 	if mode == "" {
@@ -98,6 +103,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) error {
 	}
 
 	return s.Create(CreateInput{
+		recreating:        true,
 		Name:              b.Name,
 		FrappeBranch:      b.FrappeBranch,
 		FrappeRepo:        b.FrappeRepo,
