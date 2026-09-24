@@ -615,6 +615,11 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 on every push and PR. Docker-free coverage lives in `internal/archive/` (hostile tars built in
 memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.go`,
 `internal/bench/*_test.go` (template rendering) and `internal/dashboard/handler_test.go`.
+Scheduled backups are covered the same way: `backup_retention_test.go` simulates 60 days of
+runs per preset (count and coverage bounds, gaps, DST, the floor) and prunes real archives
+on disk; `backup_schedule_test.go` covers due/files decisions and run-due with docker
+unreachable; `internal/scheduler` drives install/uninstall through a stand-in `crontab`;
+`internal/lock` checks exclusion across processes by re-running the test binary.
 
 The create pipeline and most of the CLI are still untested, because they shell out to Docker.
 When adding behaviour there, pull the decidable part into a pure function and test that — the
