@@ -23,3 +23,6 @@ func unlock(f *os.File) error {
 	ol := new(windows.Overlapped)
 	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, ol)
 }
+
+// inheritOwner is a no-op on Windows.
+func inheritOwner(string) {}

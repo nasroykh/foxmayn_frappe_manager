@@ -33,6 +33,7 @@ func TryAcquire(path string) (*Lock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create lock directory: %w", err)
 	}
+	inheritOwner(filepath.Dir(path))
 	writable := true
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if errors.Is(err, os.ErrPermission) {
@@ -47,6 +48,7 @@ func TryAcquire(path string) (*Lock, error) {
 		return nil, err
 	}
 	if writable {
+		inheritOwner(path)
 		// The PID is informational only, for a human wondering who holds it.
 		_ = f.Truncate(0)
 		_, _ = f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
