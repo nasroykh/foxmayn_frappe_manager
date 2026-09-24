@@ -53,7 +53,7 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 		},
 	}
 
-	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd())
+	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd())
 
 	cmd.Flags().StringVar(&out, "out", "",
 		"Directory to write the archive into, or an explicit path ending in .tar "+
