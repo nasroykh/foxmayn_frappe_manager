@@ -51,7 +51,7 @@ jobs:
       - name: Create the source bench
         run: |
           mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
-          "$RUNNER_TEMP/ffm" create src --verbose --match-host-user --apps erpnext
+          "$RUNNER_TEMP/ffm" create src --mode dev --verbose --match-host-user --apps erpnext
 
       - name: Plant a marker the restore must bring back
         run: |
