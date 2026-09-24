@@ -18,7 +18,7 @@ type APIKeys struct {
 func (r *Runner) GenerateAdminAPIKeys(siteName string) (APIKeys, error) {
 	cmd := fmt.Sprintf(
 		`cd /workspace/frappe-bench && bench --site %s execute frappe.core.doctype.user.user.generate_keys --args "['Administrator']" 2>/dev/null | python3 -c "import sys,json,ast; print(json.dumps(ast.literal_eval(sys.stdin.read().strip())))"`,
-		siteName,
+		ShellQuote(siteName),
 	)
 	out, err := r.ExecSilent("frappe", "bash", "-c", cmd)
 	if err != nil {

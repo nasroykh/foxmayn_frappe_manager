@@ -355,7 +355,7 @@ func runBenchBackup(runner *bench.Runner, siteName, staging string, withFiles bo
 	// then prints the traceback only when verbose is set. Without it the
 	// exception is discarded before ffm ever sees it.
 	cmd := fmt.Sprintf("mkdir -p %s && cd /workspace/frappe-bench && bench --site %s backup --verbose --compress"+
-		" --backup-path-db %s --backup-path-conf %s", staging, siteName, d.db, d.conf)
+		" --backup-path-db %s --backup-path-conf %s", staging, bench.ShellQuote(siteName), d.db, d.conf)
 	if withFiles {
 		d.public = staging + "/public-files.tgz"
 		d.private = staging + "/private-files.tgz"

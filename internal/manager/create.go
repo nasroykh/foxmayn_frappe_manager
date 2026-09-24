@@ -104,10 +104,15 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		// The domain becomes the site name, a directory name, shell arguments
 		// and a Traefik rule between backticks, so it must be a hostname. Restore
 		// already applied this to archived domains; create did not.
+		// The NORMALISED form is kept: validating a trimmed, lower-cased copy
+		// and then using the raw value let "erp.example.com " through, with a
+		// trailing space that no Traefik Host() rule ever matches.
 		if !in.recreating {
-			if _, err := bench.NormalizeDomain(domain); err != nil {
+			normalized, err := bench.NormalizeDomain(domain)
+			if err != nil {
 				return fmt.Errorf("--domain: %w", err)
 			}
+			domain = normalized
 		}
 		if adminPassword == "admin" {
 			return fmt.Errorf("default admin password is not allowed in production — set --admin-password to a strong password")
