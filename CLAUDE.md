@@ -122,12 +122,15 @@ internal/
   manager/                → the shared service layer. All bench operations live here. Output goes
                             through ProgressWriter, never straight to stdout, so the CLI and the
                             dashboard's job runner share one pipeline.
-    service.go            → Service{Store, Verbose, mu, benchLocks, now}; serialises all store
+    service.go            → Service{Store, Verbose, mu, now}; serialises all store
                             access behind a mutex because the dashboard is concurrent; clock()
                             is the test-overridable time source
-    benchlock.go          → lockBench: cross-process, non-blocking, re-entrant within a Service
-                            (a failed Restore Deletes its own target). Taken by Backup, Restore
-                            (target), Delete, Recreate, PruneBackups and run-due. ErrBenchBusy,
+    benchlock.go          → lockBench: exclusive, non-blocking, and deliberately NOT re-entrant —
+                            the dashboard shares one Service across requests and jobs, so
+                            re-entry per Service would let a Delete pass a running Recreate.
+                            Callers already holding the lock use backupLocked / deleteLocked
+                            (run-due, Restore's rollback). Taken by Backup, Restore (target),
+                            Delete, Recreate, PruneBackups and run-due. ErrBenchBusy,
                             ErrBenchStopped
     types.go              → CreateInput / RecreateInput / RestartInput / SetProxyInput /
                             ExecInput / CleanLogsInput / BenchView / BenchDetail / DashboardStats
@@ -370,6 +373,10 @@ internal/
     never candidates.
   - The weekly tier counts the **current** week, so presets below weekly keep 5 weekly
     archives: with 4, coverage was measured at 18 days on some weekdays.
+  - Daily and weekly buckets keep the newest archive **with attachments** when the bucket has
+    one. Keeping plain "newest per day" under `--every 1h --files daily` left three weeks of
+    database-only history, and pruning the one archive with attachments made the files
+    cadence fire again at the next run (`--files weekly` ran ~daily).
   - A scheduled run never starts a stopped bench (`SkipIfStopped`), but `LiveStatus` "unknown"
     — docker unreachable, usually a cron PATH without it — is a **failure**, not a skip.
   - The crontab line carries the absolute ffm path, a PATH reaching docker and any
