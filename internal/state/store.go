@@ -30,6 +30,22 @@ type TunnelState struct {
 	Enabled   bool   `json:"enabled,omitempty"`
 }
 
+// BackupPolicy is a bench's scheduled-backup and retention policy.
+//
+// Retention is tiered: of the scheduled archives, the newest one in each of
+// the last KeepHourly hours, KeepDaily days and KeepWeekly ISO weeks is kept,
+// plus a fixed floor of the newest few whatever their age.
+type BackupPolicy struct {
+	Enabled    bool `json:"enabled"`
+	EveryHours int  `json:"every_hours"`
+	KeepHourly int  `json:"keep_hourly,omitempty"`
+	KeepDaily  int  `json:"keep_daily,omitempty"`
+	KeepWeekly int  `json:"keep_weekly,omitempty"`
+	// Files is how often a scheduled run includes attachments:
+	// "every-run", "daily", "weekly" or "never".
+	Files string `json:"files,omitempty"`
+}
+
 // Bench holds the persisted state for a single managed bench.
 type Bench struct {
 	Name         string `json:"name"`
@@ -90,8 +106,11 @@ type Bench struct {
 	// break the bind mount on a host that needed the remap.
 	MatchHostUser bool `json:"match_host_user,omitempty"`
 	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
-	Tunnel    *TunnelState `json:"tunnel,omitempty"`
-	CreatedAt time.Time    `json:"created_at"`
+	Tunnel *TunnelState `json:"tunnel,omitempty"`
+	// BackupSchedule is the scheduled-backup policy set by `ffm backup
+	// schedule`. Nil means no scheduled backups.
+	BackupSchedule *BackupPolicy `json:"backup_schedule,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
 }
 
 // IsProd reports whether the bench was created in production mode.

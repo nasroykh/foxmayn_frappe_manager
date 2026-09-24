@@ -2,6 +2,7 @@ package manager
 
 import (
 	"sync"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
@@ -16,6 +17,17 @@ type Service struct {
 	// Service currently holds (see lockBench).
 	benchLocksMu sync.Mutex
 	benchLocks   map[string]*heldBenchLock
+
+	// now overrides the clock in tests; nil means time.Now.
+	now func() time.Time
+}
+
+// clock returns the current time, through the test override when set.
+func (s *Service) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // Default returns a Service using the standard state file.

@@ -18,7 +18,9 @@ import (
 // the class of bug TLSMode and the prod tuning fields were persisted to fix.
 func fullBench() state.Bench {
 	return state.Bench{
-		Name:              "bkptest",
+		Name: "bkptest",
+		BackupSchedule: &state.BackupPolicy{Enabled: true, EveryHours: 24, KeepDaily: 7,
+			KeepWeekly: 5, Files: "every-run"},
 		Dir:               "/home/nas/frappe/bkptest",
 		WebPort:           8010,
 		SocketIOPort:      9010,
