@@ -34,8 +34,10 @@ create, start, stop, and delete Frappe development benches with a single command
 			"(set $FFM_INTERACTIVE=1 to force prompting back on)")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		// Skip when the user is already running `ffm update` to avoid duplicate output.
-		if cmd.Name() != "update" {
+		// Skip when the user is already running `ffm update` to avoid duplicate
+		// output, and for the hourly `ffm backup run-due`, which would otherwise
+		// make a network call every hour on every host.
+		if cmd.Name() != "update" && cmd.CommandPath() != "ffm backup run-due" {
 			runUpdateCheck()
 		}
 		return nil

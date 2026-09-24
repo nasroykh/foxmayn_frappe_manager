@@ -78,8 +78,15 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) (backupErr error) {
 	// refusing here would block the most valuable moment to take a backup: just
 	// before `ffm delete` or `ffm recreate`.
 	startedForBackup := false
-	if s.LiveStatus(b) != "running" {
+	if status := s.LiveStatus(b); status != "running" {
 		if in.SkipIfStopped {
+			// "unknown" means docker could not be asked at all — under cron,
+			// typically a PATH without docker. Reporting that as "stopped"
+			// would turn a broken scheduler into a silent string of skips.
+			if status == "unknown" {
+				return fmt.Errorf("could not query Docker for the state of %q — is docker on "+
+					"PATH and the daemon running?", b.Name)
+			}
 			return ErrBenchStopped
 		}
 		pw.Step("Starting the bench for the backup (it was stopped)")
