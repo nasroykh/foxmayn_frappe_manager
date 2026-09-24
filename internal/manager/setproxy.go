@@ -63,7 +63,7 @@ func (s *Service) runSetProxy(name string, port int, host string, noSSL, reset, 
 
 		siteCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			b.SiteName, proxyHost,
+			bench.ShellQuote(b.SiteName), bench.ShellQuote(proxyHost),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)
@@ -128,7 +128,7 @@ func (s *Service) runSetProxyReset(b state.Bench, runner *bench.Runner, pw Progr
 		hostName := "https://" + b.Domain
 		siteCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			b.SiteName, hostName,
+			bench.ShellQuote(b.SiteName), bench.ShellQuote(hostName),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
 			return fmt.Errorf("reset host_name: %w\n%s", err, out)

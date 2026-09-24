@@ -338,13 +338,18 @@ func lastLine(out string) string {
 // ConfigureGitHubToken sets up a git credential helper inside the frappe
 // container so that HTTPS github.com URLs authenticate with the given token.
 func (r *Runner) ConfigureGitHubToken(token string) error {
-	cmd := fmt.Sprintf(
-		"printf 'https://x-oauth-basic:%s@github.com\\n' > /tmp/.git-credentials"+
-			" && git config --global credential.helper 'store --file /tmp/.git-credentials'",
-		token,
-	)
-	_, err := r.ExecSilent("frappe", "bash", "-c", cmd)
+	_, err := r.ExecSilent("frappe", "bash", "-c", GitCredentialsCmd(token))
 	return err
+}
+
+// GitCredentialsCmd writes a git credential store for github.com and points
+// git at it. The token is passed to printf as a quoted ARGUMENT, never inside
+// its format string: a token containing ' would otherwise end the quoting and
+// one containing % would be read as a format directive.
+func GitCredentialsCmd(token string) string {
+	return "printf '%s\\n' " + ShellQuote("https://x-oauth-basic:"+token+"@github.com") +
+		" > /tmp/.git-credentials" +
+		" && git config --global credential.helper 'store --file /tmp/.git-credentials'"
 }
 
 // CleanupGitHubToken removes the temporary git credentials set by ConfigureGitHubToken.

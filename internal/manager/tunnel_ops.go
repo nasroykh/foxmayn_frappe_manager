@@ -207,7 +207,7 @@ func (s *Service) applyTunnelFrappeConfig(b state.Bench, runner *bench.Runner, p
 
 	siteCmd := fmt.Sprintf(
 		"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-		b.SiteName, publicURL,
+		bench.ShellQuote(b.SiteName), bench.ShellQuote(publicURL),
 	)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", siteCmd); err != nil {
 		return fmt.Errorf("set host_name: %w\n%s", err, out)

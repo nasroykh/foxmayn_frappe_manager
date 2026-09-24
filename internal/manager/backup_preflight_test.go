@@ -398,9 +398,14 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 			wantSub: "app commit",
 		},
 		{
-			name:    "password that would break out of bash -c",
-			mutate:  func(m *Manifest) { m.Secrets.AdminPassword = "a';id;'" },
+			name:    "admin password that set-admin-password would read as an option",
+			mutate:  func(m *Manifest) { m.Secrets.AdminPassword = "--help" },
 			wantSub: "administrator password",
+		},
+		{
+			name:    "database password that would break docker-compose.yml",
+			mutate:  func(m *Manifest) { m.Bench.DBPassword = `pw"x` },
+			wantSub: "database password",
 		},
 		{
 			name:    "backtick in the domain reaches a Traefik label",
@@ -438,9 +443,36 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 		}
 	})
 
+	// The rejection message recommends --admin-password; passing it must
+	// actually clear the problem, since the archived password is then unused.
+	t.Run("--admin-password replaces a rejected archived password", func(t *testing.T) {
+		m := devManifest()
+		m.Secrets.AdminPassword = "-starts-with-dash"
+		if !hasProblem(checkManifestValues(m, RestoreInput{}), "administrator password") {
+			t.Fatal("precondition: the archived password should be rejected")
+		}
+		if hasProblem(checkManifestValues(m, RestoreInput{AdminPassword: "N3w-pass"}), "administrator password") {
+			t.Fatal("--admin-password did not clear the archived password's problem")
+		}
+	})
+
+	// Whatever ffm create accepts must also restore: these passwords are
+	// valid for create now that every use is shell-quoted.
+	t.Run("passwords create accepts are restorable", func(t *testing.T) {
+		m := devManifest()
+		m.Secrets.AdminPassword = "it's a $(pass)"
+		m.Secrets.DBRootPassword = "a&b|c;d(e)<f>'`"
+		m.Bench.DBPassword = m.Secrets.DBRootPassword
+		for _, p := range checkManifestValues(m, RestoreInput{}) {
+			if strings.Contains(p.Message, "password") {
+				t.Fatalf("a create-valid password was refused on restore: %s", p.Message)
+			}
+		}
+	})
+
 	t.Run("a rejected credential is never echoed back", func(t *testing.T) {
 		m := devManifest()
-		m.Secrets.DBRootPassword = "hunter2';id;'"
+		m.Secrets.DBRootPassword = "hunter2 $x"
 		for _, p := range checkManifestValues(m, RestoreInput{}) {
 			if strings.Contains(p.Message, "hunter2") {
 				t.Fatalf("the rejected password appeared in the error: %s", p.Message)

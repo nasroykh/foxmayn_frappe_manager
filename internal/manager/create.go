@@ -85,11 +85,34 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if dbType != "mariadb" && dbType != "postgres" {
 		return fmt.Errorf("invalid --db-type %q: must be 'mariadb' or 'postgres'", dbType)
 	}
+	// Recreate replays an existing bench's own passwords, which already
+	// worked; only new ones are checked.
+	if !in.recreating {
+		if err := bench.ValidateDBPassword(dbPassword); err != nil {
+			return err
+		}
+		if err := bench.ValidateAdminPassword(adminPassword); err != nil {
+			return err
+		}
+	}
 
 	// Prod-specific validation
 	if mode == "prod" {
 		if domain == "" {
 			return fmt.Errorf("--domain is required for production mode (e.g. --domain erp.example.com)")
+		}
+		// The domain becomes the site name, a directory name, shell arguments
+		// and a Traefik rule between backticks, so it must be a hostname. Restore
+		// already applied this to archived domains; create did not.
+		// The NORMALISED form is kept: validating a trimmed, lower-cased copy
+		// and then using the raw value let "erp.example.com " through, with a
+		// trailing space that no Traefik Host() rule ever matches.
+		if !in.recreating {
+			normalized, err := bench.NormalizeDomain(domain)
+			if err != nil {
+				return fmt.Errorf("--domain: %w", err)
+			}
+			domain = normalized
 		}
 		if adminPassword == "admin" {
 			return fmt.Errorf("default admin password is not allowed in production — set --admin-password to a strong password")
@@ -353,9 +376,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// Run bench init — dev mode also installs Claude/agent skills
 	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeSrc))
 	var benchInitCmd string
-	benchInitRepoArgs := fmt.Sprintf("--frappe-branch %s", frappeInitBranch)
+	benchInitRepoArgs := "--frappe-branch " + bench.ShellQuote(frappeInitBranch)
 	if frappeRepoURL != "" {
-		benchInitRepoArgs += fmt.Sprintf(" --frappe-path %s", frappeRepoURL)
+		benchInitRepoArgs += " --frappe-path " + bench.ShellQuote(frappeRepoURL)
 	}
 	baseInit := fmt.Sprintf(
 		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
@@ -380,12 +403,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// inject credentials directly into the one-off run container. ConfigureGitHubToken
 	// uses docker compose exec (needs a running container) so it cannot cover this step.
 	if githubToken != "" {
-		credSetup := fmt.Sprintf(
-			"printf 'https://x-oauth-basic:%s@github.com\\n' > /tmp/.git-credentials"+
-				" && git config --global credential.helper 'store --file /tmp/.git-credentials'",
-			githubToken,
-		)
-		benchInitCmd = credSetup + " && " + benchInitCmd
+		benchInitCmd = bench.GitCredentialsCmd(githubToken) + " && " + benchInitCmd
 	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
 		return fmt.Errorf("bench init: %w", err)
@@ -498,12 +516,12 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if dbType == "postgres" {
 		newSiteCmd = fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench new-site %s --db-type postgres --db-root-username postgres --db-root-password %s --admin-password %s",
-			siteName, dbPassword, adminPassword,
+			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
 		)
 	} else {
 		newSiteCmd = fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
-			siteName, dbPassword, adminPassword,
+			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
 		)
 	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {
@@ -511,7 +529,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 
 	step("Setting default site")
-	useSiteCmd := fmt.Sprintf("cd /workspace/frappe-bench && bench use %s", siteName)
+	useSiteCmd := "cd /workspace/frappe-bench && bench use " + bench.ShellQuote(siteName)
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", useSiteCmd); err != nil {
 		return fmt.Errorf("bench use: %w\n%s", err, out)
 	}
@@ -521,7 +539,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step("Enabling developer mode")
 		devModeCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config developer_mode 1",
-			siteName,
+			bench.ShellQuote(siteName),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
 			return fmt.Errorf("enable developer mode: %w\n%s", err, out)
@@ -539,7 +557,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
 		hostCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			siteName, resolvedProxyHost,
+			bench.ShellQuote(siteName), bench.ShellQuote(resolvedProxyHost),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)
@@ -555,7 +573,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
 		hostCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			siteName, resolvedProxyHost,
+			bench.ShellQuote(siteName), bench.ShellQuote(resolvedProxyHost),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)
@@ -596,7 +614,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Installing app %q on site %q", displayName, siteName))
 		installCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s install-app %s --force",
-			siteName, displayName,
+			bench.ShellQuote(siteName), bench.ShellQuote(displayName),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", installCmd); err != nil {
 			return fmt.Errorf("bench install-app %s: %w\n%s", displayName, err, out)
