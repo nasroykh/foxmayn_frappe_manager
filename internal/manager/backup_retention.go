@@ -80,37 +80,53 @@ func prunable(a ArchiveInfo, benchName string) bool {
 
 // selectRetained splits scheduled archives (newest first) into those the
 // policy keeps and those it drops. An archive kept by any rule survives.
+//
+// The daily and weekly tiers prefer, within each bucket, the newest archive
+// that carries attachments. With `--every 1h --files daily` a day's newest
+// archive is database-only, so keeping "the newest per day" would leave three
+// weeks of history without a single attachment — and would prune the one
+// archive that has them, which in turn makes the files cadence think they are
+// due again at the next run.
 func selectRetained(archives []ArchiveInfo, p state.BackupPolicy, loc *time.Location) (keep, drop []ArchiveInfo) {
 	keepIdx := map[int]bool{}
 	for i := 0; i < len(archives) && i < RetentionFloor; i++ {
 		keepIdx[i] = true
 	}
 	tiers := []struct {
-		limit  int
-		bucket func(time.Time) string
+		limit       int
+		preferFiles bool
+		bucket      func(time.Time) string
 	}{
-		{p.KeepHourly, func(t time.Time) string { return t.Format("2006-01-02T15") }},
-		{p.KeepDaily, func(t time.Time) string { return t.Format("2006-01-02") }},
-		{p.KeepWeekly, func(t time.Time) string {
+		{p.KeepHourly, false, func(t time.Time) string { return t.Format("2006-01-02T15") }},
+		{p.KeepDaily, true, func(t time.Time) string { return t.Format("2006-01-02") }},
+		{p.KeepWeekly, true, func(t time.Time) string {
 			y, w := t.ISOWeek()
 			return fmt.Sprintf("%d-W%02d", y, w)
 		}},
 	}
+	hasFiles := func(i int) bool { return archives[i].Header.HasTier(TierFiles) }
 	for _, tier := range tiers {
 		if tier.limit <= 0 {
 			continue
 		}
-		seen := map[string]bool{}
+		chosen := map[string]int{}
+		var order []string
 		for i, a := range archives {
-			if len(seen) >= tier.limit {
-				break
-			}
 			key := tier.bucket(a.CreatedAt().In(loc))
-			if seen[key] {
-				continue
+			j, seen := chosen[key]
+			switch {
+			case !seen && len(order) >= tier.limit:
+				// Newest first, so every later archive is in an older bucket.
+				goto done
+			case !seen:
+				chosen[key] = i
+				order = append(order, key)
+			case tier.preferFiles && !hasFiles(j) && hasFiles(i):
+				chosen[key] = i
 			}
-			// Newest first, so the first archive met in a bucket is its newest.
-			seen[key] = true
+		}
+	done:
+		for _, i := range chosen {
 			keepIdx[i] = true
 		}
 	}

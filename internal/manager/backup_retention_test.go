@@ -204,3 +204,67 @@ func TestPruneNeverTouchesManualForeignOrUnreadable(t *testing.T) {
 		t.Errorf("stale .partial not removed")
 	}
 }
+
+// simulateWithFiles runs a schedule the way run-due does, deciding whether
+// each run carries attachments from the archives that survived pruning.
+// It returns the survivors and how many runs included attachments.
+func simulateWithFiles(p state.BackupPolicy, start time.Time, span time.Duration) ([]ArchiveInfo, int) {
+	var live []ArchiveInfo
+	filesRuns := 0
+	every := time.Duration(p.EveryHours) * time.Hour
+	for t := start; !t.After(start.Add(span)); t = t.Add(every) {
+		st := ScheduleStatus{Policy: p}
+		for _, a := range live {
+			if a.Header.HasTier(TierFiles) {
+				st.LastFiles = a.CreatedAt()
+				break
+			}
+		}
+		tiers := []string{TierCore}
+		if st.includeFiles(t) {
+			tiers = append(tiers, TierFiles)
+			filesRuns++
+		}
+		a := ArchiveInfo{Header: Header{CreatedAt: t, Trigger: TriggerScheduled, Tiers: tiers}}
+		live = append([]ArchiveInfo{a}, live...)
+		live, _ = selectRetained(live, p, testLoc)
+	}
+	return live, filesRuns
+}
+
+func TestRetentionKeepsAttachmentsThroughHistory(t *testing.T) {
+	start := time.Date(2026, 2, 2, 0, 17, 0, 0, testLoc)
+	live, _ := simulateWithFiles(PresetPolicy(1), start, 40*24*time.Hour)
+	newest := live[0].CreatedAt()
+	for _, a := range live {
+		if newest.Sub(a.CreatedAt()) > 26*time.Hour && !a.Header.HasTier(TierFiles) {
+			t.Errorf("archive from %v (%.0fh old) kept without attachments — the daily/weekly "+
+				"tiers must prefer the archive that has them", a.CreatedAt(), newest.Sub(a.CreatedAt()).Hours())
+		}
+	}
+	if cover := newest.Sub(live[len(live)-1].CreatedAt()); cover < 21*24*time.Hour {
+		t.Errorf("coverage %v, want at least 3 weeks", cover)
+	}
+}
+
+func TestWeeklyFilesCadenceIsWeekly(t *testing.T) {
+	p := PresetPolicy(1)
+	p.Files = FilesWeekly
+	start := time.Date(2026, 2, 2, 0, 17, 0, 0, testLoc)
+	live, filesRuns := simulateWithFiles(p, start, 28*24*time.Hour)
+	// 28 days of hourly runs with weekly attachments: about 5 runs carry
+	// them (first run + one per week). If the weekly archive were pruned,
+	// the cadence would restart daily and this would approach 28.
+	if filesRuns < 4 || filesRuns > 6 {
+		t.Fatalf("%d runs carried attachments in 4 weeks, want ~5 (weekly)", filesRuns)
+	}
+	withFiles := 0
+	for _, a := range live {
+		if a.Header.HasTier(TierFiles) {
+			withFiles++
+		}
+	}
+	if withFiles < 4 {
+		t.Fatalf("only %d archives with attachments survived, want one per retained week", withFiles)
+	}
+}
