@@ -43,5 +43,11 @@ func ValidateAdminPassword(pw string) error {
 	if strings.ContainsAny(pw, "\x00\n\r") {
 		return fmt.Errorf("the Administrator password cannot contain line breaks or NUL")
 	}
+	// `bench set-admin-password` takes it as a positional argument, where a
+	// leading dash is read as an unknown option — and on restore that failure
+	// comes after the database has already been replaced.
+	if strings.HasPrefix(pw, "-") {
+		return fmt.Errorf("the Administrator password cannot start with '-'")
+	}
 	return nil
 }

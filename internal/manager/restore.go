@@ -547,12 +547,12 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 	// archived configuration or the restored database brought with it — the
 	// archive's host_name and socketio_port describe the OLD bench.
 	pw.Step("Re-applying this bench's site settings")
-	settings := []string{"use " + b.SiteName}
+	settings := []string{"use " + bench.ShellQuote(b.SiteName)}
 	if b.IsDev() {
-		settings = append(settings, "--site "+b.SiteName+" set-config developer_mode 1")
+		settings = append(settings, "--site "+bench.ShellQuote(b.SiteName)+" set-config developer_mode 1")
 	}
 	if b.IsProd() && b.ProxyHost != "" {
-		settings = append(settings, "--site "+b.SiteName+" set-config host_name "+b.ProxyHost)
+		settings = append(settings, "--site "+bench.ShellQuote(b.SiteName)+" set-config host_name "+bench.ShellQuote(b.ProxyHost))
 	}
 	for _, sub := range settings {
 		if out, err := runner.ExecSilent("frappe", "bash", "-c",

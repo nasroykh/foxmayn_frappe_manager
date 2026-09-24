@@ -363,9 +363,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// Run bench init — dev mode also installs Claude/agent skills
 	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeSrc))
 	var benchInitCmd string
-	benchInitRepoArgs := fmt.Sprintf("--frappe-branch %s", frappeInitBranch)
+	benchInitRepoArgs := "--frappe-branch " + bench.ShellQuote(frappeInitBranch)
 	if frappeRepoURL != "" {
-		benchInitRepoArgs += fmt.Sprintf(" --frappe-path %s", frappeRepoURL)
+		benchInitRepoArgs += " --frappe-path " + bench.ShellQuote(frappeRepoURL)
 	}
 	baseInit := fmt.Sprintf(
 		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
@@ -390,12 +390,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// inject credentials directly into the one-off run container. ConfigureGitHubToken
 	// uses docker compose exec (needs a running container) so it cannot cover this step.
 	if githubToken != "" {
-		credSetup := fmt.Sprintf(
-			"printf 'https://x-oauth-basic:%s@github.com\\n' > /tmp/.git-credentials"+
-				" && git config --global credential.helper 'store --file /tmp/.git-credentials'",
-			githubToken,
-		)
-		benchInitCmd = credSetup + " && " + benchInitCmd
+		benchInitCmd = bench.GitCredentialsCmd(githubToken) + " && " + benchInitCmd
 	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
 		return fmt.Errorf("bench init: %w", err)
@@ -549,7 +544,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
 		hostCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			siteName, resolvedProxyHost,
+			bench.ShellQuote(siteName), bench.ShellQuote(resolvedProxyHost),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)
@@ -565,7 +560,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step(fmt.Sprintf("Setting host_name to %s", resolvedProxyHost))
 		hostCmd := fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench --site %s set-config host_name %s",
-			siteName, resolvedProxyHost,
+			bench.ShellQuote(siteName), bench.ShellQuote(resolvedProxyHost),
 		)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)

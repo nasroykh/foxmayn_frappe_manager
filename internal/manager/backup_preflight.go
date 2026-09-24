@@ -304,12 +304,6 @@ var (
 	appNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	// commitRe matches a full or abbreviated git object id.
 	commitRe = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-	// secretRe and shellMetaRe gate the credentials an archive carries. Every
-	// command now shell-quotes them, so this is defence in depth against an
-	// untrusted archive rather than the only barrier.
-	secretRe = regexp.MustCompile(`^[A-Za-z0-9._~:@!*+,=/#$%^&()<>?|;'"-]+$`)
-	// shellMetaRe matches what must never reach a `bash -c` string unquoted.
-	shellMetaRe = regexp.MustCompile("[`$;&|<>()\\\\'\"\\s]")
 )
 
 // checkManifestValues validates every archive-sourced value that ends up in a
@@ -347,27 +341,33 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 			bad("app commit", app.Commit)
 		}
 	}
-	adminPassword := m.Secrets.AdminPassword
-	if in.AdminPassword != "" {
-		// Not used: --admin-password replaces it, which is exactly the way out
-		// the message below recommends.
-		adminPassword = ""
+	// Credentials are shell-quoted wherever they are used, so they are held to
+	// the same rules as on `ffm create` — anything create accepts must also
+	// restore. The error never echoes the value back.
+	if m.Secrets.AdminPassword != "" && in.AdminPassword == "" {
+		// Skipped under --admin-password, which replaces it.
+		if err := bench.ValidateAdminPassword(m.Secrets.AdminPassword); err != nil {
+			problems = append(problems, Problem{Message: "the archive's administrator password " +
+				"cannot be used (" + strings.TrimPrefix(err.Error(), "the Administrator password ") +
+				") — restore with an explicit --admin-password"})
+		}
 	}
-	for _, f := range []struct{ field, value string }{
-		{"administrator password", adminPassword},
-		{"database password", m.Secrets.DBRootPassword},
-		{"backup encryption key", m.Secrets.BackupEncryptionKey},
-	} {
-		if f.value == "" {
+	for _, pw := range []string{m.Secrets.DBRootPassword, m.Bench.DBPassword} {
+		if pw == "" {
 			continue
 		}
-		if shellMetaRe.MatchString(f.value) || !secretRe.MatchString(f.value) {
-			// Never echo a credential back, even a rejected one.
-			problems = append(problems, Problem{
-				Message: fmt.Sprintf("the archive's %s contains characters ffm cannot pass to a shell "+
-					"safely — restore with an explicit --admin-password, or take the backup again", f.field),
-			})
+		if err := bench.ValidateDBPassword(pw); err != nil {
+			problems = append(problems, Problem{Message: "the archive's database password cannot be " +
+				"used: it contains $, \", \\, whitespace or control characters, which ffm cannot " +
+				"write into docker-compose.yml"})
+			break
 		}
+	}
+	if k := m.Secrets.BackupEncryptionKey; k != "" && strings.ContainsAny(k, "\x00\n\r") {
+		problems = append(problems, Problem{
+			Message:  "the archive's backup encryption key contains line breaks or NUL",
+			Override: "--encryption-key <key>",
+		})
 	}
 	// The domain is rendered into a Traefik router rule between backticks, where
 	// an unvalidated value injects router configuration.

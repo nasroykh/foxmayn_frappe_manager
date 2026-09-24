@@ -73,9 +73,9 @@ func ParseAppSpec(raw, frappeBranch string) AppSpec {
 // GetAppCmd returns the bench get-app shell command for this spec.
 func (a AppSpec) GetAppCmd() string {
 	if a.Branch != "" {
-		return "bench get-app --branch " + a.Branch + " " + a.Source
+		return "bench get-app --branch " + ShellQuote(a.Branch) + " " + ShellQuote(a.Source)
 	}
-	return "bench get-app " + a.Source
+	return "bench get-app " + ShellQuote(a.Source)
 }
 
 // DisplayName returns a short human-readable label for log output.
