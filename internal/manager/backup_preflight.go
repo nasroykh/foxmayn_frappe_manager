@@ -304,9 +304,9 @@ var (
 	appNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	// commitRe matches a full or abbreviated git object id.
 	commitRe = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-	// secretRe matches a credential ffm can safely pass through a shell.
-	// Create already interpolates passwords unquoted, so anything outside this
-	// set could not have survived `ffm create` either.
+	// secretRe and shellMetaRe gate the credentials an archive carries. Every
+	// command now shell-quotes them, so this is defence in depth against an
+	// untrusted archive rather than the only barrier.
 	secretRe = regexp.MustCompile(`^[A-Za-z0-9._~:@!*+,=/#$%^&()<>?|;'"-]+$`)
 	// shellMetaRe matches what must never reach a `bash -c` string unquoted.
 	shellMetaRe = regexp.MustCompile("[`$;&|<>()\\\\'\"\\s]")
@@ -347,8 +347,14 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 			bad("app commit", app.Commit)
 		}
 	}
+	adminPassword := m.Secrets.AdminPassword
+	if in.AdminPassword != "" {
+		// Not used: --admin-password replaces it, which is exactly the way out
+		// the message below recommends.
+		adminPassword = ""
+	}
 	for _, f := range []struct{ field, value string }{
-		{"administrator password", m.Secrets.AdminPassword},
+		{"administrator password", adminPassword},
 		{"database password", m.Secrets.DBRootPassword},
 		{"backup encryption key", m.Secrets.BackupEncryptionKey},
 	} {

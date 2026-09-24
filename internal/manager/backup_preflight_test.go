@@ -438,6 +438,16 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 		}
 	})
 
+	// The rejection message recommends --admin-password; passing it must
+	// actually clear the problem, since the archived password is then unused.
+	t.Run("--admin-password replaces a rejected archived password", func(t *testing.T) {
+		m := devManifest()
+		m.Secrets.AdminPassword = "a';id;'"
+		if hasProblem(checkManifestValues(m, RestoreInput{AdminPassword: "N3w-pass"}), "administrator password") {
+			t.Fatal("--admin-password did not clear the archived password's problem")
+		}
+	})
+
 	t.Run("a rejected credential is never echoed back", func(t *testing.T) {
 		m := devManifest()
 		m.Secrets.DBRootPassword = "hunter2';id;'"

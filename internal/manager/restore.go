@@ -481,14 +481,15 @@ func (s *Service) runBenchRestore(runner *bench.Runner, b state.Bench, m Manifes
 	//   --encryption-key   only when the dump really is encrypted; against a
 	//                      plaintext dump it derails the file restore with
 	//                      "Invalid path".
+	q := bench.ShellQuote
 	cmd := fmt.Sprintf("cd /workspace/frappe-bench && bench --site %s restore %s"+
 		" --db-root-username %s --db-root-password %s --force",
-		b.SiteName, dbRemote, rootUser, b.DBPassword)
+		q(b.SiteName), q(dbRemote), rootUser, q(b.DBPassword))
 	if withFiles {
-		cmd += fmt.Sprintf(" --with-public-files %s --with-private-files %s", publicRemote, privateRemote)
+		cmd += fmt.Sprintf(" --with-public-files %s --with-private-files %s", q(publicRemote), q(privateRemote))
 	}
 	if key := restoreEncryptionKey(m, in); key != "" {
-		cmd += " --encryption-key " + key
+		cmd += " --encryption-key " + q(key)
 	}
 
 	pw.Step("Restoring the database" + filesSuffix(withFiles))
@@ -515,7 +516,7 @@ func restoreEncryptionKey(m Manifest, in RestoreInput) string {
 func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m Manifest,
 	in RestoreInput, pw ProgressWriter) error {
 
-	sitePrefix := "cd /workspace/frappe-bench && bench --site " + b.SiteName + " "
+	sitePrefix := "cd /workspace/frappe-bench && bench --site " + bench.ShellQuote(b.SiteName) + " "
 
 	// The Administrator password. `bench restore --admin-password` looks like it
 	// does this and does not: install_app returns early because the restored
@@ -523,7 +524,7 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 	// the password — never runs. This is the only thing that actually sets it.
 	pw.Step("Setting the Administrator password")
 	if out, err := runner.ExecSilent("frappe", "bash", "-c",
-		sitePrefix+"set-admin-password "+b.AdminPassword); err != nil {
+		sitePrefix+"set-admin-password "+bench.ShellQuote(b.AdminPassword)); err != nil {
 		return fmt.Errorf("set the Administrator password: %w\n%s", err,
 			scrubSecrets(out, benchSecrets(b)...))
 	}

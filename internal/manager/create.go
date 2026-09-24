@@ -85,6 +85,16 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if dbType != "mariadb" && dbType != "postgres" {
 		return fmt.Errorf("invalid --db-type %q: must be 'mariadb' or 'postgres'", dbType)
 	}
+	// Recreate replays an existing bench's own passwords, which already
+	// worked; only new ones are checked.
+	if !in.recreating {
+		if err := bench.ValidateDBPassword(dbPassword); err != nil {
+			return err
+		}
+		if err := bench.ValidateAdminPassword(adminPassword); err != nil {
+			return err
+		}
+	}
 
 	// Prod-specific validation
 	if mode == "prod" {
@@ -498,12 +508,12 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if dbType == "postgres" {
 		newSiteCmd = fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench new-site %s --db-type postgres --db-root-username postgres --db-root-password %s --admin-password %s",
-			siteName, dbPassword, adminPassword,
+			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
 		)
 	} else {
 		newSiteCmd = fmt.Sprintf(
 			"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
-			siteName, dbPassword, adminPassword,
+			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
 		)
 	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {

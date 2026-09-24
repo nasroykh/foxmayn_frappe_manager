@@ -447,6 +447,13 @@ internal/
 - Credentials default to `--admin-password admin` and `--db-password ffm123456`. Prod rejects the
   former. Failure paths interpolate `CombinedOutput` into errors, so a failed `bench new-site`
   can print the DB root password.
+- **Every value in a `bash -c` string goes through `bench.ShellQuote`.** Passwords were once
+  interpolated raw: a `$` in `--admin-password` was expanded, so the site got a different
+  password than the one ffm recorded, and a space broke `bench new-site`. The database password
+  is also rendered into docker-compose.yml (double-quoted YAML, Compose `$` interpolation), so
+  `bench.ValidateDBPassword` refuses `$`, `"`, `\`, whitespace and control characters for new
+  benches; the Administrator password may be anything on one line. Archive credentials are
+  additionally gated by `checkManifestValues` (defence in depth for an untrusted archive).
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
 
