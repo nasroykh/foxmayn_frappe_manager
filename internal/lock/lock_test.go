@@ -59,3 +59,23 @@ func TestHeldAcrossProcesses(t *testing.T) {
 		t.Fatalf("child acquire while parent holds the lock: %v, want exit 3 (ErrHeld)", err)
 	}
 }
+
+// TestReadOnlyLockFileStillLocks is the `sudo ffm` leftover: a lock file the
+// current user cannot write must still be lockable.
+func TestReadOnlyLockFileStillLocks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ro.lock")
+	if err := os.WriteFile(path, nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can write a 0444 file; the fallback is not reachable")
+	}
+	l, err := TryAcquire(path)
+	if err != nil {
+		t.Fatalf("acquire a read-only lock file: %v", err)
+	}
+	defer l.Release()
+	if _, err := TryAcquire(path); !errors.Is(err, ErrHeld) {
+		t.Fatalf("second acquire = %v, want ErrHeld", err)
+	}
+}

@@ -190,6 +190,7 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	tmpName := tmp.Name()
 	cleanup := func() { os.Remove(tmpName) }
+	keepOwner(tmp, path)
 	if err := tmp.Chmod(perm); err != nil {
 		tmp.Close()
 		cleanup()

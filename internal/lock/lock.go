@@ -26,10 +26,19 @@ type Lock struct {
 // TryAcquire takes an exclusive lock on path without waiting. It returns
 // ErrHeld when another process (or another handle in this process) holds it.
 func TryAcquire(path string) (*Lock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	// Lock files hold nothing secret, so the directory and files are readable
+	// by all: a lock file created once under `sudo ffm` must not make the same
+	// lock unopenable for the real user afterwards. A lock only needs a
+	// read-only handle, which is the fallback when the file is not writable.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create lock directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	writable := true
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if errors.Is(err, os.ErrPermission) {
+		writable = false
+		f, err = os.Open(path)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
@@ -37,9 +46,11 @@ func TryAcquire(path string) (*Lock, error) {
 		f.Close()
 		return nil, err
 	}
-	// The PID is informational only, for a human wondering who holds it.
-	_ = f.Truncate(0)
-	_, _ = f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
+	if writable {
+		// The PID is informational only, for a human wondering who holds it.
+		_ = f.Truncate(0)
+		_, _ = f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
+	}
 	return &Lock{f: f, path: path}, nil
 }
 
