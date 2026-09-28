@@ -148,13 +148,15 @@ ffm restore <archive>                    # rebuild under the archive's own bench
 ffm restore <archive> staging            # rebuild under a different name
 ffm restore <archive> staging --dry-run  # validate and print the plan, change nothing
 ffm restore <archive> staging --pin-apps # apps at the archived commits, not branch head
+ffm restore <archive> --app my_app=git@github.com:acme/my_app.git@main  # app source the archive lacks
 ```
 
 The archive holds the database, the site's public and private files, the site and bench
-configuration, and each app's git commit. It does **not** hold the app source, the Python
-virtualenv or the built assets — restore rebuilds those, which is why a full ERPNext bench
-backs up to well under a megabyte and restores onto a different machine, architecture or
-host user.
+configuration, and each app's git remote, branch and commit. It does **not** hold the Python
+virtualenv, the built assets or the source of apps that can be cloned back — restore rebuilds
+those, which is why a full ERPNext bench backs up to well under a megabyte and restores onto
+a different machine, architecture or host user. Apps that cannot be cloned (no git, no
+reachable remote, unpushed commit) have their source archived; `--vendor-apps` forces it.
 
 `ffm restore` always creates a **new** bench and never writes into an existing one, so a
 failed restore leaves the machine as it found it. The target name must be free.

@@ -53,6 +53,24 @@ jobs:
           mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
           "$RUNNER_TEMP/ffm" create src --mode dev --verbose --match-host-user --apps erpnext
 
+      # Apps a restore cannot clone: one that is not a git repository at all
+      # (bench new-app --no-git) and one with git but no remote. Their source has
+      # to travel inside the archive, so each gets a marker file the restored
+      # bench must carry — a git checkout could never reproduce the second one,
+      # which is untracked.
+      - name: Add apps that cannot be cloned back
+        run: |
+          docker compose -p ffm-src -f "$FFM_BENCHES_DIR/src/docker-compose.yml" \
+            exec -T frappe bash -c '
+              set -e
+              cd /workspace/frappe-bench
+              printf "CI No Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app --no-git ci_nogit
+              printf "CI Local Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app ci_localgit
+              echo "MARKER = \"ci-nogit\"" > apps/ci_nogit/ci_nogit/marker.py
+              echo "MARKER = \"ci-localgit\"" > apps/ci_localgit/ci_localgit/marker.py
+              bench --site src.localhost install-app ci_nogit
+              bench --site src.localhost install-app ci_localgit'
+
       - name: Plant a marker the restore must bring back
         run: |
           docker compose -p ffm-src -f "$FFM_BENCHES_DIR/src/docker-compose.yml" \
@@ -96,6 +114,53 @@ jobs:
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --dry-run
 
+      # Every assertion here reads the archive itself, so a regression in what a
+      # backup RECORDS fails before the slow restore rather than after it.
+      #
+      # erpnext is the guard for the original bug: bench clones with
+      # --origin upstream, so a backup that only asked git for "origin" recorded
+      # no remote for any app, and a restore then fell back to a bare-name
+      # `bench get-app`, which cannot find anything outside the frappe and
+      # erpnext GitHub organisations.
+      - name: Assert the archive records where each app comes from
+        run: |
+          python3 - "$ARCHIVE" <<'PY'
+          import json, sys, tarfile
+
+          with tarfile.open(sys.argv[1]) as t:
+              manifest = json.load(t.extractfile("ffm-backup/manifest.json"))
+              header = json.load(t.extractfile("ffm-backup/header.json"))
+              names = t.getnames()
+          apps = {a["name"]: a for a in manifest["apps"]}
+          errors = []
+
+          def need(ok, msg):
+              if not ok:
+                  errors.append(msg)
+
+          for name in ("frappe", "erpnext"):
+              a = apps.get(name, {})
+              need(a.get("remote", "").startswith("https://github.com/frappe/" + name),
+                   f"{name}: remote not recorded (got {a.get('remote')!r})")
+              need(a.get("source") == "git", f"{name}: expected source=git, got {a.get('source')!r}")
+              need(a.get("remote_branch"), f"{name}: no remote branch recorded")
+              need(f"ffm-backup/apps/{name}.tar.gz" not in names, f"{name}: a cloneable app was archived")
+
+          for name, reason in (("ci_nogit", "no-git"), ("ci_localgit", "no-remote")):
+              a = apps.get(name, {})
+              need(a.get("source") == "archive" and a.get("source_reason") == reason,
+                   f"{name}: expected source=archive/{reason}, got {a.get('source')!r}/{a.get('source_reason')!r}")
+              need(f"ffm-backup/apps/{name}.tar.gz" in names, f"{name}: source member missing from the archive")
+
+          need("app-source" in header["tiers"], "the app-source tier is not recorded")
+          need(header["min_reader_version"] == 2, "an archive with app source must require reader version 2")
+
+          for e in errors:
+              print("::error::" + e)
+          sys.exit(1 if errors else 0)
+          PY
+          "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --dry-run | grep -E 'ci_nogit|ci_localgit|erpnext'
+
       # Deleting the source first proves the archive is self-sufficient, and
       # frees the port range so the restore can reuse it.
       - name: Delete the source bench
@@ -118,6 +183,31 @@ jobs:
             exit 1
           fi
 
+      - name: Assert the archived apps came back
+        run: |
+          compose() { docker compose -p ffm-dst -f "$FFM_BENCHES_DIR/dst/docker-compose.yml" exec -T frappe "$@"; }
+          for pair in ci_nogit:ci-nogit ci_localgit:ci-localgit; do
+            app=${pair%%:*}; want=${pair#*:}
+            got=$(compose bash -c "cat /workspace/frappe-bench/apps/$app/$app/marker.py" | tr -d '[:space:]')
+            echo "$app marker: $got"
+            if [ "$got" != "MARKER=\"$want\"" ]; then
+              echo "::error::app $app did not come back with its source (marker: $got)"
+              exit 1
+            fi
+          done
+          # bench must consider them installed apps of the site, not just files.
+          LIST=$(compose bash -c 'cd /workspace/frappe-bench && bench --site dst.localhost list-apps')
+          echo "$LIST"
+          for app in frappe erpnext ci_nogit ci_localgit; do
+            echo "$LIST" | grep -q "^$app " || { echo "::error::$app is not installed on the restored site"; exit 1; }
+          done
+          # The no-git app must still not be a repository: it was restored as
+          # it was, not wrapped in one.
+          if compose test -d /workspace/frappe-bench/apps/ci_nogit/.git; then
+            echo "::error::ci_nogit gained a .git directory during the restore"
+            exit 1
+          fi
+
       - name: Assert the site is coherent with itself
         run: |
           # `bench restore` leaves site_config's installed_apps saying ["frappe"]
@@ -126,7 +216,7 @@ jobs:
           # "reconciled" from "stale".
           CONFIG_APPS=$(python3 -c "import json;print(sorted(json.load(open('$FFM_BENCHES_DIR/dst/workspace/frappe-bench/sites/dst.localhost/site_config.json'))['installed_apps']))")
           echo "site_config installed_apps: $CONFIG_APPS"
-          if [ "$CONFIG_APPS" != "['erpnext', 'frappe']" ]; then
+          if [ "$CONFIG_APPS" != "['ci_localgit', 'ci_nogit', 'erpnext', 'frappe']" ]; then
             echo "::error::installed_apps was not reconciled after the restore (got $CONFIG_APPS)"
             exit 1
           fi

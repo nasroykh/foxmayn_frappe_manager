@@ -30,9 +30,12 @@ Version info is injected at build time via `-ldflags` (see `Makefile` LDFLAGS).
 Tests are sparse but present — `make test` runs `go test ./...`. Coverage today is template
 rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`),
 dashboard handlers (`internal/dashboard/handler_test.go`), the archive format
-(`internal/archive/archive_test.go` — hostile tars built in memory), and the backup/restore
+(`internal/archive/archive_test.go` — hostile tars built in memory), the archived app
+source validator (`internal/archive/appsource_test.go`), the backup/restore
 manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
-`internal/manager/backup_preflight_test.go`), the backup failure formatter
+`internal/manager/backup_preflight_test.go`), app provenance and restore source planning
+(`internal/manager/appsource_test.go` — runs the git probe script against real repos when
+bash and git exist), the backup failure formatter
 (`internal/manager/backup_failure_test.go`), the HTTP readiness wait and the
 database-probe classifier (`internal/bench/waithttp_test.go`,
 `internal/bench/dbprobe_test.go`) and the log tail helper
@@ -71,7 +74,8 @@ internal/
     interactive_unix.go / interactive_windows.go → hasControllingTerminal() per platform
     create.go             → create flags + the interactive forms (runCreateForm,
                             runCreateFormFull); calls manager.Service.Create
-    backup.go             → ffm backup: --out / --label / --no-files / --skip-space-check.
+    backup.go             → ffm backup: --out / --label / --no-files / --skip-space-check /
+                            --vendor-apps.
                             Has subcommands, so `ffm backup list` is the subcommand, never a
                             bench called "list" — hence bench.ValidateNewName's reserved names
     backup_manage.go      → ffm backup list [bench] / ffm backup prune <bench> [--dry-run]
@@ -85,7 +89,8 @@ internal/
                             --allow-missing-encryption-key / --encryption-key / --domain /
                             --no-ssl / --acme-email / --reallocate-ports / --web-port /
                             --socketio-port / --admin-password / --github-token /
-                            --skip-migrate / --keep-on-failure / --skip-space-check.
+                            --skip-migrate / --keep-on-failure / --skip-space-check /
+                            --app <app>=<git-url>[@branch] (repeatable; frappe=… too).
                             arg0 is the ARCHIVE, arg1 the new bench name — so it does NOT
                             call resolveBenchName: the target must not exist yet
     recreate.go           → ffm recreate: --force / --reallocate-ports / --github-token /
@@ -142,8 +147,14 @@ internal/
     restore.go            → Service.Restore: preflight → Create → data → reconcile. Fresh
                             bench only, so it borrows Create's rollback
     backup_manifest.go    → Header / Manifest / SiteInfo / AppInfo / Secrets + schema gates
-    backup_preflight.go   → checkArchive / verifyMembers / appsForRestore / scrubSecrets /
-                            checkNameFree / honoursFileModes
+    backup_preflight.go   → checkArchive / verifyMembers / scrubSecrets / checkNameFree /
+                            honoursFileModes
+    backup_appsource.go   → appProbeScript (one exec per app: remote, tracking branch, refs
+                            containing HEAD) / applyProbe / cloneableRemote / vendorReason /
+                            planAppSources / appSourceTarCmd
+    restore_appsource.go  → planRestoreApps (where each app's code comes from) / planFrappe /
+                            checkRestorePlan / checkBareNames (GitHub lookup before Create) /
+                            installArchivedApps / syncAppsTxt
     backup_policy.go      → PresetPolicy / ParseEvery / ValidatePolicy / ApplyKeepShorthand
     backup_retention.go   → ScanArchives / selectRetained (tiered + RetentionFloor) /
                             PruneBackups; only readable, trigger=scheduled, same-bench archives
@@ -177,6 +188,8 @@ internal/
                             absence IS the definition of a truncated archive). Stdlib only.
     archive.go            → Writer (atomic .partial→rename, 0600 from creation), PeekHeader
     safe_extract.go       → Extract/ExtractReader with traversal, type and size guards
+    appsource.go          → ValidateAppSource: an archived app's .tar.gz must stay inside
+                            <app>/ (links included) before tar unpacks it in the container
 
   dashboard/              → the /admin web UI. Stdlib only: html/template, embed, net/http.
     handler.go            → //go:embed templates + static, basic auth, rendering
@@ -330,15 +343,15 @@ internal/
   `$FFM_KEEP_ON_FAILURE` stops the teardown and prints the literal cleanup command instead,
   because state is saved only on success and `ffm delete` cannot reach an unregistered bench.
 - **Backup is logical, restore is a fresh bench.** `ffm backup` captures Frappe's own dump,
-  the file tarballs, the site/common config and each app's git commit — not the app source,
-  the venv or the built assets. Measured on a frappe+erpnext dev bench that is 857 KiB versus
+  the file tarballs, the site/common config and each app's git remote, branch and commit —
+  not the venv, the built assets or, for an app that can be cloned back, its source. Measured on a frappe+erpnext dev bench that is 857 KiB versus
   ~1.7 GB for the workspace and 268 MB for the DB volume, and unlike a physical copy it
   restores across hosts, architectures and host uids. `ffm restore` therefore rebuilds by
   calling **`manager.Create`** (with `SkipAppInstall`/`SkipAssetBuild`) and then running
   `bench restore` into the new site, which is why it inherits the image build, uid remap,
   bench init, get-app, Traefik wiring and Create's rollback defer for free. It only ever
   creates a bench; there is no in-place overwrite, which is what makes the rollback sound.
-  Five Frappe behaviours the pipeline exists to work around, each verified on a live bench:
+  Seven Frappe/bench behaviours the pipeline exists to work around, each verified on a live bench:
   - `bench restore --admin-password` is a **no-op** — `install_app` returns early because the
     restored DB already lists frappe, so `after_install` never applies it. Restore runs
     `bench set-admin-password` separately and reconciles `state.Bench.AdminPassword`.
@@ -354,6 +367,29 @@ internal/
     `--pin-apps` does a post-clone `git checkout` + `bench setup requirements` instead, and
     the commits come from `git rev-parse HEAD`, never `sites/apps.json` (which records
     `commit_hash: null` for frappe itself on any ffm bench).
+  - bench clones every app with **`--origin upstream`**, so there is no `origin` remote on a
+    bench-made app. Backups before this was handled read only `remote.origin.url`, recorded
+    no remote for any app, and restore fell back to `bench get-app <bare-name>`, which only
+    searches github.com/frappe and /erpnext — so every private app failed several minutes in.
+    Old archives still have no remotes: `ffm restore --app <app>=<url>` supplies them, and
+    `checkBareNames` refuses up front (and in `--dry-run`) instead of failing mid-Create.
+  - bare **`bench setup requirements [app]`** builds a bench `App`, which opens the directory
+    with `git.Repo` and crashes on an app that is not a repository (`bench new-app --no-git`).
+    The `--python` and `--node` halves do not, so restore and `--pin-apps` run those two.
+  **App source.** An app that cannot be cloned back — no git, no remote another machine can
+  reach (a local path, `file://`), no commits, or a HEAD on no remote branch or tag — has its
+  working tree archived as `ffm-backup/apps/<app>.tar.gz` (minus node_modules, public/dist,
+  bytecode, egg-info; `.git` kept). Only apps the restore needs are candidates: installed on
+  the site or in the bench record. `--vendor-apps` forces others. Restore unpacks them after
+  Create (frappe replaces the tree bench init cloned), adds them to `sites/apps.txt` and
+  runs the two `setup requirements` halves. apps.txt order does not matter: hooks load in
+  the DB's `installed_apps` order, which apps.txt only filters. Such an
+  archive sets `min_reader_version` 2, so an older ffm refuses it rather than cloning bare
+  names; archives without app source stay at 1. Restore precedence per app: `--app` override,
+  archived source, recorded remote at `RemoteBranch`, bench-record spec, bare name. With
+  `--github-token`, github.com SSH sources are rewritten to HTTPS (`withGitHubHTTPS`): the
+  token never reaches an SSH clone, and a recorded remote is usually SSH. Unpacking
+  archived source installs and runs its code — as the database dump already can.
   Archives live in `config.BackupsDir()`, deliberately **outside** the bench dir:
   `TeardownBenchFiles` runs `os.RemoveAll(b.Dir)`, so `ffm recreate` would otherwise destroy
   the backups that make it survivable. They hold credentials in plaintext at 0600, and

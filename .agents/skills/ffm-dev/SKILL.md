@@ -631,7 +631,7 @@ unreachable; `internal/scheduler` drives install/uninstall through a stand-in `c
 
 The create pipeline and most of the CLI are still untested, because they shell out to Docker.
 When adding behaviour there, pull the decidable part into a pure function and test that — the
-way `checkArchive`, `verifyMembers`, `appsForRestore` and `parseDirtyPaths` are pure so the
+way `checkArchive`, `verifyMembers`, `planRestoreApps` and `parseDirtyPaths` are pure so the
 whole backup/restore gate matrix is testable without a container.
 
 For anything that genuinely needs Docker, `.github/workflows/backup-roundtrip.yml` is the
