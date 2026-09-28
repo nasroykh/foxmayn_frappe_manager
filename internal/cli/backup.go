@@ -12,6 +12,7 @@ func newBackupCmd() *cobra.Command {
 		label          string
 		noFiles        bool
 		skipSpaceCheck bool
+		vendorApps     []string
 	)
 
 	cmd := &cobra.Command{
@@ -21,11 +22,18 @@ func newBackupCmd() *cobra.Command {
 portable archive that 'ffm restore' can turn back into a working bench.
 
 The archive holds Frappe's own database dump, the site's public and private
-files, the site and bench configuration, and each installed app's git commit —
-everything needed to rebuild the bench around the data. It does not contain the
-app source, the Python virtualenv or the built assets: those are reproduced at
-restore time, which is what keeps the archive small and lets it restore onto a
-different machine, architecture or host user.
+files, the site and bench configuration, and each installed app's git remote,
+branch and commit — everything needed to rebuild the bench around the data. It
+does not contain the Python virtualenv or the built assets, and for an app that
+can be cloned back it does not contain the source either: those are reproduced
+at restore time, which is what keeps the archive small and lets it restore onto
+a different machine, architecture or host user.
+
+An app that cannot be cloned back has its source archived instead: one that is
+not a git repository (bench new-app --no-git, or copied in by hand), one with
+no remote another machine can reach, and one whose commit was never pushed.
+node_modules, built assets and bytecode are left out. --vendor-apps archives
+other apps' source too — for example to keep uncommitted changes.
 
 A stopped bench is started for the duration of the backup and stopped again
 afterwards.
@@ -36,7 +44,8 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 		Example: `  ffm backup
   ffm backup mybench
   ffm backup mybench --out ~/archives
-  ffm backup mybench --no-files --label "before the v16 upgrade"`,
+  ffm backup mybench --no-files --label "before the v16 upgrade"
+  ffm backup mybench --vendor-apps my_app`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := resolveBenchName(args, "Select a bench to back up")
@@ -49,6 +58,7 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 				NoFiles:        noFiles,
 				Label:          label,
 				SkipSpaceCheck: skipSpaceCheck,
+				VendorApps:     vendorApps,
 			}, manager.CLIProgress{})
 		},
 	}
@@ -63,5 +73,8 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 		"Skip file attachments and archive the database only")
 	cmd.Flags().BoolVar(&skipSpaceCheck, "skip-space-check", false,
 		"Write the archive without checking free disk space first")
+	cmd.Flags().StringSliceVar(&vendorApps, "vendor-apps", nil,
+		"Also archive the source of these apps (comma-separated, or 'all'), uncommitted changes "+
+			"included. Apps that cannot be cloned back are archived regardless")
 	return cmd
 }

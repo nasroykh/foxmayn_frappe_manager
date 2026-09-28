@@ -18,8 +18,14 @@ import (
 // binaries that predate them.
 const (
 	ArchiveKind      = "ffm-backup"
-	SchemaVersion    = 1
+	SchemaVersion    = 2
 	MinReaderVersion = 1
+	// MinReaderVersionAppSource is required of a reader when the archive
+	// carries app source. An older ffm would ignore those members and try to
+	// clone the app by its bare name — the exact failure they exist to prevent —
+	// so it must refuse the archive instead. Archives without app source keep
+	// MinReaderVersion and stay restorable by older binaries.
+	MinReaderVersionAppSource = 2
 )
 
 // Tiers recorded in Header.Tiers. A tier is present or absent; a reader must
@@ -29,6 +35,10 @@ const (
 	TierCore = "core"
 	// TierFiles is the site's public and private file attachments.
 	TierFiles = "files"
+	// TierAppSource is the source of apps that cannot be cloned back: no git
+	// repository, no remote, or a commit that exists only on the backed-up
+	// bench. Present only when at least one app was archived this way.
+	TierAppSource = "app-source"
 )
 
 // Header is the archive's first member: everything a restore needs in order to
@@ -73,7 +83,37 @@ type AppInfo struct {
 	Name   string `json:"name"`
 	Commit string `json:"commit,omitempty"`
 	Branch string `json:"branch,omitempty"`
+	// Remote is the URL the app can be cloned from. bench clones with
+	// `--origin upstream`, so this is read from "upstream" first; archives
+	// written before that was fixed looked only at "origin" and recorded
+	// nothing for any app bench had cloned.
 	Remote string `json:"remote,omitempty"`
+	// RemoteBranch is the branch on Remote that contains the backed-up commit,
+	// which is what a restore clones. It differs from Branch when the local
+	// branch was renamed or never pushed under its own name.
+	RemoteBranch string `json:"remote_branch,omitempty"`
+	// Tag is set when HEAD sits exactly on a tag — typically an app fetched
+	// with `bench get-app --branch v15.2.0`, whose Branch is just "HEAD".
+	Tag string `json:"tag,omitempty"`
+	// NoGit records an app directory that is not a git repository at all, such
+	// as one made with `bench new-app --no-git` or copied in by hand.
+	NoGit bool `json:"no_git,omitempty"`
+	// Unpushed records a commit that no remote-tracking branch or tag in the
+	// clone contains, so a clone would silently produce different code. It is
+	// judged from the clone's own refs, never by asking the remote: a shallow
+	// clone that never fetched the branch holding the commit reads as
+	// unpushed, which errs toward archiving the source.
+	Unpushed bool `json:"unpushed,omitempty"`
+	// Source says how a restore gets the app back: AppSourceGit (clone
+	// Remote) or AppSourceArchive (unpack Member). Empty in archives written
+	// before app source existed, which only ever meant git.
+	Source string `json:"source,omitempty"`
+	// SourceReason explains why an app's source was archived; see the
+	// VendorReason constants.
+	SourceReason string `json:"source_reason,omitempty"`
+	// Member is the archive member holding the app's source when Source is
+	// AppSourceArchive.
+	Member string `json:"member,omitempty"`
 	// Dirty records uncommitted changes in the app's working tree that ffm did
 	// not make itself. A restore rebuilds each app from its commit, so it cannot
 	// reproduce these — it warns rather than pretending otherwise.
@@ -85,6 +125,43 @@ type AppInfo struct {
 	// DirtyPaths lists the modified files, so the warning names them instead of
 	// leaving the user to go looking. Capped; see maxDirtyPaths.
 	DirtyPaths []string `json:"dirty_paths,omitempty"`
+}
+
+// How a restore gets an app back, recorded in AppInfo.Source.
+const (
+	AppSourceGit     = "git"
+	AppSourceArchive = "archive"
+)
+
+// Why an app's source went into the archive, recorded in AppInfo.SourceReason.
+const (
+	VendorNoGit     = "no-git"
+	VendorNoRemote  = "no-remote"
+	VendorNoCommit  = "no-commit"
+	VendorUnpushed  = "unpushed"
+	VendorRequested = "requested"
+)
+
+// Archived reports whether the app's source travels inside the archive.
+func (a AppInfo) Archived() bool { return a.Source == AppSourceArchive && a.Member != "" }
+
+// CloneBranch is the ref a restore clones the app at: the remote branch that
+// holds the commit, else the tag HEAD sits on. Empty means the remote's
+// default branch.
+//
+// Archives from before Source existed recorded only the local branch, which is
+// the best they have. A newer archive never falls back to it: a local branch
+// with no remote counterpart makes `git clone --branch` fail outright.
+func (a AppInfo) CloneBranch() string {
+	switch {
+	case a.RemoteBranch != "":
+		return a.RemoteBranch
+	case a.Tag != "":
+		return a.Tag
+	case a.Source == "" && a.Branch != "HEAD":
+		return a.Branch
+	}
+	return ""
 }
 
 // SiteInfo captures the site's identity and configuration.
@@ -147,10 +224,16 @@ type Manifest struct {
 
 // NewHeader builds the header for a backup being taken now.
 func NewHeader(b state.Bench, siteName, frappeVersion, label string, tiers []string, now time.Time) Header {
+	minReader := MinReaderVersion
+	for _, t := range tiers {
+		if t == TierAppSource {
+			minReader = MinReaderVersionAppSource
+		}
+	}
 	return Header{
 		Kind:             ArchiveKind,
 		SchemaVersion:    SchemaVersion,
-		MinReaderVersion: MinReaderVersion,
+		MinReaderVersion: minReader,
 		FfmVersion:       version.Version,
 		CreatedAt:        now.UTC(),
 		BenchName:        b.Name,
