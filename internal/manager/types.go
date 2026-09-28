@@ -182,6 +182,10 @@ type BackupInput struct {
 	// bench. Scheduled runs set it: a stopped bench has not changed since its
 	// last backup, and starting a bench nobody asked for is a surprise.
 	SkipIfStopped bool
+	// VendorApps names apps whose source is archived even though they could
+	// be cloned back — typically to keep uncommitted changes. "all" selects
+	// every app. Apps that cannot be cloned are archived regardless.
+	VendorApps []string
 }
 
 // RestoreInput holds parameters for restoring an archive into a NEW bench.
@@ -230,6 +234,12 @@ type RestoreInput struct {
 	// PinApps checks each app out at the commit recorded in the archive instead
 	// of leaving it at branch HEAD.
 	PinApps bool
+	// AppOverrides are "<app>=<git-url>[@branch]" values that replace where an
+	// app is cloned from. "frappe=..." sets the framework's repo and branch.
+	// This is what makes an archive restorable when it records no usable
+	// source for an app — including every archive written before ffm recorded
+	// bench's "upstream" remote.
+	AppOverrides []string
 	// KeepOnFailure leaves a failed restore's containers and directory in place
 	// for diagnosis.
 	KeepOnFailure bool

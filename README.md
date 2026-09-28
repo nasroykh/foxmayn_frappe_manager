@@ -356,13 +356,20 @@ Flags:  --out <path>          Directory to write into, or an explicit path endin
         --label <text>        Short note recorded in the archive
         --no-files            Database only, no attachments
         --skip-space-check    Do not check free disk space first
+        --vendor-apps <apps>  Also archive these apps' source (comma-separated, or all)
 ```
 
 The archive holds Frappe's own database dump, the site's public and private files, the site
-and bench configuration, and each installed app's git commit. It does **not** hold the app
-source, the Python virtualenv or the built assets — those are rebuilt at restore time, which
-is what keeps a full ERPNext bench's backup under a megabyte instead of ~2 GB, and what lets
-it restore onto a different machine, architecture or host user.
+and bench configuration, and each installed app's git remote, branch and commit. It does
+**not** hold the Python virtualenv or the built assets, nor the source of any app that can be
+cloned back — those are rebuilt at restore time, which is what keeps a full ERPNext bench's
+backup under a megabyte instead of ~2 GB, and what lets it restore onto a different machine,
+architecture or host user.
+
+An app that **cannot** be cloned back has its source archived instead: one that is not a git
+repository (`bench new-app --no-git`, or copied in by hand), one with no remote another
+machine can reach, and one whose commit was never pushed. `node_modules` and built assets are
+left out. `--vendor-apps` archives other apps too — for example to keep uncommitted changes.
 
 A stopped bench is started for the backup and stopped again afterwards.
 
@@ -442,10 +449,21 @@ Flags:  --dry-run                       Validate the archive and print the plan
         --reallocate-ports              Always take a fresh port pair
         --web-port / --socketio-port    Explicit host ports
         --admin-password <pw>           Set a new Administrator password
-        --github-token <token>          Token for private app clones
+        --github-token <token>          Token for private app clones (github.com SSH sources use HTTPS with it)
         --skip-migrate                  Skip `bench migrate` after restoring
         --keep-on-failure               Leave a failed restore in place for diagnosis
         --skip-space-check              Do not check free disk space first
+        --app <app>=<git-url>[@branch]  Clone an app from here instead (repeatable; frappe=... too)
+```
+
+Apps are cloned from the remote and branch recorded at backup time; apps whose source is in the
+archive are unpacked from it. If the archive has no usable source for an app — every archive
+written before ffm recorded bench's `upstream` remote, for an app outside the frappe and
+erpnext GitHub organisations — the restore stops before building anything and names the
+`--app` flag to pass:
+
+```bash
+ffm restore old.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
 ```
 
 The bench is provisioned by the same pipeline as `ffm create` — same image, apps, mode, ports
@@ -453,7 +471,7 @@ and proxy wiring — and the archived data is restored into it. Ports are reused
 free, so URLs stay stable on a fresh machine.
 
 What a restore cannot bring back, and says so when it happens: uncommitted changes in an app's
-working tree, the VPS tunnel (its token lives in this host's `tunnel.json`, not the archive),
+working tree (unless the backup archived that app's source), the VPS tunnel (its token lives in this host's `tunnel.json`, not the archive),
 the ffc API secret (Frappe mints a new one on every request), and absolute URLs stored *inside*
 the database when the site is renamed.
 

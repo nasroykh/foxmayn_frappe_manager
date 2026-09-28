@@ -24,6 +24,7 @@ func newRestoreCmd() *cobra.Command {
 		pinApps         bool
 		keepOnFailure   bool
 		skipSpaceCheck  bool
+		appOverrides    []string
 	)
 
 	cmd := &cobra.Command{
@@ -38,15 +39,22 @@ be free.
 
 The bench is provisioned by the same pipeline as 'ffm create' — same image, apps,
 mode, ports and proxy wiring — and the archived database and attachments are
-restored into it. Apps are rebuilt from git at their branch head; pass
---pin-apps to check out the exact commits the backup recorded instead.
+restored into it. Apps are cloned from the remote and branch the backup
+recorded, at the branch head; pass --pin-apps to check out the exact commits
+instead. Apps whose source is stored in the archive are unpacked from it.
+
+--app <app>=<git-url>[@branch] replaces where an app is cloned from, and
+--app frappe=<git-url>[@branch] does the same for the framework. Use it for an
+app the archive has no source for — the restore refuses to start without one,
+rather than failing several minutes in — or for a repository that has moved.
 
 Use --dry-run to validate an archive and print what a restore would do without
 touching Docker.`,
 		Example: `  ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
   ffm restore mybench_20260826T090000Z.ffm.tar staging
   ffm restore mybench_20260826T090000Z.ffm.tar --dry-run
-  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps`,
+  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps
+  ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := ""
@@ -72,6 +80,7 @@ touching Docker.`,
 				PinApps:                   pinApps,
 				KeepOnFailure:             keepOnFailure,
 				SkipSpaceCheck:            skipSpaceCheck,
+				AppOverrides:              appOverrides,
 			}, manager.CLIProgress{})
 		},
 	}
@@ -93,7 +102,8 @@ touching Docker.`,
 	cmd.Flags().IntVar(&socketIOPort, "socketio-port", 0, "Explicit host Socket.IO port")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "",
 		"Set a new Administrator password instead of keeping the archived one")
-	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token for cloning private apps")
+	cmd.Flags().StringVar(&githubToken, "github-token", "",
+		"GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false,
 		"Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions")
 	cmd.Flags().BoolVar(&pinApps, "pin-apps", false,
@@ -102,5 +112,8 @@ touching Docker.`,
 		"Leave a failed restore in place for diagnosis instead of removing it")
 	cmd.Flags().BoolVar(&skipSpaceCheck, "skip-space-check", false,
 		"Restore without checking free disk space first")
+	cmd.Flags().StringArrayVar(&appOverrides, "app", nil,
+		"Clone an app from this source instead: <app>=<git-url>[@branch] (repeatable; "+
+			"frappe=... sets the framework's repo)")
 	return cmd
 }

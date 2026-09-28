@@ -156,51 +156,6 @@ func verifyMembers(m Manifest, res *archive.ExtractResult) error {
 	return nil
 }
 
-// appsForRestore returns the app specs to pass to Create.
-//
-// Two sources disagree in practice and both matter. state.Bench.Apps carries
-// what the user asked for, including SSH/HTTPS URLs and @branch suffixes needed
-// to clone a private fork; the site's installed_apps is the authoritative list
-// of what the database actually expects. On a real bench these drift — a bench
-// record of ["erpnext"] against installed_apps of [frappe, erpnext] — so the
-// specs win where they overlap, and any installed app missing from them is
-// appended by bare name rather than dropped.
-func appsForRestore(m Manifest) []string {
-	specs := append([]string(nil), m.Bench.Apps...)
-
-	known := make(map[string]bool, len(specs)+1)
-	// frappe is the framework itself: bench init installs it and it is never a
-	// --apps entry.
-	known["frappe"] = true
-	for _, raw := range specs {
-		known[bench.ParseAppSpec(raw, "").DisplayName()] = true
-	}
-	// An app installed on the site but absent from the bench record has to be
-	// cloned from somewhere. The bare name resolves against Frappe's official
-	// app registry, which is wrong for anything a user got with an explicit
-	// URL, so the remote recorded at backup time wins when there is one.
-	remotes := make(map[string]AppInfo, len(m.Apps))
-	for _, a := range m.Apps {
-		remotes[a.Name] = a
-	}
-	for _, app := range m.Site.InstalledApps {
-		if known[app] {
-			continue
-		}
-		known[app] = true
-		if info, ok := remotes[app]; ok && info.Remote != "" {
-			spec := info.Remote
-			if info.Branch != "" && info.Branch != "HEAD" {
-				spec += "@" + info.Branch
-			}
-			specs = append(specs, spec)
-			continue
-		}
-		specs = append(specs, app)
-	}
-	return specs
-}
-
 // scrubSecrets replaces credentials with a placeholder.
 //
 // Every captured command output passes through this before it can reach an
@@ -317,28 +272,25 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 		})
 	}
 
-	if b := m.Bench.FrappeBranch; b != "" && !gitRefRe.MatchString(b) {
-		bad("frappe branch", b)
-	}
 	if r := m.Bench.FrappeRepo; r != "" {
 		spec := bench.ParseAppSpec(r, "")
 		if !gitURLRe.MatchString(spec.Source) || (spec.Branch != "" && !gitRefRe.MatchString(spec.Branch)) {
 			bad("frappe repo", r)
 		}
 	}
-	for _, raw := range appsForRestore(m) {
-		spec := bench.ParseAppSpec(raw, "")
-		okSource := appNameRe.MatchString(spec.Source) || gitURLRe.MatchString(spec.Source)
-		if !okSource || (spec.Branch != "" && !gitRefRe.MatchString(spec.Branch)) {
-			bad("app source", raw)
-		}
+	overrides, err := parseAppOverrides(in.AppOverrides)
+	if err != nil {
+		problems = append(problems, Problem{Message: err.Error()})
 	}
-	for _, app := range m.Apps {
-		if !appNameRe.MatchString(app.Name) {
-			bad("app name", app.Name)
-		}
-		if in.PinApps && app.Commit != "" && !commitRe.MatchString(app.Commit) {
-			bad("app commit", app.Commit)
+	plan := planRestoreApps(m, overrides)
+	problems = append(problems, checkRestorePlan(m, plan, overrides)...)
+	// Only the apps this restore uses are held to the name rule: a stray
+	// directory in the source bench's apps/ is recorded but never touched.
+	if in.PinApps {
+		for _, a := range plan.pinnable() {
+			if a.Commit != "" && !commitRe.MatchString(a.Commit) {
+				bad("app commit", a.Commit)
+			}
 		}
 	}
 	// Credentials are shell-quoted wherever they are used, so they are held to

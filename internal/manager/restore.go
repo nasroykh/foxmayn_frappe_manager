@@ -71,6 +71,11 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 			header.SchemaVersion, SchemaVersion)
 	}
 
+	overrides, err := parseAppOverrides(in.AppOverrides)
+	if err != nil {
+		return err
+	}
+
 	target := in.TargetName
 	if target == "" {
 		target = header.BenchName
@@ -129,9 +134,24 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	}
 	problems := checkArchive(m, target, in)
 	problems = append(problems, s.nameCollisions(target)...)
+	plan := planRestoreApps(m, overrides)
+	if in.GithubToken != "" {
+		plan = plan.withGitHubHTTPS()
+	}
+	// Before anything is built: a bench provisioned for an app bench cannot
+	// find fails several minutes in and is then torn down again.
+	problems = append(problems, checkBareNames(plan, in.GithubToken, githubRegistryLookup, func(msg string) {
+		fmt.Fprintln(pw.Stderr(), "warning: "+msg)
+	})...)
 	problems = filterOverridden(problems, in)
 	if len(problems) > 0 {
 		return problemsError(problems)
+	}
+	if err := validateArchivedApps(plan, staging); err != nil {
+		return err
+	}
+	for _, w := range planWarnings(plan) {
+		fmt.Fprintln(pw.Stderr(), "warning: "+w)
 	}
 
 	webPort, socketIOPort, err := s.restorePorts(m, in)
@@ -143,12 +163,12 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	}
 
 	if in.DryRun {
-		printRestorePlan(pw, m, target, webPort, socketIOPort, withFiles, archivePath)
+		printRestorePlan(pw, m, plan, target, webPort, socketIOPort, withFiles, archivePath)
 		return nil
 	}
 
 	// Phase B: provision an empty bench shaped like the archived one.
-	createIn, err := restoreCreateInput(m, target, in, webPort, socketIOPort)
+	createIn, err := restoreCreateInput(m, plan, target, in, webPort, socketIOPort)
 	if err != nil {
 		return err
 	}
@@ -182,8 +202,26 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 		}
 	}()
 
+	// Archived app source goes in before anything else reads the apps: pinning
+	// skips these apps, and the site config and database both expect them.
+	if err := s.installArchivedApps(runner, b, plan, staging, pw); err != nil {
+		return err
+	}
 	if in.PinApps {
-		if err := s.pinApps(runner, m, pw); err != nil {
+		// Create configured the token for its own clones and removed it again
+		// on the way out, so pinning a private app fetched with no credentials
+		// and failed on every private repository. It gets its own, for exactly
+		// as long as the fetches take.
+		if in.GithubToken != "" {
+			if err := runner.ConfigureGitHubToken(in.GithubToken); err != nil {
+				return fmt.Errorf("configure the GitHub token for pinning: %w", err)
+			}
+		}
+		err := s.pinApps(runner, plan, pw)
+		if in.GithubToken != "" {
+			runner.CleanupGitHubToken()
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -195,7 +233,7 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if err := s.runBenchRestore(runner, b, m, in, staging, withFiles, pw); err != nil {
 		return err
 	}
-	if err := s.reconcileAfterRestore(runner, b, m, in, pw); err != nil {
+	if err := s.reconcileAfterRestore(runner, b, m, plan, in, pw); err != nil {
 		return err
 	}
 
@@ -296,7 +334,7 @@ func benchPortsClaimed(store *state.Store, web, sio int) (bool, error) {
 }
 
 // restoreCreateInput rebuilds the CreateInput that reproduces the archived bench.
-func restoreCreateInput(m Manifest, target string, in RestoreInput, webPort, socketIOPort int) (CreateInput, error) {
+func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreInput, webPort, socketIOPort int) (CreateInput, error) {
 	mode := m.Header.Mode
 	if mode == "" {
 		mode = "dev"
@@ -337,9 +375,9 @@ func restoreCreateInput(m Manifest, target string, in RestoreInput, webPort, soc
 
 	return CreateInput{
 		Name:              target,
-		FrappeBranch:      m.Bench.FrappeBranch,
-		FrappeRepo:        m.Bench.FrappeRepo,
-		Apps:              appsForRestore(m),
+		FrappeBranch:      plan.FrappeBranch,
+		FrappeRepo:        plan.FrappeRepo,
+		Apps:              plan.createSpecs(),
 		AdminPassword:     adminPassword,
 		DBPassword:        m.Bench.DBPassword,
 		DBType:            m.Bench.DBEngine(),
@@ -514,7 +552,7 @@ func restoreEncryptionKey(m Manifest, in RestoreInput) string {
 
 // reconcileAfterRestore repairs everything `bench restore` leaves inconsistent.
 func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m Manifest,
-	in RestoreInput, pw ProgressWriter) error {
+	plan restorePlan, in RestoreInput, pw ProgressWriter) error {
 
 	sitePrefix := "cd /workspace/frappe-bench && bench --site " + bench.ShellQuote(b.SiteName) + " "
 
@@ -623,7 +661,7 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 	// is authoritative.
 	return s.UpdateBench(b.Name, func(rec *state.Bench) {
 		if len(installed) > 0 {
-			rec.Apps = appsWithoutFramework(installed, rec.Apps)
+			rec.Apps = appsWithoutFramework(installed, plan.specsByName())
 		}
 		// The archived tunnel cannot be reproduced: its auth token lives in the
 		// host's tunnel.json, not in the archive.
@@ -643,18 +681,19 @@ func patchSiteConfig(b state.Bench, fn func(map[string]any)) error {
 }
 
 // appsWithoutFramework turns a site's installed_apps into ffm's app-spec list,
-// preserving any spec that already carries a URL or branch.
-func appsWithoutFramework(installed, existing []string) []string {
-	bySpec := make(map[string]string, len(existing))
-	for _, spec := range existing {
-		bySpec[bench.ParseAppSpec(spec, "").DisplayName()] = spec
-	}
+// keeping the source each app was restored from.
+//
+// The specs are keyed by app name, not by the name a URL spells: a repository
+// is often named differently from the app it holds (an app "kb_impexp" in a
+// repository "AchatsExtern"), and matching on the URL would drop the source
+// and leave `ffm recreate` a bare name that bench cannot find.
+func appsWithoutFramework(installed []string, specs map[string]string) []string {
 	var out []string
 	for _, app := range installed {
 		if app == "frappe" {
 			continue
 		}
-		if spec, ok := bySpec[app]; ok {
+		if spec, ok := specs[app]; ok && spec != "" {
 			out = append(out, spec)
 			continue
 		}
@@ -667,9 +706,11 @@ func appsWithoutFramework(installed, existing []string) []string {
 //
 // This must be a fetch plus checkout, not `bench get-app --branch <sha>`: git
 // rejects a SHA where it expects a branch name, so the clone fails outright.
-func (s *Service) pinApps(runner *bench.Runner, m Manifest, pw ProgressWriter) error {
-	pinned := 0
-	for _, app := range m.Apps {
+// Apps restored from archived source are skipped: they already are the exact
+// tree that was backed up, and have no remote to fetch from.
+func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, pw ProgressWriter) error {
+	var pinned []string
+	for _, app := range plan.pinnable() {
 		if app.Commit == "" {
 			fmt.Fprintf(pw.Stderr(), "warning: no commit recorded for app %q — leaving it at branch HEAD\n", app.Name)
 			continue
@@ -693,20 +734,33 @@ func (s *Service) pinApps(runner *bench.Runner, m Manifest, pw ProgressWriter) e
 		//     pinned commit touches those files — precisely the drift --pin-apps
 		//     exists to undo. --force discards them; they are re-applied
 		//     unconditionally later in the restore.
+		//   - bench clones with --depth 1, so the repository holds only the
+		//     branch tip, and a plain fetch brings only the new tip. Once the
+		//     branch has moved past the archived commit, that commit is simply
+		//     not there. A shallow repository fetches the commit itself instead,
+		//     at depth 1 — never its whole history, which for frappe is
+		//     gigabytes.
 		cmd := fmt.Sprintf(
-			"cd %s && remote=$(git remote | head -1) && git fetch --quiet ${remote:-origin} "+
-				"&& git checkout --force --quiet %s", dir, app.Commit)
+			"cd %s && remote=$(git remote | head -1) && remote=${remote:-origin} && "+
+				"if [ \"$(git rev-parse --is-shallow-repository)\" = true ]; then "+
+				"git fetch --quiet --depth 1 \"$remote\" %s; else git fetch --quiet \"$remote\"; fi "+
+				"&& git checkout --force --quiet %s", dir, app.Commit, app.Commit)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
 			return fmt.Errorf("pin %s to %s: %w\n%s", app.Name, shortCommit(app.Commit), err, out)
 		}
-		pinned++
+		pinned = append(pinned, bench.ShellQuote(app.Name))
 	}
-	if pinned == 0 {
+	if len(pinned) == 0 {
 		return nil
 	}
-	if out, err := runner.ExecSilent("frappe", "bash", "-c",
-		"cd /workspace/frappe-bench && bench setup requirements"); err != nil {
-		return fmt.Errorf("bench setup requirements after pinning: %w\n%s", err, out)
+	// Only the pinned apps, and in two halves: a bare `bench setup
+	// requirements` opens every app as a git repository and crashes on the
+	// first one that is not, which an archived app may well be.
+	for _, part := range []string{"--python", "--node"} {
+		if out, err := runner.ExecSilent("frappe", "bash", "-c",
+			"cd /workspace/frappe-bench && bench setup requirements "+part+" "+strings.Join(pinned, " ")); err != nil {
+			return fmt.Errorf("bench setup requirements %s after pinning: %w\n%s", part, err, out)
+		}
 	}
 	return nil
 }
@@ -760,7 +814,7 @@ func dockerHasContainers(project string) bool {
 }
 
 // printRestorePlan renders what --dry-run would have done.
-func printRestorePlan(pw ProgressWriter, m Manifest, target string, webPort, socketIOPort int,
+func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target string, webPort, socketIOPort int,
 	withFiles bool, archivePath string) {
 
 	pw.Printf("\nThe archive is valid and this restore would succeed.\n\n")
@@ -779,6 +833,10 @@ func printRestorePlan(pw ProgressWriter, m Manifest, target string, webPort, soc
 		pw.Printf("  Ports:         allocated at restore time\n")
 	}
 	pw.Printf("  Apps:          %s\n", strings.Join(m.Site.InstalledApps, ", "))
+	pw.Printf("  App sources:\n")
+	for _, line := range describePlan(plan) {
+		pw.Printf("    %s\n", line)
+	}
 	pw.Printf("  Attachments:   %s\n", yesNo(withFiles))
 	pw.Printf("  Encryption key present: %s\n", yesNo(m.Secrets.EncryptionKey != ""))
 	pw.Printf("\nRun the same command without --dry-run to restore.\n")

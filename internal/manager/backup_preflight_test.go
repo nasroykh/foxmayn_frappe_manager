@@ -207,7 +207,7 @@ func TestAppsForRestore(t *testing.T) {
 			m := devManifest()
 			m.Bench.Apps = tt.specs
 			m.Site.InstalledApps = tt.apps
-			got := appsForRestore(m)
+			got := planRestoreApps(m, nil).createSpecs()
 			if len(got) != len(tt.want) {
 				t.Fatalf("apps = %v, want %v", got, tt.want)
 			}
@@ -386,9 +386,26 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 			wantSub: "app source",
 		},
 		{
-			name:    "app name used to build a container path",
-			mutate:  func(m *Manifest) { m.Apps = []AppInfo{{Name: "../../etc"}} },
+			name: "app name used to build a container path",
+			mutate: func(m *Manifest) {
+				m.Apps = []AppInfo{{Name: "../../etc"}}
+				m.Site.InstalledApps = append(m.Site.InstalledApps, "../../etc")
+			},
 			wantSub: "app name",
+		},
+		{
+			name: "archived app name used to build a container path",
+			mutate: func(m *Manifest) {
+				m.Apps = []AppInfo{{Name: "../x", Source: AppSourceArchive, Member: "ffm-backup/apps/../x.tar.gz"}}
+				m.Site.InstalledApps = append(m.Site.InstalledApps, "../x")
+			},
+			wantSub: "app name",
+		},
+		{
+			name:    "hostile --app override",
+			mutate:  func(m *Manifest) {},
+			in:      RestoreInput{AppOverrides: []string{"erpnext=https://x/y`id`"}},
+			wantSub: "--app erpnext",
 		},
 		{
 			name:   "commit used in a checkout",
@@ -428,6 +445,16 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 			}
 		})
 	}
+
+	// A stray directory in the source bench's apps/ is recorded but never used,
+	// so its name must not block the restore.
+	t.Run("an unused app directory with an odd name passes", func(t *testing.T) {
+		m := devManifest()
+		m.Apps = append(m.Apps, AppInfo{Name: "frappe.bak-2024"})
+		if problems := checkManifestValues(m, RestoreInput{}); len(problems) != 0 {
+			t.Fatalf("problems = %v, want none", problems)
+		}
+	})
 
 	t.Run("an ordinary archive passes", func(t *testing.T) {
 		m := devManifest()
@@ -481,7 +508,7 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 	})
 }
 
-func TestAppsForRestoreUsesRecordedRemote(t *testing.T) {
+func TestPlanRestoreAppsUsesRecordedRemote(t *testing.T) {
 	m := devManifest()
 	m.Bench.Apps = []string{"erpnext"}
 	m.Site.InstalledApps = []string{"frappe", "erpnext", "custom"}
@@ -490,8 +517,11 @@ func TestAppsForRestoreUsesRecordedRemote(t *testing.T) {
 		{Name: "custom", Remote: "https://github.com/acme/custom", Branch: "main"},
 	}
 
-	got := appsForRestore(m)
-	want := []string{"erpnext", "https://github.com/acme/custom@main"}
+	// The recorded remote wins over the bench record's bare "erpnext": it is
+	// the branch that was actually checked out, where the record is only what
+	// create was asked for before anyone ran `bench switch-to-branch`.
+	got := planRestoreApps(m, nil).createSpecs()
+	want := []string{"https://github.com/frappe/erpnext@version-16", "https://github.com/acme/custom@main"}
 	if len(got) != len(want) {
 		t.Fatalf("apps = %v, want %v", got, want)
 	}
@@ -506,7 +536,7 @@ func TestAppsForRestoreUsesRecordedRemote(t *testing.T) {
 		m.Bench.Apps = nil
 		m.Site.InstalledApps = []string{"frappe", "hrms"}
 		m.Apps = []AppInfo{{Name: "hrms"}}
-		if got := appsForRestore(m); len(got) != 1 || got[0] != "hrms" {
+		if got := planRestoreApps(m, nil).createSpecs(); len(got) != 1 || got[0] != "hrms" {
 			t.Fatalf("apps = %v, want [hrms]", got)
 		}
 	})

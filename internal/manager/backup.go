@@ -124,14 +124,23 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	}()
 
 	pw.Step("Collecting bench and app metadata")
-	apps := collectAppInfo(runner, appNames(frappeBench), pw)
+	names := appNames(frappeBench)
+	forced, err := resolveVendorRequest(in.VendorApps, names)
+	if err != nil {
+		return err
+	}
+	apps := collectAppInfo(runner, names, pw)
 	installed, installedSource := collectInstalledApps(runner, frappeBench, b.SiteName, siteCfg)
 	frappeVersion := readFrappeVersion(frappeBench)
+	vendored := planAppSources(apps, vendorCandidates(installed, b.Apps, forced), forced, staging)
 
 	withFiles := !in.NoFiles
 	tiers := []string{TierCore}
 	if withFiles {
 		tiers = append(tiers, TierFiles)
+	}
+	if len(vendored) > 0 {
+		tiers = append(tiers, TierAppSource)
 	}
 
 	// Take the Frappe backup into an explicit staging directory. Never the
@@ -160,7 +169,20 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 		pw.Printf("  The database dump is encrypted; its key is stored in the archive.\n")
 	}
 
-	sizes, err := statSizes(runner, dumpPaths.all())
+	// App sources are archived from inside the container, next to the dump,
+	// so they are streamed out the same way and count toward the same space
+	// check.
+	appPaths := make([]string, 0, len(vendored))
+	for _, v := range vendored {
+		a := apps[v.index]
+		pw.Step(fmt.Sprintf("Archiving the source of %s (%s)", a.Name, describeVendorReason(a.SourceReason)))
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", appSourceTarCmd(), "ffm-tar", a.Name, v.remote); err != nil {
+			return fmt.Errorf("archive the source of app %s: %w\n%s", a.Name, err, out)
+		}
+		appPaths = append(appPaths, v.remote)
+	}
+
+	sizes, err := statSizes(runner, append(dumpPaths.all(), appPaths...))
 	if err != nil {
 		return err
 	}
@@ -241,6 +263,14 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 			return err
 		}
 	}
+	for _, v := range vendored {
+		a := apps[v.index]
+		size := sizes[v.remote]
+		pw.Step(fmt.Sprintf("Adding the source of %s (%s)", a.Name, humanBytes(size)))
+		if err := add(streamMember(runner, w, a.Member, v.remote, size, archive.EncodingGzip)); err != nil {
+			return err
+		}
+	}
 
 	manifest := Manifest{
 		Header: header,
@@ -288,12 +318,20 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	if len(installed) > 0 {
 		pw.Printf("  Apps:      %s\n", strings.Join(installed, ", "))
 	}
+	for _, v := range vendored {
+		a := apps[v.index]
+		pw.Printf("  Source:    %s archived with the backup (%s, %s)\n",
+			a.Name, describeVendorReason(a.SourceReason), humanBytes(sizes[v.remote]))
+	}
 	for _, a := range apps {
-		if a.Dirty {
+		// An archived app carries its working tree, uncommitted changes
+		// included, so there is nothing for the user to be warned about.
+		if a.Dirty && !a.Archived() {
 			fmt.Fprintf(pw.Stderr(),
 				"warning: app %q has uncommitted changes that a restore cannot reproduce, "+
-					"because it rebuilds the app from commit %s:\n         %s\n",
-				a.Name, shortCommit(a.Commit), strings.Join(a.DirtyPaths, ", "))
+					"because it rebuilds the app from commit %s:\n         %s\n"+
+					"         (ffm backup --vendor-apps %s archives the working tree as it is)\n",
+				a.Name, shortCommit(a.Commit), strings.Join(a.DirtyPaths, ", "), a.Name)
 		}
 	}
 	if startedForBackup {
@@ -523,14 +561,14 @@ func collectAppInfo(runner *bench.Runner, names []string, pw ProgressWriter) []A
 	for _, name := range names {
 		dir := "/workspace/frappe-bench/apps/" + name
 		info := AppInfo{Name: name}
-		if out, err := runner.ExecSilent("frappe", "git", "-C", dir, "rev-parse", "HEAD"); err == nil {
-			info.Commit = strings.TrimSpace(out)
+		out, err := runner.ExecSilent("frappe", "bash", "-c", appProbeScript, "ffm-probe", dir)
+		if err != nil {
+			fmt.Fprintf(pw.Stderr(), "warning: could not inspect app %q: %v\n", name, err)
 		}
-		if out, err := runner.ExecSilent("frappe", "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
-			info.Branch = strings.TrimSpace(out)
-		}
-		if out, err := runner.ExecSilent("frappe", "git", "-C", dir, "config", "--get", "remote.origin.url"); err == nil {
-			info.Remote = strings.TrimSpace(out)
+		applyProbe(&info, parseAppProbe(out))
+		if info.NoGit {
+			apps = append(apps, info)
+			continue
 		}
 		// Two prefix-free queries rather than `status --porcelain`: porcelain
 		// prefixes each path with a two-character status and a space, and
@@ -549,6 +587,35 @@ func collectAppInfo(runner *bench.Runner, names []string, pw ProgressWriter) []A
 		apps = append(apps, info)
 	}
 	return apps
+}
+
+// vendoredApp is an app whose source is being written into the archive.
+type vendoredApp struct {
+	index  int    // position in the manifest's Apps
+	remote string // tarball path inside the container
+}
+
+// planAppSources marks each app's Source and returns the ones to archive.
+func planAppSources(apps []AppInfo, candidates, forced map[string]bool, staging string) []vendoredApp {
+	var out []vendoredApp
+	for i := range apps {
+		a := &apps[i]
+		reason := ""
+		if candidates[a.Name] {
+			reason = vendorReason(*a, forced[a.Name])
+		}
+		if reason == "" {
+			if !a.NoGit && a.Remote != "" {
+				a.Source = AppSourceGit
+			}
+			continue
+		}
+		a.Source = AppSourceArchive
+		a.SourceReason = reason
+		a.Member = appSourceMember(a.Name)
+		out = append(out, vendoredApp{index: i, remote: staging + "/app-" + a.Name + ".tar.gz"})
+	}
+	return out
 }
 
 // maxDirtyPaths caps how many modified files are recorded per app, so a bench
