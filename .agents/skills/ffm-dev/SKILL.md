@@ -433,7 +433,7 @@ All Traefik configuration is CLI flags — no config file on disk.
 
 Both forms also include two optional trailing inputs: **Custom Frappe repo** (`--frappe-repo`, supports a `@branch` suffix) and **GitHub token** (`--github-token`, masked via `huh.EchoModePassword`). These pointers are threaded through `runCreateForm`/`runCreateFormFull` so flag values pre-fill them and form input flows back to `CreateInput`.
 
-`runCreateFormFull()` for prod shows: domain, admin password (password echo mode), ACME email (empty = no-ssl), Frappe version, DB engine, gunicorn workers, buffer pool, apps, custom Frappe repo, GitHub token.
+`runCreateFormFull()` for prod shows: domain, admin password (password echo mode), ACME email (empty = no-ssl), Frappe version, DB engine, gunicorn workers, buffer pool, apps, custom app, custom Frappe repo, GitHub token.
 
 ### Rollback mechanism
 
@@ -547,7 +547,7 @@ Called by `resolveBenchName()` when `args` is empty, before showing the interact
 
 ### Private repo credentials during bench init
 
-`Runner.ConfigureGitHubToken` writes git credentials via `docker compose exec`, which needs a **running** container. But `bench init` runs in a one-off `docker compose run --rm` container, so that helper can't cover it. When `--github-token` is set, `create.go` prepends the credential setup (`printf 'https://x-oauth-basic:<token>@github.com' > /tmp/.git-credentials && git config --global credential.helper 'store --file /tmp/.git-credentials'`) directly into the bench init bash command. No cleanup is needed — the container is `--rm`. The token never appears in `bench init` output (the helper reads it from the file, not the command line).
+`Runner.ConfigureGitHubToken` writes git credentials via `docker compose exec`, which needs a **running** container. But `bench init` runs in a one-off `docker compose run --rm` container, so that helper can't cover it. When `--github-token` is set, `create.go` prepends `bench.GitCredentialsCmd(token)` directly into the bench init bash command. It runs `printf '%s\n' <shell-quoted URL> > /tmp/.git-credentials && git config --global credential.helper 'store --file /tmp/.git-credentials'`: the token-bearing URL is a quoted printf *argument*, never part of the format string, so a `'` or `%` in the token can neither inject a command nor be read as a directive. `ConfigureGitHubToken` uses the same helper. No cleanup is needed — the container is `--rm`. The token never appears in `bench init` output (the helper reads it from the file, not the command line).
 
 ## Error Handling
 

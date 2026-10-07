@@ -9,7 +9,7 @@ A Go CLI that wraps Docker Compose to create, manage, and destroy Frappe benches
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-docker/) with the Compose plugin (`docker compose`)
-- Go 1.21+ (only needed to build from source)
+- Go 1.26.1+ (only needed to build from source)
 
 ## Installation
 
@@ -185,7 +185,29 @@ Flags:
   --github-token string   GitHub PAT for private HTTPS repos
   --proxy-port int        Dev reverse proxy: set socketio_port (e.g. 443 or 80)
   --proxy-host string     Dev reverse proxy: set per-site host_name
+  --web-port int          Fixed host web port instead of auto-allocating from 8000
+                          (must be paired with --socketio-port)
+  --socketio-port int     Fixed host Socket.IO port (must equal --web-port + 1000)
+  --domain-alias stringArray
+                          Extra hostname the bench also answers on (repeatable; needs
+                          the shared proxy and DNS; same as 'ffm domain add')
+  --alias-tls             Serve --domain-alias names over HTTPS with Let's Encrypt
+                          (prod with SSL only)
+  --match-host-user       Remap the container's frappe user to your uid/gid
+                          (needed when your uid is not 1000; env FFM_MATCH_HOST_USER)
+  --keep-on-failure       Leave containers and the bench directory in place on failure
+                          instead of rolling back (env FFM_KEEP_ON_FAILURE)
   --verbose               Stream full Docker and bench init output
+
+Production tuning (prod only unless noted):
+  --mariadb-buffer-pool string  InnoDB buffer pool size (default "1G"; dev uses 256M)
+  --gunicorn-workers int        Gunicorn worker processes (default 2; rule of thumb 2*CPU+1)
+  --worker-long-replicas int    Long-queue worker replicas (default 1)
+  --worker-short-replicas int   Short-queue worker replicas (default 1)
+  --redis-cache-maxmem string   Redis cache maxmemory, allkeys-lru eviction (default "512mb")
+  --redis-queue-maxmem string   Redis queue maxmemory, noeviction (default "512mb")
+  --slow-query-log              MariaDB slow query log, 2s threshold, written to
+                                <bench>/mysql-logs/ (prod + MariaDB only)
 ```
 
 #### `--apps` formats
@@ -505,7 +527,7 @@ Prints the build version, commit hash, and build date.
 ```
 ~/frappe/
   <bench-name>/
-    docker-compose.yml   # generated per bench (dev: 4 services, prod: 7 services)
+    docker-compose.yml   # generated per bench (dev: 4 services, prod: 8 services)
     Dockerfile           # dev: full tools image; prod: minimal image
     workspace/           # bind-mounted at /workspace in container
       frappe-bench/
@@ -539,7 +561,7 @@ Prints the build version, commit hash, and build date.
 | `redis-cache` | `redis:alpine` | Cache |
 | `redis-queue` | `redis:alpine` | Background job queue |
 
-**Prod (7 containers):**
+**Prod (8 containers):**
 
 | Service | Image | Purpose |
 |--|--|--|
