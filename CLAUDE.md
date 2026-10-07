@@ -476,10 +476,6 @@ internal/
 
 ### Undocumented-elsewhere gotchas
 
-- `ffm create` has seven prod-tuning flags (also listed in the README's create flags):
-  `--mariadb-buffer-pool` (1G), `--gunicorn-workers` (2), `--worker-long-replicas` (1),
-  `--worker-short-replicas` (1), `--redis-cache-maxmem` (512mb, allkeys-lru),
-  `--redis-queue-maxmem` (512mb, noeviction), `--slow-query-log` (creates `<bench>/mysql-logs/`).
 - Credentials default to `--admin-password admin` and `--db-password ffm123456`. Prod rejects the
   former. Failure paths interpolate `CombinedOutput` into errors, so a failed `bench new-site`
   can print the DB root password.
