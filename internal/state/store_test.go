@@ -45,3 +45,21 @@ func TestSaveIsAtomicAndPrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestPublishHost(t *testing.T) {
+	cases := []struct {
+		b    Bench
+		want string
+	}{
+		{Bench{Mode: "prod"}, "127.0.0.1"},
+		{Bench{Mode: "dev"}, ""},
+		{Bench{}, ""},
+		{Bench{Mode: "dev", Bind: BindLoopback}, "127.0.0.1"},
+		{Bench{Mode: "prod", Bind: BindLAN}, ""},
+	}
+	for _, c := range cases {
+		if got := c.b.PublishHost(); got != c.want {
+			t.Errorf("%+v: PublishHost() = %q, want %q", c.b, got, c.want)
+		}
+	}
+}

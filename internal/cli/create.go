@@ -33,6 +33,8 @@ func newCreateCmd() *cobra.Command {
 		slowQueryLog      bool
 		matchHostUser     bool
 		keepOnFailure     bool
+		lan               bool
+		sshAgent          bool
 		webPort           int
 		socketIOPort      int
 		domainAliases     []string
@@ -95,6 +97,8 @@ func newCreateCmd() *cobra.Command {
 				RedisCacheMaxmem: redisCacheMaxmem, RedisQueueMaxmem: redisQueueMaxmem,
 				SlowQueryLog: slowQueryLog, MatchHostUser: matchHostUser,
 				KeepOnFailure: keepOnFailure,
+				Bind:          manager.BindFor(lan),
+				SSHAgent:      sshAgent,
 				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
 				DomainAliases: domainAliases, AliasTLS: aliasTLS,
 			}, manager.CLIProgress{})
@@ -125,6 +129,10 @@ func newCreateCmd() *cobra.Command {
 		"Build the image with the container's frappe user remapped to your uid/gid. "+
 			"Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), "+
 			"otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER")
+	cmd.Flags().BoolVar(&lan, "lan", false,
+		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password")
+	cmd.Flags().BoolVar(&sshAgent, "ssh-agent", false,
+		"Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK")
 	cmd.Flags().BoolVar(&keepOnFailure, "keep-on-failure", false,
 		"On failure, leave containers and the bench directory in place instead of rolling back, "+
 			"so logs survive for diagnosis. Env: FFM_KEEP_ON_FAILURE")

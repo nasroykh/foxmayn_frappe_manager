@@ -110,7 +110,8 @@ func (s *Service) composeDataFor(b state.Bench) (bench.ComposeData, error) {
 		SocketIOPortEnd:   b.SocketIOPort + 5,
 		DBType:            b.DBEngine(),
 		DBRootPassword:    b.DBPassword,
-		ForwardSSHAgent:   mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
+		ForwardSSHAgent:   mode == "dev" && b.SSHAgent,
+		PublishHost:       b.PublishHost(),
 		Domain:            b.Domain,
 		SiteName:          b.SiteName,
 		NoSSL:             mode == "prod" && prodNoSSL(b),
@@ -169,6 +170,9 @@ func (s *Service) DomainAdd(in DomainInput, pw ProgressWriter) error {
 	}
 	if d == primaryHostOf(b) {
 		return fmt.Errorf("domain %q is already this bench's primary host", d)
+	}
+	if b.IsDev() && b.PublishHost() != "" {
+		return fmt.Errorf("bench %q publishes its ports on 127.0.0.1 only; a dev alias needs them on the LAN (the browser reaches socket.io on the published port) — run 'ffm reconcile %s --lan' first", b.Name, b.Name)
 	}
 	aliasTLS := b.AliasTLS || in.TLS
 	if slices.Contains(b.DomainAliases, d) && aliasTLS == b.AliasTLS {

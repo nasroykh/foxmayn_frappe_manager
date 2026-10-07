@@ -43,6 +43,12 @@ type CreateInput struct {
 	// Create fails, instead of rolling them back. Intended for unattended runs
 	// where the rollback would otherwise destroy the only diagnostic evidence.
 	KeepOnFailure bool
+	// Bind is state.BindLoopback (the default when empty) or state.BindLAN,
+	// and decides which host interfaces the published ports listen on.
+	Bind string
+	// SSHAgent forwards the host SSH agent into the dev frappe container, for
+	// SSH-URL private repos. Opt-in; it requires SSH_AUTH_SOCK at create time.
+	SSHAgent bool
 	// SkipAppInstall clones each app but does not install it on the site.
 	//
 	// Set only by Restore: the restored database already lists its apps as
@@ -93,6 +99,9 @@ type TunnelEnableInput struct {
 	BenchName  string
 	ServerName string
 	Subdomain  string
+	// AllowDefaultPassword lets a bench that still has the default admin
+	// password be published. Off by default.
+	AllowDefaultPassword bool
 }
 
 // ExecInput runs a one-shot command in a container.
@@ -243,6 +252,10 @@ type RestoreInput struct {
 	// KeepOnFailure leaves a failed restore's containers and directory in place
 	// for diagnosis.
 	KeepOnFailure bool
+	// LAN publishes the restored bench's ports on all interfaces instead of
+	// 127.0.0.1. SSHAgent forwards the host SSH agent (dev only).
+	LAN      bool
+	SSHAgent bool
 	// MaxExtractBytes caps extraction. Zero means the archive package default.
 	MaxExtractBytes int64
 	// SkipSpaceCheck bypasses the free-space preflight.

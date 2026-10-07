@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,9 @@ type ComposeData struct {
 	// frappe container so that SSH-URL private repos work during bench get-app.
 	// Dev mode only.
 	ForwardSSHAgent bool
+	// PublishHost is the host IP published ports bind to ("127.0.0.1"), or ""
+	// for all interfaces. Set from state.Bench.PublishHost.
+	PublishHost string
 	// Domain is the public domain for production benches (e.g. "erp.example.com").
 	// Prod mode only.
 	Domain string
@@ -191,25 +195,43 @@ func WriteCompose(benchDir string, data ComposeData) error {
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
 		return err
 	}
+	out, err := RenderCompose(data)
+	if err != nil {
+		return err
+	}
+	dest := filepath.Join(benchDir, "docker-compose.yml")
+	// Keep the previous file when the content changes. ffm owns this file and
+	// regenerates it (reconcile, domain changes), so a hand edit made here is
+	// replaced; the .bak lets the user move it into docker-compose.override.yml.
+	if prev, err := os.ReadFile(dest); err == nil && !bytes.Equal(prev, out) {
+		if err := os.WriteFile(dest+".bak", prev, 0o600); err != nil {
+			return fmt.Errorf("back up docker-compose.yml: %w", err)
+		}
+	}
+	// 0600: the file carries the database root password. WriteFile only applies
+	// the mode when it creates the file, so files written by older versions
+	// (0644) are tightened explicitly.
+	if err := os.WriteFile(dest, out, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(dest, 0o600)
+}
 
+// RenderCompose returns the docker-compose.yml for data without writing it.
+func RenderCompose(data ComposeData) ([]byte, error) {
 	tmplStr := devComposeTmpl
 	if data.Mode == "prod" {
 		tmplStr = prodComposeTmpl
 	}
-
 	tmpl, err := template.New("compose").Parse(tmplStr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	dest := filepath.Join(benchDir, "docker-compose.yml")
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return nil, err
 	}
-	defer f.Close()
-
-	return tmpl.Execute(f, data)
+	return buf.Bytes(), nil
 }
 
 // WriteDockerfile renders the Dockerfile template into the bench directory.

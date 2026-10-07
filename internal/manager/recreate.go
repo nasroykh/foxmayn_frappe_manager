@@ -3,6 +3,7 @@ package manager
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
@@ -137,7 +138,18 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		FixedWebPort:      fixedWeb,
 		FixedSocketIOPort: fixedSio,
 		MatchHostUser:     b.MatchHostUser,
+		Bind:              effectiveBind(b),
+		SSHAgent:          b.SSHAgent && os.Getenv("SSH_AUTH_SOCK") != "",
 		DomainAliases:     b.DomainAliases,
 		AliasTLS:          b.AliasTLS,
 	}, pw)
+}
+
+// effectiveBind turns a record's Bind (possibly empty on old records) into the
+// explicit value that reproduces how its ports are published today.
+func effectiveBind(b state.Bench) string {
+	if b.PublishHost() == "" {
+		return state.BindLAN
+	}
+	return state.BindLoopback
 }

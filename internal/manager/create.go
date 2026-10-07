@@ -1,7 +1,9 @@
 package manager
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,6 +98,35 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
+	bind := in.Bind
+	if bind == "" {
+		bind = state.BindLoopback
+	}
+	if bind != state.BindLoopback && bind != state.BindLAN {
+		return fmt.Errorf("invalid bind %q: must be %q or %q", bind, state.BindLoopback, state.BindLAN)
+	}
+	// New benches only: recreate replays a bench that already exists, and
+	// restore carries an archived password the user may not be able to change
+	// until the bench is up.
+	newBench := !in.recreating && !in.SkipAppInstall
+	if newBench && bind == state.BindLAN && adminPassword == defaultAdminPassword {
+		return fmt.Errorf("--lan publishes the bench to other machines; the default admin password is not allowed — set --admin-password")
+	}
+	if mode == "dev" && len(in.DomainAliases) > 0 && bind != state.BindLAN {
+		return fmt.Errorf("--domain-alias on a dev bench needs --lan: the browser reaches socket.io on the published port, which is otherwise bound to 127.0.0.1")
+	}
+	sshAgent := in.SSHAgent && mode == "dev"
+	if sshAgent && os.Getenv("SSH_AUTH_SOCK") == "" {
+		return fmt.Errorf("--ssh-agent needs a running SSH agent (SSH_AUTH_SOCK is not set)")
+	}
+	if newBench && mode == "prod" && dbPassword == defaultDBPassword {
+		generated, err := randomPassword()
+		if err != nil {
+			return err
+		}
+		dbPassword = generated
+	}
+
 	// Prod-specific validation
 	if mode == "prod" {
 		if domain == "" {
@@ -114,7 +145,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			}
 			domain = normalized
 		}
-		if adminPassword == "admin" {
+		if adminPassword == defaultAdminPassword {
 			return fmt.Errorf("default admin password is not allowed in production — set --admin-password to a strong password")
 		}
 		if !noSSL {
@@ -326,7 +357,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		SocketIOPortEnd:   socketIOPort + 5,
 		DBType:            dbType,
 		DBRootPassword:    dbPassword,
-		ForwardSSHAgent:   mode == "dev" && os.Getenv("SSH_AUTH_SOCK") != "",
+		ForwardSSHAgent:   sshAgent,
+		PublishHost:       state.Bench{Mode: mode, Bind: bind}.PublishHost(),
 		Domain:            domain,
 		SiteName:          siteName,
 		NoSSL:             noSSL,
@@ -712,6 +744,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		DomainAliases: aliases,
 		AliasTLS:      aliasTLS,
 		MatchHostUser: in.MatchHostUser,
+		Bind:          bind,
+		SSHAgent:      sshAgent,
 		CreatedAt:     time.Now(),
 		// Everything below is what a later compose re-render needs in order to
 		// reproduce this exact bench. Without it, recreate and `ffm domain`
@@ -795,4 +829,21 @@ func setupFfcConfig(runner *bench.Runner, benchName, siteName string) error {
 		return fmt.Errorf("write ffc config: %w", err)
 	}
 	return nil
+}
+
+// Defaults the CLI and dashboard offer. Prod refuses the admin one and replaces
+// the DB one with a random password.
+const (
+	defaultAdminPassword = "admin"
+	defaultDBPassword    = "ffm123456"
+)
+
+// randomPassword returns 24 hex characters: safe for ValidateDBPassword, for
+// double-quoted YAML and for shell arguments.
+func randomPassword() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
