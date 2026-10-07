@@ -51,12 +51,17 @@ curl -fsSL "$CHECKSUM_URL" -o "$TMP/checksums.txt"
 
 # --- verify checksum ---
 cd "$TMP"
+if ! grep -q "  $ARCHIVE\$" checksums.txt; then
+  echo "Error: checksums.txt has no entry for $ARCHIVE; refusing to install." >&2
+  exit 1
+fi
 if command -v sha256sum > /dev/null 2>&1; then
-  grep "$ARCHIVE" checksums.txt | sha256sum -c -
+  grep "  $ARCHIVE\$" checksums.txt | sha256sum -c - || { echo "Error: checksum mismatch for $ARCHIVE." >&2; exit 1; }
 elif command -v shasum > /dev/null 2>&1; then
-  grep "$ARCHIVE" checksums.txt | shasum -a 256 -c -
+  grep "  $ARCHIVE\$" checksums.txt | shasum -a 256 -c - || { echo "Error: checksum mismatch for $ARCHIVE." >&2; exit 1; }
 else
-  echo "Warning: no sha256 tool found, skipping checksum verification." >&2
+  echo "Error: no sha256 tool found (sha256sum or shasum); refusing to install an unverified binary." >&2
+  exit 1
 fi
 cd - > /dev/null
 

@@ -43,7 +43,11 @@ try {
     $Expected = (Get-Content $ChecksumPath | Where-Object { $_ -match $Archive }) -split '\s+' | Select-Object -First 1
     $Actual   = (Get-FileHash -Algorithm SHA256 -Path $ArchivePath).Hash.ToLower()
 
-    if ($Expected -and ($Actual -ne $Expected.ToLower())) {
+    if (-not $Expected) {
+        Write-Error "checksums.txt has no entry for $Archive; refusing to install."
+        exit 1
+    }
+    if ($Actual -ne $Expected.ToLower()) {
         Write-Error "Checksum mismatch!`n  Expected: $Expected`n  Got:      $Actual"
         exit 1
     }
