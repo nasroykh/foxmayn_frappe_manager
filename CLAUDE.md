@@ -476,7 +476,7 @@ internal/
 
 ### Undocumented-elsewhere gotchas
 
-- `ffm create` has seven prod-tuning flags with no coverage outside `--help`:
+- `ffm create` has seven prod-tuning flags (also listed in the README's create flags):
   `--mariadb-buffer-pool` (1G), `--gunicorn-workers` (2), `--worker-long-replicas` (1),
   `--worker-short-replicas` (1), `--redis-cache-maxmem` (512mb, allkeys-lru),
   `--redis-queue-maxmem` (512mb, noeviction), `--slow-query-log` (creates `<bench>/mysql-logs/`).
@@ -499,6 +499,9 @@ internal/
   `ffm exec` is the one deliberate exception: it runs the user's own command.
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
+- `skills/ffm-dev/` and `skills/foxmayn-frappe-manager/` are copies of the same two skills under
+  `.agents/skills/`. Edit the `.agents/skills/` file and copy it over; the two had drifted, with
+  `skills/` missing the `--frappe-repo` / `--github-token` guidance.
 
 ### Dependencies
 

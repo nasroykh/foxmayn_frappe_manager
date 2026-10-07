@@ -98,7 +98,17 @@ ffm create myprod --mode prod --domain erp.example.com \
 
 # Dev bench with a custom/private app
 ffm create mybench --apps "git@github.com:myorg/myapp.git@main"
+
+# Dev bench using a custom/forked Frappe repo (optional @branch overrides --frappe-branch)
+ffm create mybench --frappe-repo https://github.com/your-org/frappe.git@main
+
+# Private forked Frappe repo over HTTPS (token injected into bench init)
+ffm create mybench \
+    --frappe-repo https://github.com/your-org/frappe.git@main \
+    --github-token ghp_xxx
 ```
+
+`--frappe-repo` and `--github-token` are also offered in the interactive `ffm create` form (the token field is masked). For a private Frappe fork over SSH, just pass the `git@github.com:...` URL — the SSH agent is forwarded automatically in dev mode.
 
 `ffm create` performs the full pipeline automatically: port allocation → compose/Dockerfile generation → Docker build → bench init → container start → site creation → app installation → (dev: dev server + ffc setup) (prod: asset build). Auto-rolls back everything on failure.
 
