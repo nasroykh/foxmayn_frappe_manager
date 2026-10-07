@@ -336,7 +336,8 @@ type ComposeData struct {
     SocketIOPortEnd int      // SocketIOPort + 5; dev only
     DBType          string   // "mariadb" or "postgres"; controls which DB service is rendered
     DBRootPassword  string   // root password for whichever DB engine is selected
-    ForwardSSHAgent bool     // dev only: mount SSH_AUTH_SOCK into container
+    ForwardSSHAgent bool     // dev only, opt-in (--ssh-agent): mount ${SSH_AUTH_SOCK:-/dev/null}
+    PublishHost     string   // "127.0.0.1" or "" (all interfaces); from state.Bench.PublishHost
     Domain          string   // prod only: public domain for Traefik routing
     NoSSL           bool     // prod only: skip TLS labels, route on HTTP entrypoint
 }
@@ -361,8 +362,8 @@ bench.WriteDevcontainer(benchDir, data)   // → .devcontainer/devcontainer.json
 | `redis-queue`        | default                        |                                                                 |
 | `frappe`             | `bench serve --port 8000`      | gunicorn; depends_on db service (healthy); Traefik labels       |
 | `socketio`           | `node apps/frappe/socketio.js` | Traefik labels for `/socket.io` path                            |
-| `worker-long`        | `bench worker --queue long`    | No ports                                                        |
-| `worker-short`       | `bench worker --queue short`   | No ports                                                        |
+| `worker-long`        | `bench worker --queue long,default,short` | No ports                                                        |
+| `worker-short`       | `bench worker --queue short,default` | No ports                                                        |
 | `scheduler`          | `bench schedule`               | No ports                                                        |
 
 Traefik labels on `frappe` and `socketio` route `{{.Domain}}` on `websecure` (HTTPS) by default, or `web` (HTTP) when `{{.NoSSL}}` is true. Per-bench HTTP→HTTPS redirect is applied via labels (no global redirect, which would break dev benches).

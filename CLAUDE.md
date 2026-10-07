@@ -61,7 +61,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 20 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 21 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -93,6 +93,8 @@ internal/
                             --app <app>=<git-url>[@branch] (repeatable; frappe=… too).
                             arg0 is the ARCHIVE, arg1 the new bench name — so it does NOT
                             call resolveBenchName: the target must not exist yet
+    reconcile.go          → ffm reconcile: --dry-run / --lan / --loopback / --ssh-agent /
+                            --no-ssh-agent; behaviour in manager/reconcile.go
     recreate.go           → ffm recreate: --force / --reallocate-ports / --github-token /
                             --proxy-port / --proxy-host
     delete.go             → confirmation prompt (--force skips), then manager.Service.Delete
@@ -162,6 +164,9 @@ internal/
     backup_schedule.go    → RunDue / runOne / ScheduleStatuses / SetBackupSchedule; RunState in
                             <backups>/<bench>/.schedule.json
     diskfree_unix.go / diskfree_windows.go → freeBytes(); no-op on Windows
+    reconcile.go          → Reconcile: re-render docker-compose.yml from the record (composeDataFor)
+                            and apply it with applyDomainChange (up -d, no data loss). The way
+                            template fixes reach existing benches; recreate is destructive
     recreate.go           → teardown + Create with stored inputs; reuses the old port pair
     lifecycle.go          → Start / Stop / Delete / TeardownBenchFiles; Start also back-fills
                             skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
@@ -464,7 +469,10 @@ internal/
   `.claude/skills/foxmayn-frappe-cli/SKILL.md` is missing, and also rewrites `.mcp.json` (wiring
   Claude Code to `ffc mcp --site <name>`) and re-applies the three patches above.
 - **Private repos** — `--apps` takes short names, SSH URLs, HTTPS URLs, and `@branch` suffixes.
-  SSH agent forwarding is automatic when `SSH_AUTH_SOCK` is set (dev only). `--github-token`
+  SSH agent forwarding is opt-in with `--ssh-agent` (dev only), persisted as `Bench.SSHAgent`; the
+  mount is `${SSH_AUTH_SOCK:-/dev/null}` so compose still works when the variable is unset (cron,
+  sudo, the dashboard daemon). Before v0.8.1 it was automatic and a bare `${SSH_AUTH_SOCK}`, which
+  made every later compose call without an agent fail. `--github-token`
   configures a credential helper; because bench init runs in a one-off `compose run` container
   that `exec`-based setup cannot reach, the credential setup is prepended into the bench init
   bash command instead. `--frappe-repo` maps to `bench init --frappe-path` with the same
@@ -476,7 +484,15 @@ internal/
 
 ### Undocumented-elsewhere gotchas
 
-- Credentials default to `--admin-password admin` and `--db-password ffm123456`. Prod rejects the
+- **Published ports** bind to `Bench.PublishHost()`: `127.0.0.1` for new benches (`Bind: loopback`),
+  all interfaces with `--lan`. Records without `Bind` keep their old behaviour: prod → loopback,
+  dev → all interfaces. `--lan` is refused with the default admin password; a dev bench with domain
+  aliases needs `--lan` (socket.io is reached on the published port). `ffm tunnel` refuses the
+  default admin password unless `--allow-default-password`.
+- **Prod workers** run `--queue long,default,short` and `--queue short,default`. Frappe enqueues to
+  `default` unless told otherwise; before v0.8.1 nothing consumed it (confirmed live).
+- Credentials default to `--admin-password admin` and `--db-password ffm123456`. Prod generates a
+  random DB password when the default is left, and rejects the
   former. Failure paths interpolate `CombinedOutput` into errors, so a failed `bench new-site`
   can print the DB root password.
 - **Every value in a `bash -c` string that did not come from ffm itself goes through

@@ -48,7 +48,7 @@ make install
 | | Development (`--mode dev`) | Production (`--mode prod`) |
 |--|--|--|
 | **Purpose** | Local dev with Claude Code, ffc, hot-reload | VPS deployment |
-| **Containers** | 4 (frappe + db + redis×2) | 7 (gunicorn + socketio + workers + scheduler + db + redis×2) |
+| **Containers** | 4 (frappe + db + redis×2) | 8 (gunicorn + socketio + worker-long + worker-short + scheduler + db + redis×2) |
 | **Image** | Full dev tools (zsh, starship, Go, ffc, Claude Code) | Minimal (no dev tools) |
 | **Database** | MariaDB 11.8 or PostgreSQL 18 (experimental) | MariaDB 11.8 or PostgreSQL 18 (experimental) |
 | **Site name** | `<name>.localhost` | Your public domain |
@@ -181,7 +181,8 @@ Flags:
   --apps stringArray      Apps to install (see formats below)
   --admin-password string Frappe site admin password (default "admin"; required for prod)
   --db-type string        Database engine: mariadb or postgres (default "mariadb")
-  --db-password string    Database root password (default "ffm123456")
+  --db-password string    Database root password (default "ffm123456"; prod generates
+                          a random one when the default is left)
   --github-token string   GitHub PAT for private HTTPS repos
   --proxy-port int        Dev reverse proxy: set socketio_port (e.g. 443 or 80)
   --proxy-host string     Dev reverse proxy: set per-site host_name
@@ -197,6 +198,10 @@ Flags:
                           (needed when your uid is not 1000; env FFM_MATCH_HOST_USER)
   --keep-on-failure       Leave containers and the bench directory in place on failure
                           instead of rolling back (env FFM_KEEP_ON_FAILURE)
+  --lan                   Publish the bench's ports on all interfaces instead of
+                          127.0.0.1 (needed from another machine and for dev
+                          --domain-alias; refused with the default admin password)
+  --ssh-agent             Forward the host SSH agent into the dev container (opt-in)
   --verbose               Stream full Docker and bench init output
 
 Production tuning (prod only unless noted):
@@ -221,7 +226,7 @@ ffm create mybench --apps https://github.com/myorg/myapp
 ffm create mybench --apps "https://github.com/myorg/myapp@develop" --github-token ghp_xxx
 ```
 
-When `SSH_AUTH_SOCK` is set, the SSH agent is automatically forwarded into the container so SSH-URL private repos work without a token.
+Pass `--ssh-agent` to forward your SSH agent into the container, so SSH-URL private repos work without a token (dev only; `SSH_AUTH_SOCK` must be set). Forwarding is opt-in: it hands your SSH keys to everything running in the bench, including Claude Code. Benches created before v0.8.1 forwarded the agent automatically; `ffm reconcile <bench> --ssh-agent` keeps it for them.
 
 #### Using a custom or forked Frappe repo
 
@@ -236,8 +241,8 @@ ffm create mybench \
   --frappe-repo https://github.com/your-org/frappe.git@main \
   --github-token ghp_xxx
 
-# Private fork over SSH (uses forwarded SSH agent, no token needed)
-ffm create mybench --frappe-repo "git@github.com:your-org/frappe.git@main"
+# Private fork over SSH (uses the forwarded SSH agent, no token needed)
+ffm create mybench --ssh-agent --frappe-repo "git@github.com:your-org/frappe.git@main"
 ```
 
 Both `--frappe-repo` and `--github-token` are also available in the interactive `ffm create` form (the token field is masked).
@@ -474,6 +479,8 @@ Flags:  --dry-run                       Validate the archive and print the plan
         --github-token <token>          Token for private app clones (github.com SSH sources use HTTPS with it)
         --skip-migrate                  Skip `bench migrate` after restoring
         --keep-on-failure               Leave a failed restore in place for diagnosis
+        --lan                           Publish the ports on all interfaces instead of 127.0.0.1
+        --ssh-agent                     Forward the host SSH agent into the dev container
         --skip-space-check              Do not check free disk space first
         --app <app>=<git-url>[@branch]  Clone an app from here instead (repeatable; frappe=... too)
 ```
@@ -496,6 +503,22 @@ What a restore cannot bring back, and says so when it happens: uncommitted chang
 working tree (unless the backup archived that app's source), the VPS tunnel (its token lives in this host's `tunnel.json`, not the archive),
 the ffc API secret (Frappe mints a new one on every request), and absolute URLs stored *inside*
 the database when the site is renamed.
+
+### `ffm reconcile [name]`
+
+Applies this ffm version's templates to a bench created by an earlier version, without losing data. It regenerates `docker-compose.yml` from the bench's saved settings and runs `docker compose up -d`: only containers whose definition changed are replaced, and the databases, the workspace and the bench record are kept. `ffm recreate`, by contrast, deletes the volumes and rebuilds from scratch.
+
+```bash
+ffm reconcile mybench --dry-run     # show what would change
+ffm reconcile mybench               # apply it
+ffm reconcile mybench --loopback    # publish the ports on 127.0.0.1 only
+ffm reconcile mybench --lan         # publish them on all interfaces
+ffm reconcile mybench --ssh-agent   # keep forwarding the SSH agent (dev)
+```
+
+**Ports.** New benches publish their ports on `127.0.0.1` only; `--lan` (on `create`, `restore` or `reconcile`) publishes them on all interfaces. Benches created before v0.8.1 keep their behaviour until reconciled: prod benches move to `127.0.0.1` (Traefik reaches them over the proxy network, and a host-side Caddy or nginx reaches `127.0.0.1`), dev benches stay on all interfaces unless you pass `--loopback`. A dev bench with domain aliases needs `--lan`, because the browser reaches socket.io on the published port.
+
+**Upgrading to v0.8.1.** Run `ffm reconcile <bench>` on every prod bench: before v0.8.1, prod workers never consumed Frappe's `default` queue, so most scheduled jobs and plain `frappe.enqueue` calls never ran, and gunicorn was reachable over plain HTTP on the published port.
 
 ### `ffm delete [name]`
 

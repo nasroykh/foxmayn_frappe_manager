@@ -437,12 +437,14 @@ code ~/frappe/mybench
 | What         | Value                                           |
 | ------------ | ----------------------------------------------- |
 | Site admin   | `administrator` / `admin`                       |
-| DB root      | `root` / `ffm123456` (MariaDB or PostgreSQL)    |
+| DB root      | `root` / `ffm123456` (MariaDB or PostgreSQL; prod generates a random one) |
 | Site name    | `<bench-name>.localhost`                        |
 
 Override during creation with `--admin-password`, `--db-password`, and `--db-type`.
 
-**Production:** `--admin-password` is required and must not be `admin`.
+**Production:** `--admin-password` is required and must not be `admin`. If `--db-password` is left at its default, a random database password is generated.
+
+**Ports:** new benches publish their ports on `127.0.0.1` only; pass `--lan` to reach them from another machine (refused with the default admin password; needed for dev domain aliases). SSH agent forwarding is opt-in with `--ssh-agent`. After upgrading ffm, run `ffm reconcile <bench>` to apply template fixes without losing data (v0.8.1 fixes prod workers that never consumed Frappe's `default` queue).
 
 ---
 
