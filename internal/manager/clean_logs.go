@@ -36,7 +36,7 @@ func (s *Service) CleanLogs(in CleanLogsInput, pw ProgressWriter) error {
 		return fmt.Errorf("--days must be at least 1 (got %d)", in.Days)
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	dbNameScript := fmt.Sprintf(
 		`import json,sys; print(json.load(open('/workspace/frappe-bench/sites/%s/site_config.json'))['db_name'])`,
 		b.SiteName,
@@ -57,8 +57,7 @@ func (s *Service) CleanLogs(in CleanLogsInput, pw ProgressWriter) error {
 			"SELECT COUNT(*) FROM `%s`.`%s` WHERE `%s` < NOW() - INTERVAL %d DAY;",
 			dbName, table, col, in.Days,
 		)
-		countOut, err := runner.ExecSilent("mariadb",
-			"mariadb", "-u", "root", "-p"+b.DBPassword, "-N", "-e", countSQL)
+		countOut, err := runner.ExecSilent("mariadb", bench.MariaDBRootArgs(countSQL, "-N")...)
 		if err != nil {
 			pw.Printf("  %s: skipped (%s)\n", table, strings.TrimSpace(countOut))
 			continue
@@ -76,8 +75,7 @@ func (s *Service) CleanLogs(in CleanLogsInput, pw ProgressWriter) error {
 			"DELETE FROM `%s`.`%s` WHERE `%s` < NOW() - INTERVAL %d DAY;",
 			dbName, table, col, in.Days,
 		)
-		if out, err := runner.ExecSilent("mariadb",
-			"mariadb", "-u", "root", "-p"+b.DBPassword, "-e", deleteSQL); err != nil {
+		if out, err := runner.ExecSilent("mariadb", bench.MariaDBRootArgs(deleteSQL)...); err != nil {
 			pw.Printf("  %s: delete failed (%s)\n", table, strings.TrimSpace(out))
 			continue
 		}

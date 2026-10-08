@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 )
 
 // SetupFFC generates API keys and writes ffc config inside the bench container.
@@ -23,7 +21,7 @@ func (s *Service) SetupFFC(name string, pw ProgressWriter) error {
 	if !b.IsDev() {
 		return fmt.Errorf("ffc is set up on dev benches only; %q is a %s bench", b.Name, b.Mode)
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 
 	pw.Printf("Setting up ffc for bench %q...\n", name)
 	pw.Println("  [1] Generating Frappe API keys")

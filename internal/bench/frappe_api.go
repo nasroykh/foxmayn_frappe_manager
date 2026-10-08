@@ -22,7 +22,7 @@ func (r *Runner) GenerateAdminAPIKeys(siteName string) (APIKeys, error) {
 	)
 	out, err := r.ExecSilent("frappe", "bash", "-c", cmd)
 	if err != nil {
-		return APIKeys{}, fmt.Errorf("bench execute generate_keys: %w (output: %s)", err, out)
+		return APIKeys{}, fmt.Errorf("bench execute generate_keys: %w (output: %s)", err, firstLine(out))
 	}
 
 	for _, line := range strings.Split(out, "\n") {
@@ -38,5 +38,17 @@ func (r *Runner) GenerateAdminAPIKeys(siteName string) (APIKeys, error) {
 			return APIKeys{Key: parsed.APIKey, Secret: parsed.APISecret}, nil
 		}
 	}
-	return APIKeys{}, fmt.Errorf("could not parse API keys from output: %s", out)
+	// The output is not echoed: when parsing fails it may still hold the
+	// freshly generated api_secret.
+	return APIKeys{}, fmt.Errorf("could not parse API keys from 'bench execute generate_keys' output (%d bytes)", len(out))
+}
+
+// firstLine returns the first non-empty line of s, for short error messages.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
 }

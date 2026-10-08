@@ -182,7 +182,7 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if err != nil {
 		return err
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 
 	// From here on, a failure must undo the bench Create just made — otherwise a
 	// failed restore leaves a tracked but half-populated bench behind.

@@ -287,7 +287,7 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 		return nil
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	if err := runner.Up(); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
 	}

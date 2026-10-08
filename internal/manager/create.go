@@ -251,6 +251,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 	benchDir := config.BenchDir(name)
 	runner := bench.NewRunner(name, benchDir, s.Verbose)
+	runner.Redact = []string{adminPassword, dbPassword, githubToken}
 
 	// Site name: domain for prod, <name>.localhost for dev
 	siteName := name + ".localhost"

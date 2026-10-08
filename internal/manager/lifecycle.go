@@ -22,7 +22,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 
 	pw.Printf("Starting bench %q...\n", name)
 	if err := runner.Up(); err != nil {
@@ -143,7 +143,7 @@ func (s *Service) Stop(name string, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	pw.Printf("Stopping bench %q...\n", name)
 	if err := runner.Stop(); err != nil {
 		return fmt.Errorf("docker compose stop: %w", err)
@@ -159,7 +159,7 @@ func (s *Service) TeardownBenchFiles(b state.Bench) {
 			fmt.Fprintf(os.Stderr, "warning: stop frpc container: %v\n", err)
 		}
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	if err := runner.Down(true); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
 	}

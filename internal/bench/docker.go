@@ -19,7 +19,28 @@ type Runner struct {
 	Project    string // e.g. "ffm-mybench"
 	ComposeDir string // directory containing docker-compose.yml
 	Verbose    bool
+	// Redact lists secrets (passwords, tokens) replaced by *** in every
+	// output this runner captures: ExecSilent results, failure dumps, logs
+	// and error text. Captured output routinely ends up in errors, terminals,
+	// dashboard job records and URLs, and the commands that produce it carry
+	// these values as arguments.
+	Redact []string
 }
+
+// Scrub replaces every secret of at least 6 characters in s with ***. Shorter
+// values would turn common substrings into noise; real ffm credentials are
+// longer.
+func Scrub(s string, secrets ...string) string {
+	for _, secret := range secrets {
+		if len(secret) < 6 {
+			continue
+		}
+		s = strings.ReplaceAll(s, secret, "***")
+	}
+	return s
+}
+
+func (r *Runner) scrub(s string) string { return Scrub(s, r.Redact...) }
 
 func NewRunner(benchName, composeDir string, verbose bool) *Runner {
 	return &Runner{
@@ -95,7 +116,7 @@ func (r *Runner) Build() error {
 		return cmd.Run()
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Stderr.Write(out)
+		os.Stderr.WriteString(r.scrub(string(out)))
 		return err
 	}
 	return nil
@@ -114,7 +135,7 @@ func (r *Runner) Run(service string, args ...string) error {
 		return cmd.Run()
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Stderr.Write(out)
+		os.Stderr.WriteString(r.scrub(string(out)))
 		return err
 	}
 	return nil
@@ -198,7 +219,7 @@ func (r *Runner) ExecSilent(service string, shellArgs ...string) (string, error)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+	return r.scrub(strings.TrimSpace(string(out))), err
 }
 
 // ExecDetached runs a command inside a service container without waiting.
@@ -226,7 +247,7 @@ func (r *Runner) LogsString(service string) string {
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	out, _ := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out))
+	return r.scrub(strings.TrimSpace(string(out)))
 }
 
 // PS returns the raw output of docker compose ps.
@@ -242,13 +263,25 @@ func (r *Runner) PS(format string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// MariaDBRootArgs returns the exec arguments that run sql as root in the
+// mariadb container. The password comes from the container's own
+// MYSQL_ROOT_PASSWORD through MYSQL_PWD, so it never appears in a process
+// argument list on the host or in the container (`-p<password>` did, for
+// anyone running ps). flags are extra mariadb options such as "-N".
+func MariaDBRootArgs(sql string, flags ...string) []string {
+	cmd := `MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mariadb -u root`
+	for _, f := range flags {
+		cmd += " " + ShellQuote(f)
+	}
+	return []string{"bash", "-c", cmd + " -e " + ShellQuote(sql)}
+}
+
 // WaitForMariaDB polls until MariaDB accepts connections or the timeout elapses.
 func (r *Runner) WaitForMariaDB(password string, timeout time.Duration, progressWriter io.Writer) error {
 	deadline := time.Now().Add(timeout)
 	attempt := 0
 	for time.Now().Before(deadline) {
-		out, err := r.ExecSilent("mariadb",
-			"mariadb", "-u", "root", "-p"+password, "-e", "SELECT 1")
+		out, err := r.ExecSilent("mariadb", MariaDBRootArgs("SELECT 1")...)
 		if err == nil && strings.Contains(out, "1") {
 			return nil
 		}
@@ -433,7 +466,7 @@ func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) er
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		if msg := r.scrub(strings.TrimSpace(stderr.String())); msg != "" {
 			return fmt.Errorf("%w\n%s", err, msg)
 		}
 		return err
@@ -452,7 +485,7 @@ func (r *Runner) CopyTo(service, src, dest string) error {
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%w\n%s", err, r.scrub(strings.TrimSpace(string(out))))
 	}
 	return nil
 }

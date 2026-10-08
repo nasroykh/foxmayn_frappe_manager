@@ -90,8 +90,7 @@ func (h *Handler) auth(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func flashFromQuery(r *http.Request) (ok, err string) {
-	q := r.URL.Query()
-	return q.Get("ok"), q.Get("err")
+	return flashes.take(r.URL.Query().Get("flash"))
 }
 
 func (h *Handler) meta(r *http.Request, title, nav string) PageMeta {
@@ -403,16 +402,17 @@ func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "exec_body", data)
 }
 
+// redirectWithFlash redirects to path and shows okMsg or errMsg once on the
+// next page. The messages stay on the server and the URL carries only a random
+// id: error text often embeds command output, and in a query string it would
+// land in browser history, proxy logs and Referer headers.
 func redirectWithFlash(w http.ResponseWriter, r *http.Request, path, okMsg, errMsg string) {
 	u, _ := url.Parse(path)
-	q := u.Query()
-	if okMsg != "" {
-		q.Set("ok", okMsg)
+	if okMsg != "" || errMsg != "" {
+		q := u.Query()
+		q.Set("flash", flashes.put(okMsg, errMsg))
+		u.RawQuery = q.Encode()
 	}
-	if errMsg != "" {
-		q.Set("err", errMsg)
-	}
-	u.RawQuery = q.Encode()
 	http.Redirect(w, r, u.String(), http.StatusSeeOther)
 }
 

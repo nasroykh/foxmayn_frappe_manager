@@ -49,7 +49,9 @@ services:
       - ./mysql-logs:/var/log/mysql
 {{- end}}
     healthcheck:
-      test: ["CMD", "mariadb", "-u", "root", "-p{{.DBRootPassword}}", "-e", "SELECT 1"]
+      # The password comes from the container's own environment, so it is not
+      # written here a second time or passed as an argument.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mariadb -u root -e 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 10
