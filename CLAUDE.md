@@ -69,7 +69,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 27 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 31 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -114,6 +114,10 @@ internal/
                             the URL, or fails where there is no desktop and the URL is printed
     console.go / db.go    → ffm console and ffm db (db-console, --export, --import [--migrate]);
                             interactive ones go through manager.Service.Interactive
+    test.go / debug.go    → ffm test <app> [bench] (--module/--doctype/--test/--junit/--failfast) and
+                            ffm debug on|off|(status)
+    poweroff.go / clean.go → ffm poweroff; ffm clean (--dry-run/--yes/--json, --build-cache,
+                            --dangling)
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
                             shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
                             --service to target another container. logs: --follow defaults TRUE
@@ -203,6 +207,15 @@ internal/
                             request) / DBExport / DBImport (root password via stdin) /
                             Interactive; ensureDevMail points site_config's mail_server at the
                             bench's Mailpit (create, start, reconcile) unless one is already set
+    devtest.go            → Test: run-tests on a dev site (sets allow_tests); the JUnit report is
+                            written in the workspace and moved out through the bind mount
+    debug.go              → Debug / DebugStatus: swaps the Procfile web line for a debugpy one on
+                            container port 8005 (= host web port + 5, already published), keeping
+                            the original in a "# ffm debug, original:" comment; refused on LAN
+                            binds; writes .vscode/launch.json only when absent
+    poweroff.go           → Poweroff: Stop every running bench, then the proxy
+    clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
+                            labels, image labels) with no record, no bench dir and a free lock
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress

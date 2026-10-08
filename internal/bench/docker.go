@@ -510,3 +510,14 @@ func (r *Runner) ExecStdin(service string, in io.Reader, shellArgs ...string) er
 	}
 	return nil
 }
+
+// ExecTo runs a non-interactive command in a service container at workdir,
+// streaming its stdout and stderr to the given writers.
+func (r *Runner) ExecTo(service, workdir string, stdout, stderr io.Writer, shellArgs ...string) error {
+	args := append(append(r.baseArgs(), "exec", "-T", "-w", workdir, service), shellArgs...)
+	cmd := execx.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}

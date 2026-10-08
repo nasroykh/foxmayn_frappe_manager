@@ -377,6 +377,45 @@ ffm db mybench --import other.sql.gz --migrate --yes
 fields will not decrypt. The root password reaches the container on stdin, never on a host command
 line. An export holds every password hash and API secret of the site and is written 0600.
 
+### `ffm test <app> [bench]`
+
+Runs `bench --site <site> run-tests --app <app>` on a dev bench and streams the output; the exit
+code is non-zero when a test fails. The tests run on the bench's own site and create and delete
+records there. The first run sets `allow_tests` in its `site_config.json`. Production benches are
+refused.
+
+```bash
+ffm test erpnext mybench --doctype "Sales Invoice"
+ffm test myapp --module myapp.myapp.doctype.thing.test_thing --test test_create --failfast
+ffm test myapp mybench --junit report.xml       # JUnit XML for CI
+```
+
+### `ffm debug on|off [bench]`
+
+`ffm debug on` installs debugpy into the bench's virtualenv, runs the web process under it
+(without auto-reload) and writes `.vscode/launch.json` when the bench has none. Attach VS Code on
+`localhost:<web port + 5>` ("ffm: attach (host)"), or on port 8005 from a devcontainer window
+("ffm: attach (in container)"). `ffm debug off` restores the normal server; bare `ffm debug` shows
+the state. Refused on a bench whose ports are published on every interface (`--lan`): debugpy runs
+any code it is sent.
+
+### `ffm poweroff`
+
+Stops every running bench and the shared proxy (`--keep-proxy` leaves the proxy up).
+
+### `ffm clean`
+
+Lists, then removes after confirmation, the Docker volumes and images of ffm benches that no longer
+exist: no record, no bench directory and no ffm operation in progress. A bench tracked under another
+`FFM_CONFIG_DIR` looks gone from here, so read the list.
+
+```bash
+ffm clean --dry-run                 # list only (--json: ffm.clean/v1)
+ffm clean --yes                     # remove without asking
+ffm clean --build-cache --dangling  # also Docker's build cache and untagged images (shared with
+                                    # every other project on the host)
+```
+
 ### VS Code devcontainer (dev only)
 
 Every dev bench includes `.devcontainer/devcontainer.json`.
@@ -755,6 +794,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm tunnel server --json [--show-secrets]` | `ffm.tunnel-servers/v1` (tokens only with `--show-secrets`) |
 | `ffm version --json` | `ffm.version/v1` |
 | `ffm open [bench] --json`, `ffm mail [bench] --json` | `ffm.url/v1` |
+| `ffm clean --json [--dry-run]` | `ffm.clean/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 

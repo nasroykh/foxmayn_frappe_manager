@@ -56,6 +56,8 @@ internal/
                                 LoginURL), opened in the browser or printed (--print, --json)
     console.go / db.go        → ffm console, ffm db (db-console, --export, --import); logic in
                                 manager/devtools.go
+    test.go / debug.go        → ffm test (manager/devtest.go), ffm debug on|off (manager/debug.go)
+    poweroff.go / clean.go    → ffm poweroff, ffm clean (manager/poweroff.go, manager/clean.go)
     shell.go                  → interactive docker exec: zsh for dev, bash for prod;
                                 --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming
