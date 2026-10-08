@@ -58,6 +58,8 @@ internal/
                                 manager/devtools.go
     test.go / debug.go        → ffm test (manager/devtest.go), ffm debug on|off (manager/debug.go)
     poweroff.go / clean.go    → ffm poweroff, ffm clean (manager/poweroff.go, manager/clean.go)
+    snapshot.go / clone.go    → ffm snapshot create|list|restore|delete, ffm clone
+                                (manager/snapshot.go: in-place restore; manager/clone.go)
     shell.go                  → interactive docker exec: zsh for dev, bash for prod;
                                 --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming

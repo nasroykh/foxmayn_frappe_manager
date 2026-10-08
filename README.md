@@ -625,6 +625,32 @@ working tree (unless the backup archived that app's source), the VPS tunnel (its
 the ffc API secret (Frappe mints a new one on every request), and absolute URLs stored *inside*
 the database when the site is renamed.
 
+### `ffm snapshot` — quick rollback points
+
+A snapshot is the site's database (and with `--files` its attachments) as Frappe's own backup
+writes it, kept in the bench's `workspace/.ffm-snapshots/` (0700). Take one before a migrate, a
+`git switch` or an agent run; rolling back replaces the running site's database in place and
+clears the cache. On a frappe + erpnext v15 dev bench a snapshot took 2.6 s and a rollback 19 s.
+
+```bash
+ffm snapshot create mybench --name before-upgrade [--files]
+ffm snapshot list mybench [--json]            # ffm.snapshots/v1, newest first
+ffm snapshot restore mybench --yes            # the newest; --name picks one, --migrate runs bench migrate
+ffm snapshot delete mybench --name before-upgrade
+```
+
+Snapshots are not backups. They stay on this host, go away with the bench (`delete`, `recreate`)
+and restore only into the same bench. Use `ffm backup` for a copy that outlives the bench. A
+rollback warns when an app's commit has changed since the snapshot (run `bench migrate` or pass
+`--migrate`).
+
+### `ffm clone <source> <new-name>`
+
+Copies a bench: `ffm backup` of the source, then `ffm restore` under the new name, with each app
+pinned to the source's commit, new ports and (dev) site `<new-name>.localhost`. Uncommitted app
+changes come along only with `--vendor-apps <app>|all`. `--no-files` leaves attachments behind; a
+production source needs `--domain` for the copy; `--keep-archive` keeps the intermediate archive.
+
 ### `ffm reconcile [name]`
 
 Applies this ffm version's templates to a bench created by an earlier version, without losing data. It regenerates `docker-compose.yml` from the bench's saved settings and runs `docker compose up -d`: only containers whose definition changed are replaced, and the databases, the workspace and the bench record are kept. `ffm recreate`, by contrast, deletes the volumes and rebuilds from scratch.
@@ -795,6 +821,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm version --json` | `ffm.version/v1` |
 | `ffm open [bench] --json`, `ffm mail [bench] --json` | `ffm.url/v1` |
 | `ffm clean --json [--dry-run]` | `ffm.clean/v1` |
+| `ffm snapshot list [bench] --json` | `ffm.snapshots/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 
