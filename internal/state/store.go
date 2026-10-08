@@ -132,6 +132,12 @@ const (
 	BindLAN      = "lan"
 )
 
+// ErrNotFound is returned (wrapped) when no bench has the requested name.
+var ErrNotFound = errors.New("bench not found")
+
+// ErrNoBenches is returned when a command needs a bench and none exists.
+var ErrNoBenches = errors.New("no benches found")
+
 // PublishHost returns the host IP the bench's published ports bind to, or ""
 // for all interfaces.
 //
@@ -319,7 +325,7 @@ func (s *Store) Get(name string) (Bench, error) {
 			return b, nil
 		}
 	}
-	return Bench{}, errors.New("bench not found: " + name)
+	return Bench{}, fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
 // Exists reports whether a bench with the given name is tracked.
@@ -352,7 +358,7 @@ func (s *Store) update(name string, fn func(*Bench)) error {
 			return s.Save(benches)
 		}
 	}
-	return errors.New("bench not found: " + name)
+	return fmt.Errorf("%w: %s", ErrNotFound, name)
 }
 
 // UsedPorts returns the set of web and socketio ports already assigned.

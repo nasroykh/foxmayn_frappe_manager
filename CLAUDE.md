@@ -61,7 +61,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 21 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 22 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -522,6 +522,12 @@ internal/
   matches the shell itself and kills it. Dev server stop/start lives in `bench.DevServerRestartCmd` /
   `DevServerStartCmd`, which use the `'[h]oncho start'` pattern; until v0.9.1 every dev restart through
   domain changes, reconcile, set-proxy and tunnel killed honcho and never started it again.
+- **Machine contract** (`internal/cli/jsonout.go`, `exitcode.go`): read commands take `--json` and
+  print one object with a versioned `schema` (`ffm.list/v1` …). Only add fields within a version;
+  anything else bumps it. Secrets only with `--show-secrets`. Exit codes come from typed errors
+  (`state.ErrNotFound`, `ErrNoBenches`, `manager.ErrBenchBusy`, `ErrBenchStopped`,
+  `*manager.PreflightError`, the cli `usageError` that `mustNotPrompt` and flag/arg errors return),
+  mapped by `cli.ExitCode`. New error conditions should reuse these rather than plain strings.
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
 - `skills/ffm-dev/` and `skills/foxmayn-frappe-manager/` are copies of the same two skills under

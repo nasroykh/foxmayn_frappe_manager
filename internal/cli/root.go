@@ -67,6 +67,7 @@ a VPS tunnel and a web dashboard.`,
 		newTunnelCmd(),
 		newUpdateCmd(),
 		newDashboardCmd(),
+		newVersionCmd(),
 	)
 
 	return root
@@ -78,7 +79,9 @@ func Execute() error {
 	if maybeRunDashboardDaemon() {
 		return nil
 	}
-	err := NewRootCmd().Execute()
+	root := NewRootCmd()
+	markUsageErrors(root)
+	err := root.Execute()
 	waitForUpdateCheck()
 	// cobra has already written the error to stderr — SilenceErrors is not set —
 	// so printing it here too showed every failure twice. Return it for the exit

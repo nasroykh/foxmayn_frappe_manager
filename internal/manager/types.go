@@ -149,6 +149,8 @@ type BenchView struct {
 	ProxyHost    string
 	FrappeBranch string
 	TunnelOn     bool
+	// URL is where the site is reached, as `ffm status` reports it.
+	URL string
 }
 
 // BenchDetail includes credentials for the detail page.

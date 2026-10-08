@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,12 +10,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON, showSecrets bool
+	cmd := &cobra.Command{
 		Use:   "status [name]",
 		Short: "Show per-container status for a bench",
 		Args:  cobra.MaximumNArgs(1),
@@ -23,9 +26,84 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				return runStatusJSON(name, showSecrets)
+			}
 			return runStatus(name)
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.status/v1)")
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Include the admin and database passwords in --json output")
+	return cmd
+}
+
+func runStatusJSON(name string, showSecrets bool) error {
+	svc := manager.New(verbose)
+	b, err := svc.GetBench(name)
+	if err != nil {
+		return err
+	}
+	views, err := svc.ListBenchViews()
+	if err != nil {
+		return err
+	}
+	var view manager.BenchView
+	for _, v := range views {
+		if v.Name == name {
+			view = v
+		}
+	}
+	bind := state.BindLAN
+	if b.PublishHost() != "" {
+		bind = state.BindLoopback
+	}
+	out := jsonStatus{
+		Schema:        "ffm.status/v1",
+		Bench:         benchJSON(view),
+		Dir:           b.Dir,
+		FrappeRepo:    b.FrappeRepo,
+		Apps:          append([]string{}, b.Apps...),
+		Bind:          bind,
+		SSHAgent:      b.SSHAgent,
+		DomainAliases: append([]string{}, b.DomainAliases...),
+		CreatedAt:     jsonTime(b.CreatedAt),
+		Containers:    []jsonContainer{},
+	}
+	if showSecrets {
+		out.AdminPassword = b.AdminPassword
+		out.DBPassword = b.DBPassword
+	}
+	raw, err := bench.NewRunner(b.Name, b.Dir, false).PS("json")
+	if err != nil {
+		return fmt.Errorf("docker compose ps: %w", err)
+	}
+	out.Containers = parseComposePS(raw)
+	return writeJSON(out)
+}
+
+// parseComposePS reads `docker compose ps --format json`, which prints one
+// JSON object per line (Compose 2.21+) or, on older versions, a JSON array.
+func parseComposePS(raw string) []jsonContainer {
+	type psRow struct {
+		Service, Name, State, Status, Health string
+	}
+	var rows []psRow
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "[") {
+		_ = json.Unmarshal([]byte(raw), &rows)
+	} else {
+		for _, line := range strings.Split(raw, "\n") {
+			var r psRow
+			if json.Unmarshal([]byte(line), &r) == nil && r.Name != "" {
+				rows = append(rows, r)
+			}
+		}
+	}
+	out := []jsonContainer{}
+	for _, r := range rows {
+		out = append(out, jsonContainer{Service: r.Service, Name: r.Name, State: r.State, Status: r.Status, Health: r.Health})
+	}
+	return out
 }
 
 func runStatus(name string) error {

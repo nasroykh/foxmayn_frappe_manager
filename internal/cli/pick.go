@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,7 +74,7 @@ func pickBench(store *state.Store, title string) (string, error) {
 		return "", fmt.Errorf("load state: %w", err)
 	}
 	if len(benches) == 0 {
-		return "", errors.New("no benches found — create one with 'ffm create <name>'")
+		return "", fmt.Errorf("%w — create one with 'ffm create <name>'", state.ErrNoBenches)
 	}
 	if len(benches) == 1 {
 		return benches[0].Name, nil

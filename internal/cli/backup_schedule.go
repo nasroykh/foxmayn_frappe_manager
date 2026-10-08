@@ -26,6 +26,7 @@ func newBackupScheduleCmd() *cobra.Command {
 		files      string
 		off        bool
 		noInstall  bool
+		asJSON     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "schedule [bench]",
@@ -58,6 +59,9 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := manager.New(verbose)
 			if len(args) == 0 {
+				if asJSON {
+					return printSchedulesJSON(svc)
+				}
 				return printSchedules(svc, os.Stdout)
 			}
 			name := args[0]
@@ -117,6 +121,7 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 	cmd.Flags().StringVar(&files, "files", "", "Include attachments: every-run, daily, weekly or never")
 	cmd.Flags().BoolVar(&off, "off", false, "Stop scheduled backups for the bench (archives are kept)")
 	cmd.Flags().BoolVar(&noInstall, "no-install", false, "Save the schedule without installing or removing the hourly system job")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "With no bench: print every schedule as machine-readable JSON (schema ffm.schedules/v1)")
 	return cmd
 }
 
@@ -145,6 +150,25 @@ func everyLabel(h int) string {
 		return "week"
 	}
 	return fmt.Sprintf("%dh", h)
+}
+
+func printSchedulesJSON(svc *manager.Service) error {
+	statuses, err := svc.ScheduleStatuses()
+	if err != nil {
+		return err
+	}
+	out := jsonSchedules{Schema: "ffm.schedules/v1", Schedules: []jsonSchedule{}}
+	for _, st := range statuses {
+		p := st.Policy
+		out.Schedules = append(out.Schedules, jsonSchedule{
+			Bench: st.Bench, Enabled: p.Enabled, EveryHours: p.EveryHours,
+			KeepHourly: p.KeepHourly, KeepDaily: p.KeepDaily, KeepWeekly: p.KeepWeekly, Files: p.Files,
+			Scheduled: st.Scheduled, LastSuccess: jsonTime(st.LastSuccess), LastFiles: jsonTime(st.LastFiles),
+			NextDue: jsonTime(st.NextDue), LastAttempt: jsonTime(st.Run.LastAttempt),
+			LastResult: st.Run.Result, LastError: st.Run.Error,
+		})
+	}
+	return writeJSON(out)
 }
 
 func printSchedules(svc *manager.Service, w io.Writer) error {
