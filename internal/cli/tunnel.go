@@ -10,10 +10,11 @@ import (
 
 func newTunnelCmd() *cobra.Command {
 	var (
-		serverName string
-		subdomain  string
-		off        bool
-		printOnly  bool
+		serverName           string
+		subdomain            string
+		allowDefaultPassword bool
+		off                  bool
+		printOnly            bool
 	)
 
 	cmd := &cobra.Command{
@@ -70,6 +71,7 @@ Then enable a tunnel:
 				}
 				return svc.TunnelEnable(manager.TunnelEnableInput{
 					BenchName: name, ServerName: serverName, Subdomain: subdomain,
+					AllowDefaultPassword: allowDefaultPassword,
 				}, manager.CLIProgress{})
 			}
 		},
@@ -77,6 +79,7 @@ Then enable a tunnel:
 
 	cmd.Flags().StringVar(&serverName, "server", "", "Tunnel server profile name (default: configured default)")
 	cmd.Flags().StringVar(&subdomain, "subdomain", "", "Public subdomain slug (default: bench name)")
+	cmd.Flags().BoolVar(&allowDefaultPassword, "allow-default-password", false, "Publish the bench even though it still has the default admin password")
 	cmd.Flags().BoolVar(&off, "off", false, "Disable the tunnel and restore direct-access Frappe settings")
 	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the rendered frpc.toml without applying anything")
 

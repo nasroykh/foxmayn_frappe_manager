@@ -82,7 +82,7 @@ func startBackgroundFetch(path string) {
 // result to path. Always called inside a goroutine via startBackgroundFetch.
 func fetchAndStoreLatestRelease(path string) {
 	var release githubRelease
-	resp, err := resty.New().R().
+	resp, err := resty.New().SetTimeout(10*time.Second).R().
 		SetResult(&release).
 		SetHeader("Accept", "application/vnd.github+json").
 		Get(githubReleasesAPI)

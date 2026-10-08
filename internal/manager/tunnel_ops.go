@@ -18,6 +18,9 @@ func (s *Service) TunnelEnable(in TunnelEnableInput, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	if b.AdminPassword == defaultAdminPassword && !in.AllowDefaultPassword {
+		return fmt.Errorf("bench %q still uses the default admin password, and a tunnel publishes it to the internet; change the site's Administrator password first, or pass --allow-default-password", b.Name)
+	}
 
 	var srv *tunnel.Server
 	var resolvedServer string

@@ -50,12 +50,14 @@ services:
       - pip-cache:/home/frappe/.cache/pip
       - yarn-cache:/home/frappe/.cache/yarn
 {{- if .ForwardSSHAgent}}
-      - ${SSH_AUTH_SOCK}:/ssh-agent
+      # A default keeps compose usable when SSH_AUTH_SOCK is unset (cron,
+      # sudo, the dashboard daemon); the bench then simply has no agent.
+      - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
 {{- end}}
     working_dir: /workspace/frappe-bench
     ports:
-      - "{{.WebPort}}-{{.WebPortEnd}}:8000-8005"
-      - "{{.SocketIOPort}}-{{.SocketIOPortEnd}}:9000-9005"
+      - "{{if .PublishHost}}{{.PublishHost}}:{{end}}{{.WebPort}}-{{.WebPortEnd}}:8000-8005"
+      - "{{if .PublishHost}}{{.PublishHost}}:{{end}}{{.SocketIOPort}}-{{.SocketIOPortEnd}}:9000-9005"
     networks:
       default: {}
       ffm-proxy: {}

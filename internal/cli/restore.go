@@ -23,6 +23,8 @@ func newRestoreCmd() *cobra.Command {
 		skipMigrate     bool
 		pinApps         bool
 		keepOnFailure   bool
+		lan             bool
+		sshAgent        bool
 		skipSpaceCheck  bool
 		appOverrides    []string
 	)
@@ -79,6 +81,8 @@ touching Docker.`,
 				SkipMigrate:               skipMigrate,
 				PinApps:                   pinApps,
 				KeepOnFailure:             keepOnFailure,
+				LAN:                       lan,
+				SSHAgent:                  sshAgent,
 				SkipSpaceCheck:            skipSpaceCheck,
 				AppOverrides:              appOverrides,
 			}, manager.CLIProgress{})
@@ -108,6 +112,10 @@ touching Docker.`,
 		"Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions")
 	cmd.Flags().BoolVar(&pinApps, "pin-apps", false,
 		"Check each app out at the commit recorded in the archive instead of its branch head")
+	cmd.Flags().BoolVar(&lan, "lan", false,
+		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password")
+	cmd.Flags().BoolVar(&sshAgent, "ssh-agent", false,
+		"Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK")
 	cmd.Flags().BoolVar(&keepOnFailure, "keep-on-failure", false,
 		"Leave a failed restore in place for diagnosis instead of removing it")
 	cmd.Flags().BoolVar(&skipSpaceCheck, "skip-space-check", false,

@@ -45,6 +45,8 @@ func fullBench() state.Bench {
 		RedisQueueMaxmem:  "2gb",
 		SlowQueryLog:      true,
 		MatchHostUser:     true,
+		Bind:              "lan",
+		SSHAgent:          true,
 		Tunnel:            &state.TunnelState{Server: "vps1", Subdomain: "demo", Enabled: true},
 		CreatedAt:         time.Date(2026, 8, 26, 9, 0, 0, 0, time.UTC),
 	}

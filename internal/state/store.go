@@ -105,12 +105,51 @@ type Bench struct {
 	// Dockerfile; without it a rebuild would silently revert to uid 1000 and
 	// break the bind mount on a host that needed the remap.
 	MatchHostUser bool `json:"match_host_user,omitempty"`
+	// Bind controls which host interfaces the bench's published ports listen
+	// on: BindLoopback (127.0.0.1) or BindLAN (all interfaces). Empty on
+	// records written before this field existed; see PublishHost for how those
+	// are treated.
+	Bind string `json:"bind,omitempty"`
+	// SSHAgent records that the host SSH agent socket is forwarded into the
+	// dev frappe container (--ssh-agent). Absent on older records, which then
+	// stop forwarding the next time docker-compose.yml is rendered: forwarding
+	// is opt-in because a bench created with it broke every later compose call
+	// made without SSH_AUTH_SOCK (cron backups, sudo, the dashboard daemon).
+	SSHAgent bool `json:"ssh_agent,omitempty"`
 	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
 	Tunnel *TunnelState `json:"tunnel,omitempty"`
 	// BackupSchedule is the scheduled-backup policy set by `ffm backup
 	// schedule`. Nil means no scheduled backups.
 	BackupSchedule *BackupPolicy `json:"backup_schedule,omitempty"`
 	CreatedAt      time.Time     `json:"created_at"`
+}
+
+// Bind values for Bench.Bind.
+const (
+	BindLoopback = "loopback"
+	BindLAN      = "lan"
+)
+
+// PublishHost returns the host IP the bench's published ports bind to, or ""
+// for all interfaces.
+//
+// Records without a Bind value predate the loopback default. Prod benches then
+// bind to loopback: Traefik reaches the containers over the proxy network, and
+// a host-side Caddy/nginx (the --no-ssl setup) reaches 127.0.0.1, so the only
+// thing all-interfaces ever added was plain HTTP to gunicorn from the internet.
+// Dev benches keep all interfaces, because users may rely on reaching them
+// from another machine; `ffm reconcile --loopback` opts them in.
+func (b Bench) PublishHost() string {
+	switch b.Bind {
+	case BindLAN:
+		return ""
+	case BindLoopback:
+		return "127.0.0.1"
+	}
+	if b.IsProd() {
+		return "127.0.0.1"
+	}
+	return ""
 }
 
 // IsProd reports whether the bench was created in production mode.

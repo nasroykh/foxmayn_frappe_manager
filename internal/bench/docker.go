@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -28,9 +29,28 @@ func NewRunner(benchName, composeDir string, verbose bool) *Runner {
 	}
 }
 
+// OverrideFile is the optional user-owned compose file merged on top of the
+// generated docker-compose.yml. ffm never writes it, so hand edits placed there
+// (extra_hosts, extra volumes, resource limits) survive reconcile, domain
+// changes and recreate, all of which regenerate docker-compose.yml.
+const OverrideFile = "docker-compose.override.yml"
+
+// baseArgs returns the compose arguments that scope a command to this bench:
+// the project name, the generated file and, when present, the override file.
+// Compose only auto-loads the override file when no -f is given, and ffm
+// always passes -f, so it has to be added explicitly.
+func (r *Runner) baseArgs() []string {
+	args := []string{"compose", "-p", r.Project, "-f", filepath.Join(r.ComposeDir, "docker-compose.yml")}
+	override := filepath.Join(r.ComposeDir, OverrideFile)
+	if _, err := os.Stat(override); err == nil {
+		args = append(args, "-f", override)
+	}
+	return args
+}
+
 // compose builds a docker compose command with project and file scoping.
 func (r *Runner) compose(args ...string) *exec.Cmd {
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	full := append(r.baseArgs(), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
@@ -43,7 +63,7 @@ func (r *Runner) compose(args ...string) *exec.Cmd {
 // composeWithIO builds a command that always routes stdin/stdout/stderr to the
 // terminal — used for interactive or streaming commands (exec, logs).
 func (r *Runner) composeWithIO(args ...string) *exec.Cmd {
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	full := append(r.baseArgs(), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdin = os.Stdin
@@ -66,7 +86,7 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 // streams output to the terminal; otherwise output is captured and only printed
 // to stderr if the build fails, keeping create output minimal.
 func (r *Runner) Build() error {
-	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "build"}
+	args := append(r.baseArgs(), "build")
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
@@ -85,7 +105,7 @@ func (r *Runner) Build() error {
 // it streams stdout/stderr to the terminal; otherwise output is captured and
 // only printed to stderr on failure. The container is removed after exit.
 func (r *Runner) Run(service string, args ...string) error {
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "run", "--rm", service}, args...)
+	full := append(append(r.baseArgs(), "run", "--rm", service), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
@@ -159,7 +179,7 @@ func (r *Runner) ExecInDir(service, workdir string, shellArgs ...string) error {
 // Unlike ExecSilent it does not capture output; unlike Exec it allocates no TTY.
 func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) error {
 	args := append([]string{"exec", "-T", "-w", workdir, service}, shellArgs...)
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	full := append(r.baseArgs(), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdout = os.Stdout
@@ -170,7 +190,7 @@ func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) e
 // ExecSilent runs a command inside a service container, capturing output.
 func (r *Runner) ExecSilent(service string, shellArgs ...string) (string, error) {
 	args := append([]string{"exec", "-T", service}, shellArgs...)
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	full := append(r.baseArgs(), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
@@ -198,7 +218,7 @@ func (r *Runner) Logs(follow bool, service string) error {
 
 // LogsString captures and returns logs for a service without streaming to stdout.
 func (r *Runner) LogsString(service string) string {
-	args := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml", "logs"}, service)
+	args := append(append(r.baseArgs(), "logs"), service)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	out, _ := cmd.CombinedOutput()
@@ -211,7 +231,7 @@ func (r *Runner) PS(format string) (string, error) {
 	if format != "" {
 		args = append(args, "--format", format)
 	}
-	full := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml"}, args...)
+	full := append(r.baseArgs(), args...)
 	cmd := exec.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
@@ -402,8 +422,7 @@ func WaitForHTTP(url string, timeout time.Duration) error {
 // be held in memory in its entirety — and merged with stderr, corrupting the
 // bytes. Here stderr is captured separately and surfaces only in the error.
 func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) error {
-	args := append([]string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml",
-		"exec", "-T", service}, shellArgs...)
+	args := append(append(r.baseArgs(), "exec", "-T", service), shellArgs...)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdout = w
@@ -425,8 +444,7 @@ func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) er
 // to the user, swept into the next backup's size estimate, and left behind as
 // litter if the restore were interrupted.
 func (r *Runner) CopyTo(service, src, dest string) error {
-	args := []string{"compose", "-p", r.Project, "-f", r.ComposeDir + "/docker-compose.yml",
-		"cp", src, service + ":" + dest}
+	args := append(r.baseArgs(), "cp", src, service+":"+dest)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if out, err := cmd.CombinedOutput(); err != nil {

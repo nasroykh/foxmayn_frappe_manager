@@ -5,6 +5,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
@@ -113,6 +116,16 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	if downloadURL == "" {
 		return fmt.Errorf("no asset found for %s/%s (expected %q)", runtime.GOOS, runtime.GOARCH, target)
 	}
+	var checksumsURL string
+	for _, a := range release.Assets {
+		if a.Name == checksumsAsset {
+			checksumsURL = a.BrowserDownloadURL
+			break
+		}
+	}
+	if checksumsURL == "" {
+		return fmt.Errorf("release %s has no %s; refusing to install an unverifiable binary", latest, checksumsAsset)
+	}
 
 	// Confirm before downloading.
 	if !upYes {
@@ -136,7 +149,7 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// Download archive and replace binary.
 	var installErr error
 	withSpinner(fmt.Sprintf("Downloading ffm %s…", latest), func() {
-		installErr = downloadAndInstall(downloadURL)
+		installErr = downloadAndInstall(downloadURL, checksumsURL, target)
 	})
 	if installErr != nil {
 		return installErr
@@ -152,14 +165,35 @@ func runSpinner(title string, action func()) {
 	_ = spinner.New().Title(title).Action(action).Run()
 }
 
-// downloadAndInstall fetches the release archive and replaces the running binary.
-func downloadAndInstall(downloadURL string) error {
-	resp, err := resty.New().R().Get(downloadURL)
+// checksumsAsset is the GoReleaser checksum file published with every release.
+const checksumsAsset = "checksums.txt"
+
+// downloadTimeout bounds each release download, so a stalled connection fails
+// instead of hanging the update forever.
+const downloadTimeout = 5 * time.Minute
+
+// downloadAndInstall fetches the release archive, verifies it against the
+// release's checksums.txt, and replaces the running binary.
+func downloadAndInstall(downloadURL, checksumsURL, assetName string) error {
+	client := resty.New().SetTimeout(downloadTimeout)
+
+	sums, err := client.R().Get(checksumsURL)
+	if err != nil {
+		return fmt.Errorf("downloading %s: %w", checksumsAsset, err)
+	}
+	if sums.StatusCode() != 200 {
+		return fmt.Errorf("downloading %s: HTTP %d", checksumsAsset, sums.StatusCode())
+	}
+
+	resp, err := client.R().Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("downloading: %w", err)
 	}
 	if resp.StatusCode() != 200 {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode())
+	}
+	if err := verifyChecksum(sums.Body(), assetName, resp.Body()); err != nil {
+		return err
 	}
 
 	binName := runningBinaryName()
@@ -174,6 +208,28 @@ func downloadAndInstall(downloadURL string) error {
 	}
 
 	return replaceBinary(binData)
+}
+
+// verifyChecksum checks data against assetName's entry in a GoReleaser
+// checksums file ("<sha256>  <name>" per line). A missing entry is an error:
+// installing an archive nothing vouches for is exactly what this prevents.
+func verifyChecksum(checksums []byte, assetName string, data []byte) error {
+	var want string
+	for _, line := range strings.Split(string(checksums), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == assetName {
+			want = strings.ToLower(fields[0])
+			break
+		}
+	}
+	if want == "" {
+		return fmt.Errorf("%s has no entry for %s; refusing to install", checksumsAsset, assetName)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != want {
+		return fmt.Errorf("checksum mismatch for %s: got %s, want %s; refusing to install", assetName, got, want)
+	}
+	return nil
 }
 
 // replaceBinary writes newData to a temp file then atomically swaps it with

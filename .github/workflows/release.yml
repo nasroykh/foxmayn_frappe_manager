@@ -25,6 +25,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # A tag must not publish a binary that fails vet, the tests or govulncheck.
+      - name: Verify
+        run: |
+          go vet ./...
+          go test -race ./...
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

@@ -396,6 +396,8 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 		FixedWebPort:      webPort,
 		FixedSocketIOPort: socketIOPort,
 		MatchHostUser:     matchHostUser,
+		Bind:              BindFor(in.LAN),
+		SSHAgent:          in.SSHAgent,
 		DomainAliases:     aliases,
 		AliasTLS:          aliasTLS,
 		KeepOnFailure:     in.KeepOnFailure,
@@ -892,4 +894,12 @@ func printRestoreSummary(pw ProgressWriter, b state.Bench, m Manifest, target st
 		pw.Printf("\nThe ffc API key was reissued — Frappe mints a new secret on every request,\n" +
 			"so the archived one cannot be put back.\n")
 	}
+}
+
+// BindFor maps a --lan flag to a state.Bench Bind value.
+func BindFor(lan bool) string {
+	if lan {
+		return state.BindLAN
+	}
+	return state.BindLoopback
 }
