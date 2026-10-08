@@ -84,6 +84,11 @@ func (s *Service) CreateSnapshot(in SnapshotInput, pw ProgressWriter) (string, e
 		return "", err
 	}
 	defer release()
+	return s.createSnapshotLocked(in, name, pw)
+}
+
+// createSnapshotLocked is CreateSnapshot for a caller holding the bench lock.
+func (s *Service) createSnapshotLocked(in SnapshotInput, name string, pw ProgressWriter) (string, error) {
 	b, err := s.GetBench(in.Bench)
 	if err != nil {
 		return "", err
@@ -214,6 +219,11 @@ func (s *Service) RestoreSnapshot(in RestoreSnapshotInput, pw ProgressWriter) (s
 		return "", err
 	}
 	defer release()
+	return s.restoreSnapshotLocked(in, pw)
+}
+
+// restoreSnapshotLocked is RestoreSnapshot for a caller holding the bench lock.
+func (s *Service) restoreSnapshotLocked(in RestoreSnapshotInput, pw ProgressWriter) (string, error) {
 	b, err := s.GetBench(in.Bench)
 	if err != nil {
 		return "", err

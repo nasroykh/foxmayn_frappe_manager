@@ -79,3 +79,20 @@ func withSpinner(title string, action func()) {
 	}
 	runSpinner(title, action)
 }
+
+// confirm asks a yes/no question. A cancelled form counts as no.
+func confirm(title string) (bool, error) {
+	ok := false
+	err := huh.NewForm(huh.NewGroup(huh.NewConfirm().Title(title).
+		Affirmative("Yes").Negative("Cancel").Value(&ok))).WithKeyMap(benchPickKeyMap()).Run()
+	if err != nil {
+		if cancelled(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !ok {
+		fmt.Println("Cancelled.")
+	}
+	return ok, nil
+}
