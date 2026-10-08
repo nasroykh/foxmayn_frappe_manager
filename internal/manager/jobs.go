@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -19,7 +20,16 @@ const (
 	JobRunning   JobStatus = "running"
 	JobSucceeded JobStatus = "succeeded"
 	JobFailed    JobStatus = "failed"
+	// JobInterrupted marks a job that was pending or running when the process
+	// that ran it exited. Nothing will ever finish it, so it no longer blocks
+	// its bench.
+	JobInterrupted JobStatus = "interrupted"
 )
+
+// Finished reports whether the job has reached a terminal state.
+func (s JobStatus) Finished() bool {
+	return s == JobSucceeded || s == JobFailed || s == JobInterrupted
+}
 
 // JobType identifies the operation.
 type JobType string
@@ -43,56 +53,111 @@ type Job struct {
 	Lines     []string  `json:"lines,omitempty"`
 }
 
-// JobStore manages background jobs.
+// snapshot returns a copy that is safe to read without the store's lock.
+func (j *Job) snapshot() *Job {
+	c := *j
+	c.Steps = append([]string(nil), j.Steps...)
+	c.Lines = append([]string(nil), j.Lines...)
+	return &c
+}
+
+// maxFinishedJobs bounds jobs.json: older finished jobs are dropped on save.
+const maxFinishedJobs = 100
+
+// JobStore manages background jobs for one process (the dashboard).
+//
+// jobs.json is read once, when the store is created. It used to be re-read on
+// every list and lookup, which replaced the *Job a running goroutine was
+// updating with a stale copy from disk: the job then stayed "running" forever
+// and blocked its bench. Every read and write of a Job happens under mu, and
+// readers only ever get snapshots.
 type JobStore struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	jobs    map[string]*Job
 	byBench map[string]string // bench name -> active job id
 	path    string
 }
 
-// NewJobStore creates an in-memory job store with optional persistence path.
+// NewJobStore creates the job store, loading jobs.json from earlier runs.
 func NewJobStore() *JobStore {
-	return &JobStore{
-		jobs:    make(map[string]*Job),
-		byBench: make(map[string]string),
-		path:    config.JobsFile(),
-	}
+	return newJobStoreAt(config.JobsFile())
 }
 
-func (js *JobStore) loadLocked() {
+func newJobStoreAt(path string) *JobStore {
+	js := &JobStore{
+		jobs:    make(map[string]*Job),
+		byBench: make(map[string]string),
+		path:    path,
+	}
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	if js.load() {
+		js.persistLocked()
+	}
+	return js
+}
+
+// load reads jobs.json. Jobs that were still pending or running belonged to a
+// process that has exited, so they are marked interrupted; it reports whether
+// any were, so the caller can save that.
+func (js *JobStore) load() (changed bool) {
 	if js.path == "" {
-		return
+		return false
 	}
 	data, err := os.ReadFile(js.path)
 	if err != nil {
-		return
+		return false
 	}
 	var list []*Job
-	if json.Unmarshal(data, &list) == nil {
-		for _, j := range list {
-			js.jobs[j.ID] = j
-			if j.Status == JobRunning || j.Status == JobPending {
-				js.byBench[j.BenchName] = j.ID
-			}
-		}
+	if json.Unmarshal(data, &list) != nil {
+		return false
 	}
+	for _, j := range list {
+		if !j.Status.Finished() {
+			j.Status = JobInterrupted
+			j.Error = "the process running this job exited before it finished"
+			j.UpdatedAt = time.Now()
+			changed = true
+		}
+		js.jobs[j.ID] = j
+	}
+	return changed
 }
 
+// persistLocked writes jobs.json. The caller holds mu.
 func (js *JobStore) persistLocked() {
 	if js.path == "" {
 		return
 	}
-	list := make([]*Job, 0, len(js.jobs))
-	for _, j := range js.jobs {
-		list = append(list, j)
+	list := js.sortedLocked()
+	kept := list[:0]
+	finished := 0
+	for _, j := range list {
+		if j.Status.Finished() {
+			finished++
+			if finished > maxFinishedJobs {
+				delete(js.jobs, j.ID)
+				continue
+			}
+		}
+		kept = append(kept, j)
 	}
-	data, err := json.MarshalIndent(list, "", "  ")
+	data, err := json.MarshalIndent(kept, "", "  ")
 	if err != nil {
 		return
 	}
 	_ = os.MkdirAll(config.ConfigDir(), 0o755)
 	_ = os.WriteFile(js.path, data, 0o600)
+}
+
+// sortedLocked returns the jobs newest first. The caller holds mu.
+func (js *JobStore) sortedLocked() []*Job {
+	list := make([]*Job, 0, len(js.jobs))
+	for _, j := range js.jobs {
+		list = append(list, j)
+	}
+	sort.Slice(list, func(a, b int) bool { return list[a].CreatedAt.After(list[b].CreatedAt) })
+	return list
 }
 
 // StartCreate enqueues a create job.
@@ -111,19 +176,19 @@ func (s *Service) StartRecreate(ctx context.Context, js *JobStore, in RecreateIn
 
 func (s *Service) startJob(_ context.Context, js *JobStore, typ JobType, benchName string, fn func(ProgressWriter) error) (string, error) {
 	js.mu.Lock()
-	js.loadLocked()
 	if _, ok := js.byBench[benchName]; ok {
 		js.mu.Unlock()
 		return "", fmt.Errorf("a job is already running for bench %q", benchName)
 	}
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	now := time.Now()
+	id := fmt.Sprintf("%d", now.UnixNano())
 	j := &Job{
 		ID:        id,
 		Type:      typ,
 		BenchName: benchName,
 		Status:    JobPending,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	js.jobs[id] = j
 	js.byBench[benchName] = id
@@ -135,14 +200,13 @@ func (s *Service) startJob(_ context.Context, js *JobStore, typ JobType, benchNa
 		js.mu.Lock()
 		j.Status = JobRunning
 		j.UpdatedAt = time.Now()
+		js.persistLocked()
 		js.mu.Unlock()
 
 		err := fn(pw)
 
 		js.mu.Lock()
 		defer js.mu.Unlock()
-		j.Steps = pw.Steps
-		j.Lines = append([]string(nil), pw.Lines...)
 		j.UpdatedAt = time.Now()
 		if err != nil {
 			j.Status = JobFailed
@@ -157,34 +221,34 @@ func (s *Service) startJob(_ context.Context, js *JobStore, typ JobType, benchNa
 	return id, nil
 }
 
-// GetJob returns a job by ID.
+// GetJob returns a snapshot of a job by ID.
 func (js *JobStore) GetJob(id string) (*Job, bool) {
-	js.mu.RLock()
-	defer js.mu.RUnlock()
+	js.mu.Lock()
+	defer js.mu.Unlock()
 	j, ok := js.jobs[id]
 	if !ok {
-		js.loadLocked()
-		j, ok = js.jobs[id]
+		return nil, false
 	}
-	return j, ok
+	return j.snapshot(), true
 }
 
-// ListJobs returns all jobs newest first.
+// ListJobs returns snapshots of all jobs, newest first.
 func (js *JobStore) ListJobs() []*Job {
-	js.mu.RLock()
-	defer js.mu.RUnlock()
-	js.loadLocked()
-	out := make([]*Job, 0, len(js.jobs))
-	for _, j := range js.jobs {
-		out = append(out, j)
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	list := js.sortedLocked()
+	for i, j := range list {
+		list[i] = j.snapshot()
 	}
-	return out
+	return list
 }
 
 // FailedCount returns the number of failed jobs.
 func (js *JobStore) FailedCount() int {
+	js.mu.Lock()
+	defer js.mu.Unlock()
 	n := 0
-	for _, j := range js.ListJobs() {
+	for _, j := range js.jobs {
 		if j.Status == JobFailed {
 			n++
 		}
@@ -192,27 +256,39 @@ func (js *JobStore) FailedCount() int {
 	return n
 }
 
-// jobProgress writes steps into the job record for SSE consumers.
+// jobProgress writes steps and output lines into the job record as they
+// happen, so SSE consumers see them live.
 type jobProgress struct {
 	job   *Job
 	store *JobStore
 	BufferProgress
 }
 
-func (p *jobProgress) Step(msg string) {
-	p.BufferProgress.Step(msg)
+// sync copies the buffered output into the job. Steps are persisted, so a
+// crash leaves a record of how far the job got; plain lines are not, to keep
+// chatty output from rewriting jobs.json on every line.
+func (p *jobProgress) sync(persist bool) {
 	p.store.mu.Lock()
+	defer p.store.mu.Unlock()
 	p.job.Steps = append([]string(nil), p.BufferProgress.Steps...)
 	p.job.Lines = append([]string(nil), p.BufferProgress.Lines...)
 	p.job.UpdatedAt = time.Now()
-	p.store.mu.Unlock()
-	p.store.persistLocked()
+	if persist {
+		p.store.persistLocked()
+	}
+}
+
+func (p *jobProgress) Step(msg string) {
+	p.BufferProgress.Step(msg)
+	p.sync(true)
 }
 
 func (p *jobProgress) Printf(format string, args ...any) {
 	p.BufferProgress.Printf(format, args...)
-	p.store.mu.Lock()
-	p.job.Lines = append([]string(nil), p.BufferProgress.Lines...)
-	p.job.UpdatedAt = time.Now()
-	p.store.mu.Unlock()
+	p.sync(false)
+}
+
+func (p *jobProgress) Println(args ...any) {
+	p.BufferProgress.Println(args...)
+	p.sync(false)
 }

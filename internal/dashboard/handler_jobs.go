@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
 // JobEvents streams job progress via Server-Sent Events.
@@ -41,7 +39,7 @@ func (h *Handler) JobEvents(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 
-		if job.Status == manager.JobSucceeded || job.Status == manager.JobFailed {
+		if job.Status.Finished() {
 			return
 		}
 		if len(job.Lines) > lastLines {
