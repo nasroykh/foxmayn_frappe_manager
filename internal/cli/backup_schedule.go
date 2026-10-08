@@ -26,6 +26,7 @@ func newBackupScheduleCmd() *cobra.Command {
 		files      string
 		off        bool
 		encrypt    bool
+		to         []string
 		noInstall  bool
 		asJSON     bool
 	)
@@ -86,6 +87,11 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 					return err
 				}
 				p = manager.PresetPolicy(hours)
+				if b.BackupSchedule != nil {
+					// A new interval resets retention, not where the archives
+					// go or whether they are encrypted.
+					p.Encrypt, p.Targets = b.BackupSchedule.Encrypt, b.BackupSchedule.Targets
+				}
 			case b.BackupSchedule != nil:
 				p = *b.BackupSchedule // adjust the existing policy
 			default:
@@ -115,6 +121,19 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 				}
 				p.Encrypt = encrypt
 			}
+			if cmd.Flags().Changed("to") {
+				for _, t := range to {
+					if _, err := manager.GetTarget(t); err != nil {
+						return err
+					}
+				}
+				if len(to) > 0 {
+					if _, err := manager.BackupRecipients(); err != nil {
+						return err
+					}
+				}
+				p.Targets = to
+			}
 			if err := svc.SetBackupSchedule(name, &p); err != nil {
 				return err
 			}
@@ -128,6 +147,7 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 	cmd.Flags().IntVar(&keepDaily, "keep-daily", 0, "Keep the newest archive of each of the last N days")
 	cmd.Flags().IntVar(&keepWeekly, "keep-weekly", 0, "Keep the newest archive of each of the last N weeks")
 	cmd.Flags().StringVar(&files, "files", "", "Include attachments: every-run, daily, weekly or never")
+	cmd.Flags().StringSliceVar(&to, "to", nil, "Upload every scheduled archive to these targets (encrypted; retention applies there too); --to '' stops uploading")
 	cmd.Flags().BoolVar(&encrypt, "encrypt", false, "Encrypt scheduled archives with age (ffm backup key init); --encrypt=false turns it off")
 	cmd.Flags().BoolVar(&off, "off", false, "Stop scheduled backups for the bench (archives are kept)")
 	cmd.Flags().BoolVar(&noInstall, "no-install", false, "Save the schedule without installing or removing the hourly system job")
@@ -147,8 +167,11 @@ func describePolicy(p state.BackupPolicy) string {
 		keep = append(keep, fmt.Sprintf("%d weekly", p.KeepWeekly))
 	}
 	enc := ""
-	if p.Encrypt {
+	if p.Encrypt || len(p.Targets) > 0 {
 		enc = ", encrypted with age"
+	}
+	if len(p.Targets) > 0 {
+		enc += ", uploaded to " + strings.Join(p.Targets, ", ")
 	}
 	return fmt.Sprintf("every %s, keeping %s (never fewer than %d), attachments %s%s",
 		everyLabel(p.EveryHours), strings.Join(keep, " + "), manager.RetentionFloor, p.Files, enc)

@@ -14,6 +14,7 @@ func newBackupCmd() *cobra.Command {
 		skipSpaceCheck bool
 		vendorApps     []string
 		encrypt        bool
+		to             []string
 	)
 
 	cmd := &cobra.Command{
@@ -50,7 +51,8 @@ the key); restoring then needs the identity file.`,
   ffm backup mybench --out ~/archives
   ffm backup mybench --no-files --label "before the v16 upgrade"
   ffm backup mybench --vendor-apps my_app
-  ffm backup mybench --encrypt`,
+  ffm backup mybench --encrypt
+  ffm backup mybench --to r2`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := resolveBenchName(args, "Select a bench to back up")
@@ -65,11 +67,13 @@ the key); restoring then needs the identity file.`,
 				SkipSpaceCheck: skipSpaceCheck,
 				VendorApps:     vendorApps,
 				Encrypt:        encrypt,
+				To:             to,
 			}, manager.CLIProgress{})
 		},
 	}
 
-	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd(), newBackupKeyCmd())
+	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd(), newBackupKeyCmd(),
+		newBackupTargetCmd(), newBackupPullCmd())
 
 	cmd.Flags().StringVar(&out, "out", "",
 		"Directory to write the archive into, or an explicit path ending in .tar "+
@@ -81,6 +85,8 @@ the key); restoring then needs the identity file.`,
 		"Write the archive without checking free disk space first")
 	cmd.Flags().BoolVar(&encrypt, "encrypt", false,
 		"Encrypt the archive with age to the keys from 'ffm backup key init'")
+	cmd.Flags().StringSliceVar(&to, "to", nil,
+		"Also upload the archive to these backup targets (implies --encrypt; a failed upload fails the backup)")
 	cmd.Flags().StringSliceVar(&vendorApps, "vendor-apps", nil,
 		"Also archive the source of these apps (comma-separated, or 'all'), uncommitted changes "+
 			"included. Apps that cannot be cloned back are archived regardless")

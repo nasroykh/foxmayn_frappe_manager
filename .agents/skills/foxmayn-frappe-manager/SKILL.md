@@ -191,6 +191,10 @@ ffm backup schedule mybench --off                      # stop; archives are kept
 ffm backup key init --out ~/ffm-backup.key             # age key pair; ffm keeps only the public key
 ffm backup mybench --encrypt                           # .ffm.tar.age (restore: --identity <file>)
 ffm backup schedule mybench --encrypt                  # encrypt scheduled archives
+ffm backup target add r2 --type s3 … --secret-access-key-stdin   # also sftp / local / rclone
+ffm backup mybench --to r2                             # encrypted upload; failed upload = failed backup
+ffm backup schedule mybench --to r2                    # upload every scheduled archive, prune there too
+ffm backup pull r2 mybench                             # newest archive back to this host
 ffm backup schedule                                    # status of every schedule
 ffm backup list mybench                                # archives + full paths for ffm restore
 ffm backup prune mybench --dry-run                     # preview retention

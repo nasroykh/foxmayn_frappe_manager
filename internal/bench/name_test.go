@@ -3,7 +3,7 @@ package bench
 import "testing"
 
 func TestValidateNewNameRejectsReserved(t *testing.T) {
-	for _, name := range []string{"list", "schedule", "prune", "run-due", "scheduler", "key", "List"} {
+	for _, name := range []string{"list", "schedule", "prune", "run-due", "scheduler", "key", "target", "pull", "List"} {
 		if err := ValidateNewName(name); err == nil {
 			t.Errorf("ValidateNewName(%q) accepted a reserved name", name)
 		}

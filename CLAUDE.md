@@ -188,6 +188,14 @@ internal/
                             FFM_AGE_IDENTITY_FILE, into a 0700 temp dir under the backups dir).
                             ScanArchives reads encrypted archives' headers from the sidecar;
                             pruning removes both files
+    backup_targets.go     → targets (internal/backuptarget: s3 via minio-go, sftp via x/crypto/ssh +
+                            pkg/sftp with a PINNED host key only, local dir, rclone exec) stored in
+                            config.BackupTargetsFile (0600). AddTarget tests before saving
+                            (testTarget: put/list/get/delete). BackupInput.To forces Encrypt and
+                            fails the backup when an upload fails; uploadArchive confirms both
+                            files by listed size. Keys are "<bench>/<file>". pruneRemote reuses
+                            prunable + selectRetained; run-due prunes remotely only after the
+                            upload succeeded. PullArchive downloads into the bench backups dir
     backup_policy.go      → PresetPolicy / ParseEvery / ValidatePolicy / ApplyKeepShorthand
     backup_retention.go   → ScanArchives / selectRetained (tiered + RetentionFloor) /
                             PruneBackups; only readable, trigger=scheduled, same-bench archives

@@ -37,11 +37,8 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
-	if in.Encrypt {
-		// Refuse before minutes of dumping, not after.
-		if _, err := BackupRecipients(); err != nil {
-			return err
-		}
+	if err := prepareEncryption(&in); err != nil {
+		return err
 	}
 	release, err := s.lockBench(b.Name)
 	if err != nil {
@@ -56,6 +53,12 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) error {
 func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr error) {
 	if pw == nil {
 		pw = CLIProgress{}
+	}
+	// Here, not only in Backup: scheduled runs and the backups before
+	// delete and recreate come straight in, and an upload must never go out
+	// unencrypted whichever way it arrived.
+	if err := prepareEncryption(&in); err != nil {
+		return err
 	}
 	b, err := s.GetBench(in.BenchName)
 	if err != nil {
@@ -332,6 +335,11 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 		}
 		dest = enc
 	}
+	if len(in.To) > 0 {
+		if err := uploadToTargets(in.To, b.Name, dest, pw); err != nil {
+			return fmt.Errorf("%w\n(the archive is kept locally at %s)", err, dest)
+		}
+	}
 
 	info, _ := os.Stat(dest)
 	pw.Printf("\nBacked up %q.\n", b.Name)
@@ -365,6 +373,9 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	}
 	if in.Encrypt {
 		pw.Printf("  Encrypted: yes (age); restoring needs the identity: --identity <file>\n")
+		if len(in.To) > 0 {
+			pw.Printf("  Uploaded:  %s\n", strings.Join(in.To, ", "))
+		}
 		pw.Printf("\nRestore it with:\n  ffm restore %s <newname> --identity <file>\n", dest)
 	} else {
 		pw.Printf("\nRestore it with:\n  ffm restore %s <newname>\n", dest)
@@ -938,4 +949,24 @@ func humanBytes(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// prepareEncryption makes an upload imply encryption (decision D4: nothing
+// leaves the host in clear) and checks targets and keys before minutes of
+// dumping rather than after.
+func prepareEncryption(in *BackupInput) error {
+	if len(in.To) > 0 {
+		in.Encrypt = true
+		for _, name := range in.To {
+			if _, err := GetTarget(name); err != nil {
+				return err
+			}
+		}
+	}
+	if in.Encrypt {
+		if _, err := BackupRecipients(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

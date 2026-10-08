@@ -21,7 +21,7 @@ func ValidateName(name string) error {
 // names could not be addressed as `ffm backup <name>`, because Cobra resolves
 // the subcommand first.
 var reservedNames = map[string]bool{
-	"list": true, "schedule": true, "prune": true, "run-due": true, "scheduler": true, "key": true,
+	"list": true, "schedule": true, "prune": true, "run-due": true, "scheduler": true, "key": true, "target": true, "pull": true,
 }
 
 // ValidateNewName is ValidateName plus the names reserved for new benches.
