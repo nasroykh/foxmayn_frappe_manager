@@ -168,7 +168,8 @@ internal/
     reconcile.go          → Reconcile: re-render docker-compose.yml from the record (composeDataFor)
                             and apply it with applyDomainChange (up -d, no data loss). The way
                             template fixes reach existing benches; recreate is destructive
-    recreate.go           → teardown + Create with stored inputs; reuses the old port pair
+    recreate.go           → backupBeforeDestroy, teardown + Create with stored inputs; reuses the
+                            old port pair; re-enables the tunnel; a failed Create names the archive
     lifecycle.go          → Start / Stop / Delete / TeardownBenchFiles; Start also back-fills
                             skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
     restart.go            → Restart; --rebuild re-renders the Dockerfile (carrying MatchHostUser),

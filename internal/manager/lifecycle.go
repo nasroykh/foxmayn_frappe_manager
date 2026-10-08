@@ -168,20 +168,52 @@ func (s *Service) TeardownBenchFiles(b state.Bench) {
 	}
 }
 
-// Delete removes a bench from disk and state.
-func (s *Service) Delete(name string, pw ProgressWriter) error {
+// Delete removes a bench from disk and state, after backing it up unless
+// in.NoBackup is set.
+func (s *Service) Delete(in DeleteInput, pw ProgressWriter) error {
 	if pw == nil {
 		pw = CLIProgress{}
 	}
-	if _, err := s.GetBench(name); err != nil {
+	b, err := s.GetBench(in.Name)
+	if err != nil {
 		return err
 	}
-	release, err := s.lockBench(name)
+	release, err := s.lockBench(in.Name)
 	if err != nil {
 		return err
 	}
 	defer release()
-	return s.deleteLocked(name, pw)
+	if _, err := s.backupBeforeDestroy(b, "delete", in.NoBackup, pw); err != nil {
+		return err
+	}
+	return s.deleteLocked(in.Name, pw)
+}
+
+// backupBeforeDestroy takes the automatic backup that delete and recreate make
+// before removing a bench's data, and returns the archive path ("" when
+// skipped). The caller holds the bench lock.
+//
+// The archive is an ordinary manual one, so retention never prunes it. A bench
+// whose directory is already gone has nothing to save, and is let through.
+func (s *Service) backupBeforeDestroy(b state.Bench, op string, skip bool, pw ProgressWriter) (string, error) {
+	if skip {
+		return "", nil
+	}
+	if _, err := os.Stat(b.Dir); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: %s has no bench directory; nothing to back up before %s\n", b.Name, op)
+		return "", nil
+	}
+	pw.Printf("Backing up %q before %s (skip with --no-backup)...\n", b.Name, op)
+	var archivePath string
+	if err := s.backupLocked(BackupInput{
+		BenchName: b.Name,
+		Label:     "before " + op,
+		writtenTo: &archivePath,
+	}, pw); err != nil {
+		return "", fmt.Errorf("backup before %s failed, so nothing was changed: %w\n"+
+			"(pass --no-backup to %s without a backup)", op, err, op)
+	}
+	return archivePath, nil
 }
 
 // deleteLocked is Delete for a caller that already holds the bench's lock

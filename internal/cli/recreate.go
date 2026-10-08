@@ -12,6 +12,7 @@ import (
 func newRecreateCmd() *cobra.Command {
 	var (
 		force           bool
+		noBackup        bool
 		reallocatePorts bool
 		githubToken     string
 		proxyPort       int
@@ -43,11 +44,12 @@ Private app repos: pass --github-token if required for bench get-app.`,
 			if cmd.Flags().Changed("proxy-host") {
 				proxyHostPtr = &proxyHost
 			}
-			return runRecreate(name, force, reallocatePorts, githubToken, proxyPortPtr, proxyHostPtr)
+			return runRecreate(name, force, noBackup, reallocatePorts, githubToken, proxyPortPtr, proxyHostPtr)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Do not back the bench up before tearing it down")
 	cmd.Flags().BoolVar(&reallocatePorts, "reallocate-ports", false, "Allocate a new web/socketio port pair instead of reusing stored ports")
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token for private app repos (not stored in state)")
 	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Override derived reverse-proxy public port for dev (socketio_port)")
@@ -55,7 +57,7 @@ Private app repos: pass --github-token if required for bench get-app.`,
 	return cmd
 }
 
-func runRecreate(name string, force, reallocatePorts bool, githubToken string, proxyPortOverride *int, proxyHostOverride *string) error {
+func runRecreate(name string, force, noBackup, reallocatePorts bool, githubToken string, proxyPortOverride *int, proxyHostOverride *string) error {
 	if !force {
 		if !isInteractive() {
 			return mustNotPrompt("recreate confirmation", "pass --force")
@@ -85,6 +87,7 @@ func runRecreate(name string, force, reallocatePorts bool, githubToken string, p
 	return manager.New(verbose).Recreate(manager.RecreateInput{
 		Name:              name,
 		Force:             force,
+		NoBackup:          noBackup,
 		ReallocatePorts:   reallocatePorts,
 		GithubToken:       githubToken,
 		ProxyPortOverride: proxyPortOverride,

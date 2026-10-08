@@ -10,7 +10,7 @@ import (
 )
 
 func newDeleteCmd() *cobra.Command {
-	var force bool
+	var force, noBackup bool
 
 	cmd := &cobra.Command{
 		Use:     "delete [name]",
@@ -28,15 +28,16 @@ func newDeleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runDelete(name, force)
+			return runDelete(name, force, noBackup)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Do not back the bench up before deleting it")
 	return cmd
 }
 
-func runDelete(name string, force bool) error {
+func runDelete(name string, force, noBackup bool) error {
 	svc := manager.New(verbose)
 	if !force {
 		if !isInteractive() {
@@ -47,7 +48,7 @@ func runDelete(name string, force bool) error {
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title(fmt.Sprintf("Delete bench %q?", name)).
-					Description("This will remove all containers, volumes, and the bench directory. This cannot be undone.").
+					Description("A backup is taken first (unless --no-backup); then all containers, volumes and the bench directory are removed.").
 					Affirmative("Yes, delete").
 					Negative("Cancel").
 					Value(&confirmed),
@@ -64,5 +65,5 @@ func runDelete(name string, force bool) error {
 			return nil
 		}
 	}
-	return svc.Delete(name, manager.CLIProgress{})
+	return svc.Delete(manager.DeleteInput{Name: name, NoBackup: noBackup}, manager.CLIProgress{})
 }

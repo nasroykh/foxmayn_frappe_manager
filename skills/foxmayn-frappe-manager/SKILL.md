@@ -171,10 +171,11 @@ reachable remote, unpushed commit) have their source archived; `--vendor-apps` f
 `ffm restore` always creates a **new** bench and never writes into an existing one, so a
 failed restore leaves the machine as it found it. The target name must be free.
 
-Take a backup before `ffm delete` or `ffm recreate` — `recreate` runs `docker compose down -v`
-and deletes the bench directory, so it is the one command that destroys data by design. A
-stopped bench is started for the backup and stopped again afterwards, so a broken bench can
-still be archived.
+`ffm delete` and `ffm recreate` back the bench up first (a manual archive labelled "before
+delete" / "before recreate") and refuse to continue if that backup fails; `--no-backup` skips
+it. `recreate` runs `docker compose down -v` and deletes the bench directory, so the new bench
+starts empty: restore that archive to get the data back. A stopped bench is started for the
+backup and stopped again afterwards, so a broken bench can still be archived.
 
 **Scheduled backups** keep a bounded set of archives automatically:
 
