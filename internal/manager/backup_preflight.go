@@ -164,15 +164,7 @@ func verifyMembers(m Manifest, res *archive.ExtractResult) error {
 // details into its own failure messages, so a failed restore prints the
 // database root password unless it is scrubbed here.
 func scrubSecrets(s string, secrets ...string) string {
-	for _, secret := range secrets {
-		// Short values would turn common substrings into noise; real ffm
-		// credentials are far longer than this floor.
-		if len(secret) < 6 {
-			continue
-		}
-		s = strings.ReplaceAll(s, secret, "***")
-	}
-	return s
+	return bench.Scrub(s, secrets...)
 }
 
 // benchSecrets returns the values that must never appear in output for a bench.

@@ -101,7 +101,7 @@ func (s *Service) TunnelEnable(in TunnelEnableInput, pw ProgressWriter) error {
 		return fmt.Errorf("save state: %w", err)
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	if err := s.applyTunnelFrappeConfig(b, runner, publicURL, pw); err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: could not update Frappe settings (bench may be stopped): %v\n", err)
 	}
@@ -140,7 +140,7 @@ func (s *Service) TunnelDisable(name string, pw ProgressWriter) error {
 	}
 
 	b, _ = s.GetBench(name)
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	if err := s.runSetProxyReset(b, runner, pw); err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: could not reset Frappe proxy settings: %v\n", err)
 	}

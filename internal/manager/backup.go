@@ -66,7 +66,7 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 		return fmt.Errorf("bench directory %s is missing — nothing to back up", b.Dir)
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
 
 	// Read the site's identity from the host side of the bind mount. Doing this

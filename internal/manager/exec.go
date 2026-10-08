@@ -2,8 +2,6 @@ package manager
 
 import (
 	"fmt"
-
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 )
 
 // Exec runs a one-shot command in a bench container (ffm shell --exec).
@@ -16,7 +14,7 @@ func (s *Service) Exec(in ExecInput) (string, error) {
 	if service == "" {
 		service = "frappe"
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 	workdir := "/workspace/frappe-bench"
 	if service != "frappe" {
 		workdir = ""

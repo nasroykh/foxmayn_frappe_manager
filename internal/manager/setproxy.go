@@ -22,7 +22,7 @@ func (s *Service) runSetProxy(name string, port int, host string, noSSL, reset, 
 		return err
 	}
 
-	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	runner := s.runnerFor(b)
 
 	if reset {
 		return s.runSetProxyReset(b, runner, pw)

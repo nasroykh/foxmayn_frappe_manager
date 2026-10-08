@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
 // LiveStatus queries docker compose for a bench's running state.
 func (s *Service) LiveStatus(b state.Bench) string {
-	runner := bench.NewRunner(b.Name, b.Dir, false)
+	runner := s.quietRunnerFor(b)
 	out, err := runner.PS("table")
 	if err != nil || out == "" {
 		return "unknown"
@@ -82,7 +81,7 @@ func (s *Service) GetBenchDetail(name string) (BenchDetail, error) {
 		detail.TunnelServer = b.Tunnel.Server
 		detail.TunnelSub = b.Tunnel.Subdomain
 	}
-	runner := bench.NewRunner(b.Name, b.Dir, false)
+	runner := s.quietRunnerFor(b)
 	out, err := runner.PS("")
 	if err != nil {
 		detail.ContainersPS = fmt.Sprintf("error: %v", err)
@@ -120,9 +119,9 @@ func (s *Service) DashboardOverview(failedJobs int) (DashboardStats, error) {
 		return DashboardStats{}, err
 	}
 	stats := DashboardStats{
-		TotalBenches:  len(views),
-		ProxyRunning:  proxy.IsRunning(),
-		FailedJobs:    failedJobs,
+		TotalBenches: len(views),
+		ProxyRunning: proxy.IsRunning(),
+		FailedJobs:   failedJobs,
 	}
 	for _, v := range views {
 		if v.Status == "running" {

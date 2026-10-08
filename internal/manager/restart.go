@@ -45,7 +45,7 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 		if err := bench.PatchUtilsJs(b.Dir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
 		}
-		runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+		runner := s.runnerFor(b)
 		pw.Printf("Rebuilding image for bench %q...\n", in.Name)
 		if err := runner.Build(); err != nil {
 			return fmt.Errorf("docker compose build: %w", err)

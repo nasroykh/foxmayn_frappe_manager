@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -81,4 +82,19 @@ func (s *Service) BenchExists(name string) (bool, error) {
 	s.lock()
 	defer s.unlock()
 	return s.Store.Exists(name)
+}
+
+// runnerFor returns a compose runner for b whose captured output has the
+// bench's passwords redacted.
+func (s *Service) runnerFor(b state.Bench) *bench.Runner {
+	r := bench.NewRunner(b.Name, b.Dir, s.Verbose)
+	r.Redact = benchSecrets(b)
+	return r
+}
+
+// quietRunnerFor is runnerFor without --verbose streaming, for status probes.
+func (s *Service) quietRunnerFor(b state.Bench) *bench.Runner {
+	r := s.runnerFor(b)
+	r.Verbose = false
+	return r
 }
