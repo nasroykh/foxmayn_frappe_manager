@@ -10,17 +10,17 @@ import (
 )
 
 func TestSeedKeyCoversEveryInput(t *testing.T) {
-	base := seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"})
-	if base.id() != seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}).id() {
+	base := seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15")
+	if base.id() != seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15").id() {
 		t.Fatal("same inputs, different keys")
 	}
 	for name, k := range map[string]seedKey{
-		"repo":   seedKeyFor("https://example.com/f.git", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}),
-		"branch": seedKeyFor("", "version-16", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}),
-		"python": seedKeyFor("", "version-15", bench.Toolchain{Python: "3.14", Node: "22"}, 0, 0, []string{"erpnext"}),
-		"uid":    seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 1001, 1001, []string{"erpnext"}),
-		"apps":   seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext", "hrms"}),
-		"none":   seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, nil),
+		"repo":   seedKeyFor("https://example.com/f.git", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15"),
+		"branch": seedKeyFor("", "version-16", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15"),
+		"python": seedKeyFor("", "version-15", bench.Toolchain{Python: "3.14", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15"),
+		"uid":    seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 1001, 1001, []string{"erpnext"}, "version-15"),
+		"apps":   seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext", "hrms"}, "version-15"),
+		"none":   seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, nil, "version-15"),
 	} {
 		if k.id() == base.id() {
 			t.Errorf("changing %s keeps the key", name)
@@ -56,7 +56,7 @@ func fakeBenchTree(t *testing.T, root string) string {
 func TestCaptureAndUseSeed(t *testing.T) {
 	t.Setenv("FFM_SEEDS_DIR", t.TempDir())
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
-	k := seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"})
+	k := seedKeyFor("", "version-15", bench.Toolchain{Python: "3.12", Node: "22"}, 0, 0, []string{"erpnext"}, "version-15")
 	fb := fakeBenchTree(t, t.TempDir())
 
 	if err := captureSeed(k, fb, "t01", now); err != nil {
@@ -96,7 +96,7 @@ func TestCaptureAndUseSeed(t *testing.T) {
 	if _, m := freshSeed(k, now.Add(seedMaxAge+time.Hour)); m != nil {
 		t.Error("a seed older than seedMaxAge was used")
 	}
-	other := seedKeyFor("", "version-16", bench.Toolchain{Python: "3.14", Node: "24"}, 0, 0, nil)
+	other := seedKeyFor("", "version-16", bench.Toolchain{Python: "3.14", Node: "24"}, 0, 0, nil, "version-15")
 	if _, m := freshSeed(other, now); m != nil {
 		t.Error("a seed was used for other inputs")
 	}
@@ -113,5 +113,32 @@ func TestSeedsDisabledByEnv(t *testing.T) {
 	t.Setenv("FFM_NO_SEED", "1")
 	if seedsEnabled() {
 		t.Error("FFM_NO_SEED=1 left seeds on")
+	}
+}
+
+func TestSeedKeyMatchesRestoreSpellings(t *testing.T) {
+	tc := bench.Toolchain{Python: "3.12", Node: "22"}
+	short := seedKeyFor("", "version-15", tc, 0, 0, []string{"erpnext"}, "version-15")
+	for _, spelled := range []string{
+		"https://github.com/frappe/erpnext.git@version-15",
+		"https://github.com/frappe/erpnext@version-15",
+		"git@github.com:frappe/erpnext.git@version-15",
+		"erpnext@version-15",
+	} {
+		if k := seedKeyFor("", "version-15", tc, 0, 0, []string{spelled}, "version-15"); k.id() != short.id() {
+			t.Errorf("%q does not share the seed of erpnext: %v vs %v", spelled, k.Apps, short.Apps)
+		}
+	}
+	for _, other := range []string{
+		"https://github.com/someone/erpnext@version-15",
+		"erpnext@develop",
+		"https://github.com/frappe/erpnext", // the repository's default branch, not version-15
+	} {
+		if k := seedKeyFor("", "version-15", tc, 0, 0, []string{other}, "version-15"); k.id() == short.id() {
+			t.Errorf("%q shares the seed of erpnext@version-15", other)
+		}
+	}
+	if canonicalRepo("ssh://git@GitHub.com/Org/App.git/") != "github.com/Org/App" {
+		t.Errorf("canonicalRepo = %q", canonicalRepo("ssh://git@GitHub.com/Org/App.git/"))
 	}
 }

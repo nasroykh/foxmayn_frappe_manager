@@ -438,7 +438,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// commits and unpacks archived source afterwards, so it may use a seed
 	// but never takes one.
 	seeds := seedsEnabled() && !in.NoSeed
-	key := seedKeyFor(frappeRepoURL, frappeInitBranch, toolchain, hostUID, hostGID, apps)
+	key := seedKeyFor(frappeRepoURL, frappeInitBranch, toolchain, hostUID, hostGID, apps, frappeBranch)
 	seedTree, seedInfo := "", (*seedMeta)(nil)
 	if seeds {
 		seedTree, seedInfo = freshSeed(key, s.clock())

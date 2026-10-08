@@ -242,8 +242,48 @@ func (s *Service) ListSeeds() ([]SeedInfo, error) {
 	return out, nil
 }
 
-// seedKeyFor builds the key of a create's bench tree.
-func seedKeyFor(frappeURL, branch string, tc bench.Toolchain, uid, gid int, apps []string) seedKey {
-	return seedKey{Format: seedFormat, Image: bench.BenchImageTag, FrappeURL: frappeURL, Branch: branch,
-		Python: tc.Python, Node: tc.Node, UID: uid, GID: gid, Apps: append([]string(nil), apps...)}
+// seedKeyFor builds the key of a create's bench tree. appBranch is the branch
+// a short app name defaults to (the bench's Frappe branch).
+func seedKeyFor(frappeURL, branch string, tc bench.Toolchain, uid, gid int, apps []string, appBranch string) seedKey {
+	canon := make([]string, 0, len(apps))
+	for _, a := range apps {
+		canon = append(canon, canonicalApp(a, appBranch))
+	}
+	return seedKey{Format: seedFormat, Image: bench.BenchImageTag, FrappeURL: canonicalRepo(frappeURL), Branch: branch,
+		Python: tc.Python, Node: tc.Node, UID: uid, GID: gid, Apps: canon}
+}
+
+// canonicalApp spells an --apps value the way bench resolves it, so that
+// "erpnext" on a version-15 bench and the
+// "https://github.com/frappe/erpnext.git@version-15" a restore passes share a
+// seed: bench get-app clones a short name from github.com/frappe.
+func canonicalApp(raw, frappeBranch string) string {
+	spec := bench.ParseAppSpec(raw, frappeBranch)
+	src := spec.Source
+	if !spec.IsURL {
+		src = "github.com/frappe/" + src
+	}
+	return canonicalRepo(src) + "@" + spec.Branch
+}
+
+// canonicalRepo reduces a git URL to host/path: no scheme, user, ".git" or
+// trailing slash, and SSH's host:path written as host/path.
+func canonicalRepo(u string) string {
+	if u == "" {
+		return ""
+	}
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
+	}
+	if at := strings.Index(u, "@"); at >= 0 && at < strings.IndexAny(u+"/", "/:") {
+		u = u[at+1:]
+	}
+	if i := strings.Index(u, ":"); i >= 0 && i < strings.Index(u+"/", "/") {
+		u = u[:i] + "/" + u[i+1:]
+	}
+	u = strings.TrimSuffix(strings.TrimSuffix(u, "/"), ".git")
+	if i := strings.Index(u, "/"); i >= 0 {
+		u = strings.ToLower(u[:i]) + u[i:]
+	}
+	return u
 }
