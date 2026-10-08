@@ -319,6 +319,28 @@ do (the bench serves nothing: `ffm restart <bench>`, and `ffm logs <bench> frapp
 
 Shows per-container status, credentials, ports, and URLs. Prod benches show the domain URL instead of `localhost`.
 
+### `ffm doctor [name]`
+
+Checks that benches are healthy, not just running, and changes nothing:
+
+- **containers:** frappe running, restart counts;
+- **site:** `/api/method/ping` on the web port, and through Traefik for dev;
+- **database:** the site connects;
+- **scheduler:** enabled. A disabled scheduler fails prod and warns on dev;
+- **workers:** every RQ queue has a worker listening. Jobs on a queue nobody consumes wait forever
+  while the site looks fine;
+- **certificate:** for prod with Let's Encrypt, valid for the domain, warn under 14 days, fail
+  under 3;
+- **backups:** the schedule produced an archive within its interval plus two hours;
+- **disk:** free space for the bench and the backups, warn under 10 GiB, fail under 2 GiB;
+- **templates:** built from this ffm's templates.
+
+```bash
+ffm doctor                 # every bench; exit code 1 when any check fails
+ffm doctor mybench --json  # ffm.doctor/v1
+ffm doctor --notify        # failures through 'ffm notify', e.g. from cron
+```
+
 ### `ffm start [name]`
 
 Starts a stopped bench. Dev: also reinstalls skills if missing and relaunches `bench start`. Prod: `docker compose up -d` only (services run via compose `command:`).
@@ -973,6 +995,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm backup target list --json` | `ffm.targets/v1` (no secrets) |
 | `ffm backup verify … --json` | `ffm.verify/v1` |
 | `ffm notify list --json` | `ffm.notifiers/v1` (no URLs or tokens) |
+| `ffm doctor [bench] --json` | `ffm.doctor/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 

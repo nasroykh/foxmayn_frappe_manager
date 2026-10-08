@@ -14,6 +14,7 @@ Available Commands:
   db          Open the site's database console, or import/export its database
   debug       Run a dev bench's web server under debugpy (on / off / status)
   delete      Delete a bench and all its data
+  doctor      Check that benches are healthy, not just running
   domain      Manage extra hostnames that route to a bench
   ffc         Generate Frappe API keys and configure ffc inside a bench
   list        List all managed benches
@@ -614,6 +615,18 @@ Aliases:
 Flags:
       --force       Skip confirmation prompt
       --no-backup   Do not back the bench up before deleting it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm doctor
+Usage:
+  ffm doctor [bench] [flags]
+
+Flags:
+      --json     Print the report as JSON (schema ffm.doctor/v1)
+      --notify   Send failures through 'ffm notify' notifiers
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

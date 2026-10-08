@@ -459,6 +459,7 @@ code ~/frappe/mybench
 | Create a prod bench (existing Caddy/Nginx) | `ffm create myprod --mode prod --domain erp.example.com --no-ssl --admin-password X`                 |
 | List all benches                           | `ffm list`                                                                                           |
 | Check bench status                         | `ffm status mybench`                                                                                 |
+| Check bench health (workers, scheduler, backups, TLS, disk) | `ffm doctor [mybench] [--json]` (exit 1 on failure)                                   |
 | Start a bench                              | `ffm start mybench`                                                                                  |
 | Stop a bench                               | `ffm stop mybench`                                                                                   |
 | Restart a bench                            | `ffm restart mybench`                                                                                |

@@ -70,7 +70,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 35 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 36 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -124,6 +124,7 @@ internal/
     clone.go              → ffm clone <source> <new-name> (--no-files, --vendor-apps, --domain)
     agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
                             --agent-read-only
+    doctor.go             → ffm doctor [bench] (--json ffm.doctor/v1, --notify)
     notify.go             → ffm notify add|list|remove|test (Slack URL / Telegram token from stdin)
     backup_key.go / backup_target.go / backup_verify.go → ffm backup key|target|pull|verify
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
@@ -198,6 +199,11 @@ internal/
                             files by listed size. Keys are "<bench>/<file>". pruneRemote reuses
                             prunable + selectRetained; run-due prunes remotely only after the
                             upload succeeded. PullArchive downloads into the bench backups dir
+    doctor.go             → Doctor: read-only checks (containers + RestartCount, ping direct and via
+                            Traefik, doctorJobsScript = DB connect + is_scheduler_inactive + per-queue
+                            backlog and RQ workers listening on it, TLS leaf verified for the domain,
+                            backup age vs EveryHours+2h, freeBytes, template version). Check.Status is
+                            ok/warn/fail/skip; the CLI exits 1 on any fail
     backup_verify.go      → VerifyBackup: decrypt → archive.Extract (restore's guards) →
                             verifyMembers → dumpHasAuthTable (streams the gzip); with Restore,
                             verifyByRestore: Restore under verify-<hex> (prod: <name>.verify.invalid,
