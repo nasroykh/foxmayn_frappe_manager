@@ -256,6 +256,22 @@ image defaults (Python 3.14 and Node 24 for every branch); `ffm recreate` rebuil
 branch's toolchain. uv's package cache lives in the `pip-cache` volume, so a replaced container
 does not download Python packages again (`ffm reconcile` sets this up on existing dev benches).
 
+#### Seeds: the second bench is fast
+
+`bench init`, `bench get-app` and `bench build` take most of a create. At the end of a create
+that ran them, ffm saves the bench tree (apps, virtualenv, node_modules, built assets; no site,
+logs or skills) as a **seed** in `~/.cache/ffm/seeds/` (`FFM_SEEDS_DIR` overrides). The next
+create with the same image, Frappe repo and branch, Python, Node, uid and `--apps` copies the seed
+instead (`cp` with block cloning where the filesystem has it) and only creates and installs the
+site. Restore, recreate and clone go through create, so they use seeds as well, but only a plain
+create saves one.
+
+- A seed freezes each app at the commit it was taken at and is used for 7 days; after that, the
+  next create runs bench init again and replaces it. `--no-seed` (or `FFM_NO_SEED=1`) always
+  starts from the branch heads and saves nothing; `bench update` inside a bench pulls as usual.
+- A frappe + erpnext seed is about 1.4 GB. `ffm clean --seeds` lists and removes them.
+- Not on Windows yet.
+
 #### `--apps` formats
 
 ```bash
@@ -414,6 +430,7 @@ ffm clean --dry-run                 # list only (--json: ffm.clean/v1)
 ffm clean --yes                     # remove without asking
 ffm clean --build-cache --dangling  # also Docker's build cache and untagged images (shared with
                                     # every other project on the host)
+ffm clean --seeds                   # also the bench seeds (the next create saves a new one)
 ```
 
 ### VS Code devcontainer (dev only)
@@ -820,7 +837,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm tunnel server --json [--show-secrets]` | `ffm.tunnel-servers/v1` (tokens only with `--show-secrets`) |
 | `ffm version --json` | `ffm.version/v1` |
 | `ffm open [bench] --json`, `ffm mail [bench] --json` | `ffm.url/v1` |
-| `ffm clean --json [--dry-run]` | `ffm.clean/v1` |
+| `ffm clean --json [--dry-run] [--seeds]` | `ffm.clean/v1` |
 | `ffm snapshot list [bench] --json` | `ffm.snapshots/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.

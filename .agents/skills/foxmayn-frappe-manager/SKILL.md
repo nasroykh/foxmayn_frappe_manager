@@ -242,6 +242,10 @@ ffm snapshot list mybench --json                    # ffm.snapshots/v1
 ffm clone mybench mybench-try                        # a full copy under a new name (backup + restore)
 ```
 
+The first create for a given branch/apps/toolchain saves a seed (~/.cache/ffm/seeds); later creates,
+clones and restores with the same inputs copy it and skip bench init, get-app and bench build.
+`--no-seed` starts from the branch heads; `ffm clean --seeds` removes seeds.
+
 Snapshots restore in place and live with the bench; they are not backups (`ffm backup` is).
 
 ### Deleting a bench

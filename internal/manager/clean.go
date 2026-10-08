@@ -17,14 +17,18 @@ type CleanInput struct {
 	BuildCache bool
 	// Dangling also removes untagged images, from any project.
 	Dangling bool
+	// Seeds also removes the bench seeds (ffm create copies them instead of
+	// running bench init; the next create takes a new one).
+	Seeds bool
 }
 
 // CleanItem is one thing ffm clean found.
 type CleanItem struct {
-	Kind  string // "volume", "image", "build cache", "dangling images"
+	Kind  string // "volume", "image", "seed", "build cache", "dangling images"
 	Name  string
 	Bench string
 	Size  string
+	path  string
 }
 
 // composeProjectLabel names the compose project of a volume or image.
@@ -83,6 +87,15 @@ func (s *Service) CleanPlan(in CleanInput) ([]CleanItem, error) {
 	if in.BuildCache {
 		items = append(items, CleanItem{Kind: "build cache", Name: "docker builder prune", Size: dockerOut("builder", "du", "--format", "{{.Size}}")})
 	}
+	if in.Seeds {
+		seeds, err := s.ListSeeds()
+		if err != nil {
+			return nil, err
+		}
+		for _, sd := range seeds {
+			items = append(items, CleanItem{Kind: "seed", Name: sd.ID, Bench: sd.Branch, Size: humanBytes(sd.Size), path: sd.Path})
+		}
+	}
 	if in.Dangling {
 		n := len(strings.Fields(dockerOut("image", "ls", "-q", "-f", "dangling=true")))
 		items = append(items, CleanItem{Kind: "dangling images", Name: fmt.Sprintf("%d untagged image(s)", n)})
@@ -100,6 +113,14 @@ func (s *Service) Clean(items []CleanItem, pw ProgressWriter) error {
 	for _, it := range items {
 		var args []string
 		switch it.Kind {
+		case "seed":
+			if err := os.RemoveAll(it.path); err != nil {
+				pw.Printf("  could not remove seed %s: %v\n", it.Name, err)
+				failed++
+			} else {
+				pw.Printf("  removed seed %s\n", it.Name)
+			}
+			continue
 		case "volume":
 			args = []string{"volume", "rm", it.Name}
 		case "image":

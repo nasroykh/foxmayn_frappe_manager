@@ -44,7 +44,7 @@ images. Both are shared with every other project on the host.`,
 			if asJSON {
 				out := jsonClean{Schema: "ffm.clean/v1", Items: []jsonCleanItem{}}
 				for _, it := range items {
-					out.Items = append(out.Items, jsonCleanItem(it))
+					out.Items = append(out.Items, jsonCleanItem{Kind: it.Kind, Name: it.Name, Bench: it.Bench, Size: it.Size})
 				}
 				if err := writeJSON(out); err != nil {
 					return err
@@ -88,6 +88,7 @@ images. Both are shared with every other project on the host.`,
 	}
 	cmd.Flags().BoolVar(&in.BuildCache, "build-cache", false, "Also prune Docker's build cache (shared with other projects)")
 	cmd.Flags().BoolVar(&in.Dangling, "dangling", false, "Also remove untagged images (from any project)")
+	cmd.Flags().BoolVar(&in.Seeds, "seeds", false, "Also remove the bench seeds ffm create copies instead of running bench init")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Only list what would be removed")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Do not ask before removing")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the list as JSON (schema ffm.clean/v1)")
