@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -44,7 +45,8 @@ func TestSaveIsAtomicAndPrivate(t *testing.T) {
 	for _, e := range entries {
 		// benches.json.lock is the writers' lock file: it stays, only the OS
 		// lock on it means anything. Temp files must not.
-		if e.Name() != "benches.json" && e.Name() != "benches" && e.Name() != "benches.json.lock" {
+		if e.Name() != "benches.json" && e.Name() != "benches" && e.Name() != "benches.json.lock" &&
+			e.Name() != "benches.json.bak" {
 			t.Errorf("leftover file after save: %s", e.Name())
 		}
 	}
@@ -99,6 +101,30 @@ func TestConcurrentUpdatesAreNotLost(t *testing.T) {
 	for _, b := range benches {
 		if b.Domain != "done" {
 			t.Errorf("update to %s was lost", b.Name)
+		}
+	}
+}
+
+func TestSaveKeepsPreviousVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FFM_CONFIG_DIR", dir)
+	s := &Store{path: filepath.Join(dir, "benches.json")}
+	if err := s.Add(Bench{Name: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Add(Bench{Name: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	bak, err := os.ReadFile(s.path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bak), `"first"`) || strings.Contains(string(bak), `"second"`) {
+		t.Fatalf(".bak should hold the version before the last save:\n%s", bak)
+	}
+	if runtime.GOOS != "windows" {
+		if st, _ := os.Stat(s.path + ".bak"); st.Mode().Perm() != 0o600 {
+			t.Fatalf(".bak mode %v, want 0600", st.Mode().Perm())
 		}
 	}
 }

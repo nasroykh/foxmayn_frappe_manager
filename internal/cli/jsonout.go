@@ -45,6 +45,9 @@ type jsonBench struct {
 	ProxyHost    string `json:"proxy_host,omitempty"`
 	FrappeBranch string `json:"frappe_branch"`
 	Tunnel       bool   `json:"tunnel"`
+	// TemplatesOutdated is true when the bench's compose file was rendered
+	// from older templates than this ffm build's (run ffm reconcile).
+	TemplatesOutdated bool `json:"templates_outdated"`
 }
 
 type jsonList struct {

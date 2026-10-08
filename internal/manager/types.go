@@ -151,6 +151,8 @@ type BenchView struct {
 	TunnelOn     bool
 	// URL is where the site is reached, as `ffm status` reports it.
 	URL string
+	// TemplatesOutdated: the compose file predates this build's templates.
+	TemplatesOutdated bool
 }
 
 // BenchDetail includes credentials for the detail page.

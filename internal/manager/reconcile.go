@@ -74,8 +74,16 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 		return fmt.Errorf("read docker-compose.yml: %w", err)
 	}
 
+	dockerfileStale := s.dockerfileStale(b, data)
 	if bytes.Equal(have, want) && !changed {
+		if b.TemplateVersion != bench.TemplateVersion && !in.DryRun {
+			// The file already matches; just record that it does.
+			if err := s.UpdateBench(b.Name, func(rec *state.Bench) { rec.TemplateVersion = bench.TemplateVersion }); err != nil {
+				return fmt.Errorf("update state: %w", err)
+			}
+		}
 		pw.Printf("Bench %q is up to date.\n", b.Name)
+		printDockerfileHint(pw, b.Name, dockerfileStale)
 		return nil
 	}
 
@@ -86,6 +94,7 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 		}
 		pw.Println("  Lines marked - that you added by hand will be lost: move them into " + bench.OverrideFile + ",")
 		pw.Println("  which ffm never writes and merges on top of docker-compose.yml.")
+		printDockerfileHint(pw, b.Name, dockerfileStale)
 		if b.PublishHost() == "" {
 			pw.Println("  Ports: all interfaces (pass --loopback to bind them to 127.0.0.1)")
 		} else {
@@ -94,13 +103,12 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 		return nil
 	}
 
-	if changed {
-		if err := s.UpdateBench(b.Name, func(rec *state.Bench) {
-			rec.Bind = b.Bind
-			rec.SSHAgent = b.SSHAgent
-		}); err != nil {
-			return fmt.Errorf("update state: %w", err)
-		}
+	if err := s.UpdateBench(b.Name, func(rec *state.Bench) {
+		rec.Bind = b.Bind
+		rec.SSHAgent = b.SSHAgent
+		rec.TemplateVersion = bench.TemplateVersion
+	}); err != nil {
+		return fmt.Errorf("update state: %w", err)
 	}
 
 	pw.Printf("Reconciling bench %q...\n", b.Name)
@@ -108,6 +116,7 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 		return err
 	}
 	pw.Printf("Done. Bench %q matches this ffm version's templates.\n", b.Name)
+	printDockerfileHint(pw, b.Name, dockerfileStale)
 	if b.IsDev() {
 		// up -d replaces the frappe container, and on a dev bench some state
 		// lives in its filesystem rather than in ./workspace.
@@ -161,4 +170,22 @@ func lineDiff(a, b string) []string {
 		out = append(out, "+ "+l)
 	}
 	return out
+}
+
+// dockerfileStale reports whether the bench's Dockerfile differs from what
+// this ffm version renders. Reconcile only applies docker-compose.yml: an
+// image change needs a rebuild, which takes minutes and is left to the user.
+func (s *Service) dockerfileStale(b state.Bench, data bench.ComposeData) bool {
+	want, err := bench.RenderDockerfile(data)
+	if err != nil {
+		return false
+	}
+	have, err := os.ReadFile(filepath.Join(b.Dir, "Dockerfile"))
+	return err == nil && !bytes.Equal(have, want)
+}
+
+func printDockerfileHint(pw ProgressWriter, name string, stale bool) {
+	if stale {
+		pw.Printf("  The image recipe (Dockerfile) changed too; rebuild with 'ffm restart %s --rebuild'.\n", name)
+	}
 }

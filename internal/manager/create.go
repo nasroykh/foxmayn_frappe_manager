@@ -754,7 +754,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		MatchHostUser: in.MatchHostUser,
 		Bind:          bind,
 		SSHAgent:      sshAgent,
-		CreatedAt:     time.Now(),
+		// The compose file was rendered from this build's templates.
+		TemplateVersion: bench.TemplateVersion,
+		CreatedAt:       time.Now(),
 		// Everything below is what a later compose re-render needs in order to
 		// reproduce this exact bench. Without it, recreate and `ffm domain`
 		// would silently reset the prod tuning knobs to their defaults.

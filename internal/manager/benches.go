@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
@@ -48,18 +49,19 @@ func (s *Service) benchToView(b state.Bench) BenchView {
 	}
 	tunnelOn := b.Tunnel != nil && b.Tunnel.Enabled
 	return BenchView{
-		Name:         b.Name,
-		Mode:         mode,
-		DBEngine:     db,
-		Status:       s.LiveStatus(b),
-		WebPort:      b.WebPort,
-		SocketIOPort: b.SocketIOPort,
-		SiteName:     b.SiteName,
-		Domain:       b.Domain,
-		ProxyHost:    b.ProxyHost,
-		FrappeBranch: b.FrappeBranch,
-		URL:          s.siteURL(b),
-		TunnelOn:     tunnelOn,
+		Name:              b.Name,
+		Mode:              mode,
+		DBEngine:          db,
+		Status:            s.LiveStatus(b),
+		WebPort:           b.WebPort,
+		SocketIOPort:      b.SocketIOPort,
+		SiteName:          b.SiteName,
+		Domain:            b.Domain,
+		ProxyHost:         b.ProxyHost,
+		FrappeBranch:      b.FrappeBranch,
+		URL:               s.siteURL(b),
+		TemplatesOutdated: b.TemplateVersion < bench.TemplateVersion,
+		TunnelOn:          tunnelOn,
 	}
 }
 

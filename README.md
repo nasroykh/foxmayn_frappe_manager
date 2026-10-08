@@ -519,6 +519,8 @@ ffm reconcile mybench --lan         # publish them on all interfaces
 ffm reconcile mybench --ssh-agent   # keep forwarding the SSH agent (dev)
 ```
 
+**Template versions.** Each bench records the template version its `docker-compose.yml` was rendered from. `ffm list` names the benches built from older templates (and `--json` reports `templates_outdated`). Reconcile only applies `docker-compose.yml`; when the image recipe (`Dockerfile`) changed too, it says so, and `ffm restart <bench> --rebuild` applies it.
+
 **Ports.** New benches publish their ports on `127.0.0.1` only; `--lan` (on `create`, `restore` or `reconcile`) publishes them on all interfaces. Benches created before v0.8.1 keep their behaviour until reconciled: prod benches move to `127.0.0.1` (Traefik reaches them over the proxy network, and a host-side Caddy or nginx reaches `127.0.0.1`), dev benches stay on all interfaces unless you pass `--loopback`. A dev bench with domain aliases needs `--lan`, because the browser reaches socket.io on the published port.
 
 **Upgrading to v0.8.1.** Run `ffm reconcile <bench>` on every prod bench: before v0.8.1, prod workers never consumed Frappe's `default` queue, so most scheduled jobs and plain `frappe.enqueue` calls never ran, and gunicorn was reachable over plain HTTP on the published port.
@@ -618,6 +620,7 @@ Prints the build version, commit hash, and build date.
 
 ~/.config/ffm/
   benches.json           # state file tracking all managed benches (0600: holds passwords)
+  benches.json.bak       # the previous version, kept on every save (0600)
   backup-scheduler.log   # one line per bench per scheduled run
   locks/                 # per-bench and run-due lock files
   .update_check.json     # cached latest release tag (refreshed every 24 h)

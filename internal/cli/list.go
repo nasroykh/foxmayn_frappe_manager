@@ -35,7 +35,7 @@ func benchJSON(v manager.BenchView) jsonBench {
 	return jsonBench{
 		Name: v.Name, Mode: v.Mode, DB: db, Status: v.Status, Site: v.SiteName, URL: v.URL,
 		WebPort: v.WebPort, SocketIOPort: v.SocketIOPort, Domain: v.Domain, ProxyHost: v.ProxyHost,
-		FrappeBranch: v.FrappeBranch, Tunnel: v.TunnelOn,
+		FrappeBranch: v.FrappeBranch, Tunnel: v.TunnelOn, TemplatesOutdated: v.TemplatesOutdated,
 	}
 }
 
@@ -120,6 +120,17 @@ func runList(asJSON bool) error {
 
 	if !proxyUp && devBenchExists {
 		fmt.Printf("\n  %s\n", mutedStyle.Render("Run 'ffm proxy start' to enable sitename.localhost routing."))
+	}
+	var outdated []string
+	for _, v := range views {
+		if v.TemplatesOutdated {
+			outdated = append(outdated, v.Name)
+		}
+	}
+	if len(outdated) > 0 {
+		fmt.Printf("\n  %s\n", stoppedStyle.Render(fmt.Sprintf(
+			"Built from older templates: %s. Run 'ffm reconcile <bench> --dry-run' to see the changes.",
+			strings.Join(outdated, ", "))))
 	}
 	return nil
 }
