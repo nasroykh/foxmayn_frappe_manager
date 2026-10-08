@@ -256,28 +256,19 @@ func (h *Handler) TunnelServerAdd(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
 	}
-	cfg, err := tunnel.Load()
-	if err != nil {
-		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
-		return
-	}
 	name := r.FormValue("name")
 	port, _ := strconv.Atoi(r.FormValue("port"))
 	if port == 0 {
 		port = 7000
 	}
-	cfg.Servers[name] = tunnel.Server{
+	if err := tunnel.PutServer(tunnel.Server{
 		Name:       name,
 		Host:       r.FormValue("host"),
 		Port:       port,
 		Token:      r.FormValue("token"),
 		BaseDomain: r.FormValue("base_domain"),
 		TLS:        r.FormValue("tls") != "0",
-	}
-	if r.FormValue("default") == "1" {
-		cfg.Default = name
-	}
-	if err := tunnel.Save(cfg); err != nil {
+	}, r.FormValue("default") == "1"); err != nil {
 		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
 		return
 	}
@@ -289,16 +280,7 @@ func (h *Handler) TunnelServerRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	cfg, err := tunnel.Load()
-	if err != nil {
-		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
-		return
-	}
-	delete(cfg.Servers, name)
-	if cfg.Default == name {
-		cfg.Default = ""
-	}
-	if err := tunnel.Save(cfg); err != nil {
+	if _, err := tunnel.RemoveServer(name); err != nil {
 		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
 		return
 	}
@@ -310,17 +292,7 @@ func (h *Handler) TunnelServerUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	cfg, err := tunnel.Load()
-	if err != nil {
-		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
-		return
-	}
-	if _, ok := cfg.Servers[name]; !ok {
-		redirectWithFlash(w, r, "/admin/tunnel-servers", "", "server not found")
-		return
-	}
-	cfg.Default = name
-	if err := tunnel.Save(cfg); err != nil {
+	if err := tunnel.UseServer(name); err != nil {
 		redirectWithFlash(w, r, "/admin/tunnel-servers", "", err.Error())
 		return
 	}

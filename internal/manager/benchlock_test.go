@@ -125,3 +125,21 @@ func TestHeaderTriggerRoundTrip(t *testing.T) {
 		t.Fatalf("scheduled header round-trip = %+v, %v", parsed, err)
 	}
 }
+
+// A second create of a name that is being created must be refused, not race
+// the first one into the same directory.
+func TestCreateRefusesNameBeingCreated(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FFM_CONFIG_DIR", dir)
+	t.Setenv("FFM_BENCHES_DIR", dir+"/benches")
+	s := New(false)
+	held, err := s.lockBench("gamma")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held()
+	err = s.Create(CreateInput{Name: "gamma", Mode: "dev", AdminPassword: "s3cret-admin", DBPassword: "s3cret-db1"}, DiscardProgress{})
+	if !errors.Is(err, ErrBenchBusy) {
+		t.Fatalf("Create of a name being created = %v, want ErrBenchBusy", err)
+	}
+}

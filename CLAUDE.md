@@ -267,8 +267,10 @@ internal/
 
 - **`manager.Service` is the seam.** New behaviour goes in `internal/manager/`, not `internal/cli/`.
   The CLI passes `CLIProgress{}`; the dashboard passes a `BufferProgress` so the same pipeline can
-  stream into an async job. `Service` serialises all state-store access behind a mutex; the raw
-  `state.Store` is still not concurrency-safe on its own.
+  stream into an async job. `Service` serialises state-store access within a process behind a
+  mutex; across processes, `state.Store`'s Add/Remove/Update hold `benches.json.lock` for their
+  read-modify-write (`lock.Acquire`, 10 s), and `tunnel.json` goes through `tunnel.Update`.
+  A new bench holds its bench lock for the whole of `Create`.
 - **`bench.Runner`** is the low-level docker compose abstraction. Output modes: silent-capture
   (`ExecSilent`), capture-and-return (`LogsString`), verbose-conditional (`withOutput`),
   always-interactive (`composeWithIO`), stream-without-TTY (`ExecOutputInDir`), fire-and-forget
@@ -407,9 +409,8 @@ internal/
   `BackupSchedule` is due and then prunes it. Rules that are load-bearing:
   - run-due only **reads** `benches.json`. The policy is written by the user-invoked
     `ffm backup schedule`; last success is the newest `trigger=scheduled` archive on disk;
-    the last attempt goes to `<backups>/<bench>/.schedule.json`. The store is still a
-    whole-file read-modify-write without a cross-process lock, so an hourly writer would race
-    every other command.
+    the last attempt goes to `<backups>/<bench>/.schedule.json`. Keeping the
+    hourly job read-only means it never waits on, or delays, interactive commands.
   - Pruning deletes only archives whose **header** says `trigger=scheduled` for that bench,
     only after a successful backup, and never below `RetentionFloor` (3). Manual archives,
     archives from an ffm older than scheduling (no `trigger`), foreign and unreadable files are
@@ -601,4 +602,4 @@ git push origin v0.1.0
 ```
 
 All three roots are overridable: `FFM_BENCHES_DIR`, `FFM_CONFIG_DIR` and `FFM_BACKUPS_DIR`. Setting them per job is how
-you isolate concurrent runs, since `benches.json` is a whole-file read-modify-write.
+you isolate concurrent runs, so they do not share benches, ports or archives.

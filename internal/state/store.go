@@ -3,11 +3,13 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/lock"
 )
 
 // TLS modes recorded in Bench.TLSMode.
@@ -172,9 +174,9 @@ func (b Bench) DBEngine() string {
 func (b Bench) IsPostgres() bool { return b.DBEngine() == "postgres" }
 
 // Store is a thin wrapper around the benches.json state file.
-// Writes are atomic (see Save), but read-modify-write sequences are not
-// serialised across processes: two processes updating the file at the same
-// moment can still lose one update.
+// Writes are atomic (see Save), and Add, Remove and Update hold a lock file
+// next to the state file across their read-modify-write, so concurrent
+// processes cannot lose each other's updates. Save on its own is not locked.
 type Store struct {
 	path string
 }
@@ -256,8 +258,29 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+// stateLockTimeout bounds how long a writer waits for another process's
+// read-modify-write of benches.json. Each one takes milliseconds.
+const stateLockTimeout = 10 * time.Second
+
+// locked runs fn while holding an exclusive lock next to the state file, so
+// read-modify-write sequences from different processes (CLI commands, the
+// dashboard daemon, the hourly backup job) cannot lose each other's updates.
+// Writes were already atomic; this makes them serialised.
+func (s *Store) locked(fn func() error) error {
+	l, err := lock.Acquire(s.path+".lock", stateLockTimeout)
+	if err != nil {
+		return fmt.Errorf("lock %s: %w", filepath.Base(s.path), err)
+	}
+	defer l.Release()
+	return fn()
+}
+
 // Add appends a new bench record and saves.
 func (s *Store) Add(b Bench) error {
+	return s.locked(func() error { return s.add(b) })
+}
+
+func (s *Store) add(b Bench) error {
 	benches, err := s.Load()
 	if err != nil {
 		return err
@@ -268,6 +291,10 @@ func (s *Store) Add(b Bench) error {
 
 // Remove deletes the bench with the given name and saves.
 func (s *Store) Remove(name string) error {
+	return s.locked(func() error { return s.remove(name) })
+}
+
+func (s *Store) remove(name string) error {
 	benches, err := s.Load()
 	if err != nil {
 		return err
@@ -311,6 +338,10 @@ func (s *Store) Exists(name string) (bool, error) {
 
 // Update applies fn to the bench with the given name and saves.
 func (s *Store) Update(name string, fn func(*Bench)) error {
+	return s.locked(func() error { return s.update(name, fn) })
+}
+
+func (s *Store) update(name string, fn func(*Bench)) error {
 	benches, err := s.Load()
 	if err != nil {
 		return err

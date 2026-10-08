@@ -81,11 +81,7 @@ func newTunnelServerAddCmd() *cobra.Command {
 				BaseDomain: baseDomain,
 				TLS:        !noTLS,
 			}
-			cfg.Servers[name] = srv
-			if cfg.Default == "" {
-				cfg.Default = name
-			}
-			if err := tunnel.Save(cfg); err != nil {
+			if err := tunnel.PutServer(srv, false); err != nil {
 				return err
 			}
 
@@ -160,15 +156,14 @@ func newTunnelServerSetCmd() *cobra.Command {
 				return err
 			}
 
-			cfg.Servers[name] = tunnel.Server{
+			if err := tunnel.PutServer(tunnel.Server{
 				Name:       name,
 				Host:       host,
 				Port:       port,
 				Token:      token,
 				BaseDomain: baseDomain,
 				TLS:        !noTLS,
-			}
-			if err := tunnel.Save(cfg); err != nil {
+			}, false); err != nil {
 				return err
 			}
 
@@ -229,21 +224,14 @@ func newTunnelServerRemoveCmd() *cobra.Command {
 				return nil
 			}
 
-			delete(cfg.Servers, name)
-			if cfg.Default == name {
-				cfg.Default = ""
-				for n := range cfg.Servers {
-					cfg.Default = n
-					break
-				}
-			}
-			if err := tunnel.Save(cfg); err != nil {
+			newDefault, err := tunnel.RemoveServer(name)
+			if err != nil {
 				return err
 			}
 
 			fmt.Printf("Tunnel server %q removed.\n", name)
-			if cfg.Default != "" {
-				fmt.Printf("  Default server is now %q.\n", cfg.Default)
+			if newDefault != "" {
+				fmt.Printf("  Default server is now %q.\n", newDefault)
 			}
 			return nil
 		},
@@ -259,15 +247,7 @@ func newTunnelServerUseCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cfg, err := tunnel.Load()
-			if err != nil {
-				return err
-			}
-			if _, ok := cfg.Servers[name]; !ok {
-				return fmt.Errorf("tunnel server %q not found", name)
-			}
-			cfg.Default = name
-			if err := tunnel.Save(cfg); err != nil {
+			if err := tunnel.UseServer(name); err != nil {
 				return err
 			}
 			fmt.Printf("Default tunnel server set to %q.\n", name)

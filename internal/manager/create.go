@@ -195,6 +195,19 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
+	// A new bench holds its name's lock for the whole build, so a second
+	// create of the same name (another terminal, the dashboard) is refused
+	// instead of both passing the existence check below and building into
+	// the same directory. Recreate and restore already hold it, and the lock
+	// is not re-entrant.
+	if newBench {
+		release, err := s.lockBench(name)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
+
 	s.lock()
 	_, existsErr := s.Store.Get(name)
 	s.unlock()

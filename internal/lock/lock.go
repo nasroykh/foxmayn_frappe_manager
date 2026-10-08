@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // ErrHeld is returned by TryAcquire when another process holds the lock.
@@ -71,3 +72,17 @@ func (l *Lock) Release() error {
 
 // Path returns the lock file's path.
 func (l *Lock) Path() string { return l.path }
+
+// Acquire is TryAcquire that waits, retrying until the lock is free or timeout
+// elapses. It is for short critical sections (a read-modify-write of a small
+// file), where waiting is right and failing fast would only lose work.
+func Acquire(path string, timeout time.Duration) (*Lock, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		l, err := TryAcquire(path)
+		if !errors.Is(err, ErrHeld) || time.Now().After(deadline) {
+			return l, err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

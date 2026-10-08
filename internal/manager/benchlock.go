@@ -26,7 +26,7 @@ var ErrBenchBusy = errors.New("bench is busy")
 func (s *Service) lockBench(name string) (release func(), err error) {
 	l, err := lock.TryAcquire(config.BenchLockFile(name))
 	if errors.Is(err, lock.ErrHeld) {
-		return nil, fmt.Errorf("%w: another ffm operation is backing up, restoring, deleting or "+
+		return nil, fmt.Errorf("%w: another ffm operation is creating, backing up, restoring, deleting or "+
 			"recreating %q — try again when it finishes", ErrBenchBusy, name)
 	}
 	if err != nil {
