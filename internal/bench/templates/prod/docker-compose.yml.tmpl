@@ -4,6 +4,12 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# No process in these containers needs to gain privileges after start (the
+# database and Redis images drop theirs with gosu/su-exec, which is allowed).
+# Not on dev benches, where the frappe user may use sudo.
+x-security: &default-security
+  - no-new-privileges:true
+
 services:
 {{- if eq .DBType "postgres"}}
   postgres:
@@ -19,6 +25,7 @@ services:
       retries: 10
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
 {{- else}}
   mariadb:
     image: docker.io/mariadb:11.8
@@ -29,7 +36,9 @@ services:
       - --skip-innodb-read-only-compressed
       - --innodb-buffer-pool-size={{.MariaDBBufferPool}}
       - --innodb-log-file-size=256M
-      - --innodb-flush-log-at-trx-commit=2
+      # 1 flushes the redo log at every commit: a crash loses no committed
+      # transaction. 2 (--mariadb-fast-commit) can lose about a second of them.
+      - --innodb-flush-log-at-trx-commit={{if .MariaDBFastCommit}}2{{else}}1{{end}}
       - --innodb-flush-method=O_DIRECT
       - --tmp-table-size=64M
       - --max-heap-table-size=64M
@@ -57,31 +66,61 @@ services:
       retries: 10
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
 {{- end}}
 
   redis-cache:
     image: docker.io/redis:8-alpine
     command: ["redis-server", "--maxmemory", "{{.RedisCacheMaxmem}}", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
 
   redis-queue:
     image: docker.io/redis:8-alpine
-    command: ["redis-server", "--maxmemory", "{{.RedisQueueMaxmem}}", "--maxmemory-policy", "noeviction"]
+    # The job queue is state: on a volume with an append-only file, queued
+    # jobs survive the container being replaced (reconcile, recreate, upgrade).
+    command: ["redis-server", "--maxmemory", "{{.RedisQueueMaxmem}}", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
 
   frappe:
     build:
       context: .
-    command: ["bash", "-c", "cd /workspace/frappe-bench && env/bin/gunicorn --chdir /workspace/frappe-bench/sites -b 0.0.0.0:8000 -w {{.GunicornWorkers}} --threads 4 -t 120 wsgi:application"]
+    # The flags bench's own production config uses, plus a heartbeat directory
+    # in memory: --max-requests recycles workers that leak, --graceful-timeout
+    # lets requests finish on a restart.
+    command: ["bash", "-c", "cd /workspace/frappe-bench && env/bin/gunicorn --chdir /workspace/frappe-bench/sites -b 0.0.0.0:8000 -w {{.GunicornWorkers}} --threads 4 -t 120 --graceful-timeout 30 --max-requests 5000 --max-requests-jitter 500 --worker-tmp-dir /dev/shm wsgi:application"]
     working_dir: /workspace/frappe-bench
+    environment:
+      - UV_CACHE_DIR=/home/frappe/.cache/pip/uv
+      - UV_LINK_MODE=copy
+      - YARN_CACHE_FOLDER=/home/frappe/.cache/pip/yarn
     volumes:
       - ./workspace:/workspace
       - pip-cache:/home/frappe/.cache/pip
-      - yarn-cache:/home/frappe/.cache/yarn
     ports:
       - "{{if .PublishHost}}{{.PublishHost}}:{{end}}{{.WebPort}}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "--max-time", "5", "http://127.0.0.1:8000/api/method/ping"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+    security_opt: *default-security
     depends_on:
 {{- if eq .DBType "postgres"}}
       postgres:
@@ -145,8 +184,15 @@ services:
       - ./workspace:/workspace
     ports:
       - "{{if .PublishHost}}{{.PublishHost}}:{{end}}{{.SocketIOPort}}:9000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    security_opt: *default-security
     depends_on:
-      - frappe
+      frappe:
+        condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
     networks:
@@ -201,9 +247,11 @@ services:
       - ./workspace:/workspace
       - pip-cache:/home/frappe/.cache/pip
     depends_on:
-      - frappe
+      frappe:
+        condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
     deploy:
       replicas: {{.WorkerLongCount}}
 
@@ -216,9 +264,11 @@ services:
       - ./workspace:/workspace
       - pip-cache:/home/frappe/.cache/pip
     depends_on:
-      - frappe
+      frappe:
+        condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
     deploy:
       replicas: {{.WorkerShortCount}}
 
@@ -231,9 +281,11 @@ services:
       - ./workspace:/workspace
       - pip-cache:/home/frappe/.cache/pip
     depends_on:
-      - frappe
+      frappe:
+        condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
+    security_opt: *default-security
 
 volumes:
 {{- if eq .DBType "postgres"}}
@@ -242,7 +294,7 @@ volumes:
   mariadb-data:
 {{- end}}
   pip-cache:
-  yarn-cache:
+  redis-queue-data:
 
 networks:
   default: {}

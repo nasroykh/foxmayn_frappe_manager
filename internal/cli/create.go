@@ -34,6 +34,7 @@ func newCreateCmd() *cobra.Command {
 		redisCacheMaxmem  string
 		redisQueueMaxmem  string
 		slowQueryLog      bool
+		mariadbFastCommit bool
 		matchHostUser     bool
 		keepOnFailure     bool
 		lan               bool
@@ -100,10 +101,11 @@ func newCreateCmd() *cobra.Command {
 				WorkerLongCount: workerLongCount, WorkerShortCount: workerShortCount,
 				RedisCacheMaxmem: redisCacheMaxmem, RedisQueueMaxmem: redisQueueMaxmem,
 				SlowQueryLog: slowQueryLog, MatchHostUser: matchHostUser,
-				KeepOnFailure: keepOnFailure,
-				Bind:          manager.BindFor(lan),
-				SSHAgent:      sshAgent,
-				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
+				MariaDBFastCommit: mariadbFastCommit,
+				KeepOnFailure:     keepOnFailure,
+				Bind:              manager.BindFor(lan),
+				SSHAgent:          sshAgent,
+				FixedWebPort:      webPort, FixedSocketIOPort: socketIOPort,
 				DomainAliases: domainAliases, AliasTLS: aliasTLS,
 				NoSeed: noSeed || envEnabled("FFM_NO_SEED"),
 				Agent:  agent, AgentReadOnly: agentReadOnly,
@@ -136,6 +138,8 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&redisCacheMaxmem, "redis-cache-maxmem", "512mb", "Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction.")
 	cmd.Flags().StringVar(&redisQueueMaxmem, "redis-queue-maxmem", "512mb", "Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped.")
 	cmd.Flags().BoolVar(&slowQueryLog, "slow-query-log", false, "Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.")
+	cmd.Flags().BoolVar(&mariadbFastCommit, "mariadb-fast-commit", false,
+		"Prod + MariaDB: innodb_flush_log_at_trx_commit=2, faster commits that a crash can lose up to about a second of. The default (1) loses none")
 	cmd.Flags().BoolVar(&matchHostUser, "match-host-user", false,
 		"Build the image with the container's frappe user remapped to your uid/gid. "+
 			"Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), "+

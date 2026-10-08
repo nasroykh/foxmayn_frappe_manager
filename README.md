@@ -235,6 +235,8 @@ Production tuning (prod only unless noted):
   --redis-queue-maxmem string   Redis queue maxmemory, noeviction (default "512mb")
   --slow-query-log              MariaDB slow query log, 2s threshold, written to
                                 <bench>/mysql-logs/ (prod + MariaDB only)
+  --mariadb-fast-commit         innodb_flush_log_at_trx_commit=2: faster commits, a crash can
+                                lose up to about a second of them (default 1: none)
 ```
 
 #### Frappe versions and toolchains
@@ -957,14 +959,23 @@ Prints the build version, commit hash, and build date.
 
 | Service | Image | Purpose |
 |--|--|--|
-| `frappe` | Built locally (minimal image) | Gunicorn (`wsgi:application` on port 8000) |
-| `socketio` | same | Node SocketIO server |
+| `frappe` | Built locally (minimal image) | Gunicorn (`wsgi:application` on port 8000); healthcheck on `/api/method/ping` |
+| `socketio` | same | Node SocketIO server; TCP healthcheck |
 | `worker-long` | same | Long background jobs |
 | `worker-short` | same | Short background jobs |
 | `scheduler` | same | Scheduled tasks (`bench schedule`) |
 | `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database with healthcheck (selected via `--db-type`) |
-| `redis-cache` | `redis:8-alpine` | Cache |
-| `redis-queue` | `redis:8-alpine` | Job queue |
+| `redis-cache` | `redis:8-alpine` | Cache; healthcheck |
+| `redis-queue` | `redis:8-alpine` | Job queue on a volume with an append-only file, so queued jobs survive a recreate; healthcheck |
+
+Since template version 4 (ffm v0.13.0; `ffm reconcile` applies it):
+- Every prod container runs with `no-new-privileges`.
+- socketio, the workers and the scheduler start once frappe is healthy.
+- Gunicorn uses bench's own production flags (`--max-requests 5000 --max-requests-jitter 500
+  --graceful-timeout 30`) and `--worker-tmp-dir /dev/shm`.
+- MariaDB flushes its redo log at every commit (`--mariadb-fast-commit` restores the old setting).
+- No CPU or memory limits are set: a limit that is too low gets workers killed in the middle of a
+  job. Add them in `docker-compose.override.yml` if the host is shared.
 
 ## Proxy container
 

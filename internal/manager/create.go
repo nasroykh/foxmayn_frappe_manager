@@ -416,6 +416,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		RedisCacheMaxmem:  redisCacheMaxmem,
 		RedisQueueMaxmem:  redisQueueMaxmem,
 		SlowQueryLog:      slowQueryLog && mode == "prod" && dbType == "mariadb",
+		MariaDBFastCommit: in.MariaDBFastCommit && mode == "prod",
 		DomainAliases:     aliases,
 		AliasTLS:          aliasTLS,
 	}
@@ -804,6 +805,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		RedisCacheMaxmem:  redisCacheMaxmem,
 		RedisQueueMaxmem:  redisQueueMaxmem,
 		SlowQueryLog:      data.SlowQueryLog,
+		MariaDBFastCommit: data.MariaDBFastCommit,
 	}
 	if err := s.AddBench(rec); err != nil {
 		return fmt.Errorf("save state: %w", err)

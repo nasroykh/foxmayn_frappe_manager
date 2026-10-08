@@ -123,6 +123,7 @@ func (s *Service) composeDataFor(b state.Bench) (bench.ComposeData, error) {
 		RedisCacheMaxmem:  b.RedisCacheMaxmem,
 		RedisQueueMaxmem:  b.RedisQueueMaxmem,
 		SlowQueryLog:      b.SlowQueryLog,
+		MariaDBFastCommit: b.MariaDBFastCommit,
 		DomainAliases:     b.DomainAliases,
 		AliasTLS:          b.AliasTLS,
 	}

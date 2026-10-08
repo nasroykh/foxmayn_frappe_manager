@@ -110,6 +110,9 @@ type Bench struct {
 	RedisCacheMaxmem  string `json:"redis_cache_maxmem,omitempty"`
 	RedisQueueMaxmem  string `json:"redis_queue_maxmem,omitempty"`
 	SlowQueryLog      bool   `json:"slow_query_log,omitempty"`
+	// MariaDBFastCommit keeps innodb_flush_log_at_trx_commit=2 (prod). Records
+	// without it get the durable 1 from template version 4 on.
+	MariaDBFastCommit bool `json:"mariadb_fast_commit,omitempty"`
 	// MatchHostUser records that the image was built with the in-container
 	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
 	// Absent in records written before this option existed, which is correct —

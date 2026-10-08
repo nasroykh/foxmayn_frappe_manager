@@ -76,6 +76,9 @@ type ComposeData struct {
 	// WorkerShortCount is the replica count for the short-queue worker.
 	// Prod mode only. Zero is treated as 1.
 	WorkerShortCount int
+	// MariaDBFastCommit sets innodb_flush_log_at_trx_commit=2 (prod): faster
+	// commits, up to about a second of them lost in a crash. The default is 1.
+	MariaDBFastCommit bool
 	// SlowQueryLog enables MariaDB slow query logging (MariaDB + prod only).
 	// runCreate must create <benchDir>/mysql-logs/ when this is true.
 	SlowQueryLog bool
@@ -340,7 +343,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 3
+const TemplateVersion = 4
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {

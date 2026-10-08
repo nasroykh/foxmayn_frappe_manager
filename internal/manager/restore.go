@@ -414,6 +414,7 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 		RedisCacheMaxmem:  m.Bench.RedisCacheMaxmem,
 		RedisQueueMaxmem:  m.Bench.RedisQueueMaxmem,
 		SlowQueryLog:      m.Bench.SlowQueryLog,
+		MariaDBFastCommit: m.Bench.MariaDBFastCommit,
 		FixedWebPort:      webPort,
 		FixedSocketIOPort: socketIOPort,
 		MatchHostUser:     matchHostUser,
