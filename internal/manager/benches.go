@@ -58,6 +58,7 @@ func (s *Service) benchToView(b state.Bench) BenchView {
 		Domain:       b.Domain,
 		ProxyHost:    b.ProxyHost,
 		FrappeBranch: b.FrappeBranch,
+		URL:          s.siteURL(b),
 		TunnelOn:     tunnelOn,
 	}
 }

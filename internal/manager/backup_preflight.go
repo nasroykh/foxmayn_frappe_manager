@@ -42,8 +42,14 @@ func problemsError(problems []Problem) error {
 		b.WriteString(p.String())
 		b.WriteString("\n")
 	}
-	return fmt.Errorf("%s", strings.TrimRight(b.String(), "\n"))
+	return &PreflightError{msg: strings.TrimRight(b.String(), "\n")}
 }
+
+// PreflightError is returned when restore refuses an archive before changing
+// anything.
+type PreflightError struct{ msg string }
+
+func (e *PreflightError) Error() string { return e.msg }
 
 // checkArchive validates an archive against the restore that was asked for.
 //

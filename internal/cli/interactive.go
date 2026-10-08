@@ -51,8 +51,8 @@ func envEnabled(key string) bool {
 // mustNotPrompt builds the error returned in place of an interactive prompt.
 // hint should name the flag that supplies the missing value non-interactively.
 func mustNotPrompt(what, hint string) error {
-	return errors.New("refusing to prompt for " + what +
-		" — no interactive terminal (or --non-interactive/$CI set): " + hint)
+	return usageError{errors.New("refusing to prompt for " + what +
+		" — no interactive terminal (or --non-interactive/$CI set): " + hint)}
 }
 
 // cancelled reports whether a form error is a user abort (Esc or ctrl+c), and

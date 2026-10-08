@@ -16,7 +16,8 @@ import (
 )
 
 func newBackupListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "list [bench]",
 		Short: "List backup archives, newest first",
 		Long: `List the archives in ffm's backup directory with when they were taken, whether
@@ -44,9 +45,42 @@ elsewhere with --out are not tracked.`,
 				}
 				sort.Strings(benches)
 			}
+			if asJSON {
+				return printArchivesJSON(benches)
+			}
 			return printArchives(benches)
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.backups/v1)")
+	return cmd
+}
+
+func printArchivesJSON(benches []string) error {
+	out := jsonArchives{Schema: "ffm.backups/v1", Archives: []jsonArchive{}}
+	for _, name := range benches {
+		archives, err := manager.ScanArchives(name)
+		if err != nil {
+			return err
+		}
+		for _, a := range archives {
+			j := jsonArchive{Bench: name, Path: a.Path, Size: a.Size}
+			if a.Err != nil {
+				j.Unreadable = a.Err.Error()
+				out.Archives = append(out.Archives, j)
+				continue
+			}
+			j.TakenAt = jsonTime(a.CreatedAt())
+			j.Trigger = a.Header.Trigger
+			if j.Trigger == "" {
+				j.Trigger = manager.TriggerManual
+			}
+			j.Contents = append([]string{}, a.Header.Tiers...)
+			j.Label = a.Header.Label
+			j.FfmVer = a.Header.FfmVersion
+			out.Archives = append(out.Archives, j)
+		}
+	}
+	return writeJSON(out)
 }
 
 func printArchives(benches []string) error {

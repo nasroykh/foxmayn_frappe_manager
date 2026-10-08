@@ -445,6 +445,8 @@ Override during creation with `--admin-password`, `--db-password`, and `--db-typ
 
 **Production:** `--admin-password` is required and must not be `admin`. If `--db-password` is left at its default, a random database password is generated.
 
+**Scripting:** `ffm list|status|backup list|backup schedule|domain list|tunnel server|version --json` print one JSON object with a versioned `schema` field; secrets only with `--show-secrets`. Exit codes: 2 usage, 3 bench not found, 4 busy, 6 wrong state (stopped), 7 restore preflight refused, 1 anything else.
+
 **Ports:** new benches publish their ports on `127.0.0.1` only; pass `--lan` to reach them from another machine (refused with the default admin password; needed for dev domain aliases). SSH agent forwarding is opt-in with `--ssh-agent`. After upgrading ffm, run `ffm reconcile <bench>` to apply template fixes without losing data (v0.8.1 fixes prod workers that never consumed Frappe's `default` queue).
 
 ---

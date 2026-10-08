@@ -12,22 +12,45 @@ import (
 )
 
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List all managed benches",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList()
+			return runList(asJSON)
 		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.list/v1)")
+	return cmd
+}
+
+// benchJSON converts a bench view to its JSON form.
+func benchJSON(v manager.BenchView) jsonBench {
+	db := "mariadb"
+	if v.DBEngine == "pg" {
+		db = "postgres"
+	}
+	return jsonBench{
+		Name: v.Name, Mode: v.Mode, DB: db, Status: v.Status, Site: v.SiteName, URL: v.URL,
+		WebPort: v.WebPort, SocketIOPort: v.SocketIOPort, Domain: v.Domain, ProxyHost: v.ProxyHost,
+		FrappeBranch: v.FrappeBranch, Tunnel: v.TunnelOn,
 	}
 }
 
-func runList() error {
+func runList(asJSON bool) error {
 	svc := manager.New(verbose)
 	views, err := svc.ListBenchViews()
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		out := jsonList{Schema: "ffm.list/v1", Benches: []jsonBench{}}
+		for _, v := range views {
+			out.Benches = append(out.Benches, benchJSON(v))
+		}
+		return writeJSON(out)
 	}
 
 	if len(views) == 0 {
@@ -100,4 +123,3 @@ func runList() error {
 	}
 	return nil
 }
-

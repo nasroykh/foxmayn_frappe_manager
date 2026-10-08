@@ -26,7 +26,7 @@ Adding or removing an alias replaces the bench's containers so Traefik picks up
 the new labels. Databases and the workspace are untouched.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDomainList(args)
+			return runDomainList(args, false)
 		},
 	}
 
@@ -35,24 +35,38 @@ the new labels. Databases and the workspace are untouched.`,
 }
 
 func newDomainListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "list [bench]",
 		Short: "List the hostnames routed to a bench",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDomainList(args)
+			return runDomainList(args, asJSON)
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.domains/v1)")
+	return cmd
 }
 
-func runDomainList(args []string) error {
+func runDomainList(args []string, asJSON bool) error {
 	name, err := resolveBenchName(args, "Select a bench")
 	if err != nil {
 		return err
 	}
-	primary, aliases, err := manager.New(verbose).DomainList(name)
+	svc := manager.New(verbose)
+	primary, aliases, err := svc.DomainList(name)
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		b, err := svc.GetBench(name)
+		if err != nil {
+			return err
+		}
+		if aliases == nil {
+			aliases = []string{}
+		}
+		return writeJSON(jsonDomains{Schema: "ffm.domains/v1", Bench: name, Primary: primary, Aliases: aliases, TLS: b.AliasTLS})
 	}
 	fmt.Printf("Hostnames routed to bench %q:\n", name)
 	fmt.Printf("  %s  (primary)\n", primary)

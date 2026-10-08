@@ -658,6 +658,35 @@ A single Traefik container (`ffm-proxy`) is shared across all benches:
 
 Configured entirely via CLI flags — no config file on disk. Uses `--restart=unless-stopped`.
 
+## Scripting: JSON output and exit codes
+
+Read commands take `--json` and print one JSON object whose `schema` field names its shape and version:
+
+| Command | Schema |
+|--|--|
+| `ffm list --json` | `ffm.list/v1` |
+| `ffm status <bench> --json [--show-secrets]` | `ffm.status/v1` (passwords only with `--show-secrets`) |
+| `ffm backup list [bench] --json` | `ffm.backups/v1` |
+| `ffm backup schedule --json` | `ffm.schedules/v1` |
+| `ffm domain list <bench> --json` | `ffm.domains/v1` |
+| `ffm tunnel server --json [--show-secrets]` | `ffm.tunnel-servers/v1` (tokens only with `--show-secrets`) |
+| `ffm version --json` | `ffm.version/v1` |
+
+Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
+
+Exit codes:
+
+| Code | Meaning |
+|--|--|
+| 0 | Success |
+| 1 | Any other failure |
+| 2 | Usage: bad flags or arguments, or a prompt was needed without a terminal |
+| 3 | The named bench does not exist (or no bench exists) |
+| 4 | Busy: another ffm operation holds the bench |
+| 5 | Reserved: Docker unavailable |
+| 6 | Wrong state: e.g. the bench is stopped |
+| 7 | Refused before changing anything (restore preflight) |
+
 ## Environment variables
 
 | Variable | Default | Description |

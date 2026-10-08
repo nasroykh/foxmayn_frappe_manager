@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 )
 
 func newTunnelServerCmd() *cobra.Command {
+	var serverJSON, serverSecrets bool
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Manage VPS tunnel server profiles",
@@ -26,9 +28,11 @@ func newTunnelServerCmd() *cobra.Command {
 		// through to listing and exited 0.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTunnelServerList()
+			return runTunnelServerList(serverJSON, serverSecrets)
 		},
 	}
+	cmd.Flags().BoolVar(&serverJSON, "json", false, "Print machine-readable JSON (schema ffm.tunnel-servers/v1)")
+	cmd.Flags().BoolVar(&serverSecrets, "show-secrets", false, "Include auth tokens in --json output")
 	cmd.AddCommand(
 		newTunnelServerAddCmd(),
 		newTunnelServerSetCmd(),
@@ -256,10 +260,27 @@ func newTunnelServerUseCmd() *cobra.Command {
 	}
 }
 
-func runTunnelServerList() error {
+func runTunnelServerList(asJSON, showSecrets bool) error {
 	cfg, err := tunnel.Load()
 	if err != nil {
 		return err
+	}
+	if asJSON {
+		out := jsonTunnelServers{Schema: "ffm.tunnel-servers/v1", Servers: []jsonTunnelServer{}}
+		names := make([]string, 0, len(cfg.Servers))
+		for n := range cfg.Servers {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			s := cfg.Servers[n]
+			j := jsonTunnelServer{Name: s.Name, Host: s.Host, Port: s.Port, BaseDomain: s.BaseDomain, TLS: s.TLS, Default: n == cfg.Default}
+			if showSecrets {
+				j.Token = s.Token
+			}
+			out.Servers = append(out.Servers, j)
+		}
+		return writeJSON(out)
 	}
 	if len(cfg.Servers) == 0 {
 		fmt.Println("No tunnel servers configured.")
