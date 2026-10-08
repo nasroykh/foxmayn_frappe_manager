@@ -108,6 +108,12 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 		return err
 	}
 	pw.Printf("Done. Bench %q matches this ffm version's templates.\n", b.Name)
+	if b.IsDev() {
+		// up -d replaces the frappe container, and on a dev bench some state
+		// lives in its filesystem rather than in ./workspace.
+		pw.Println("  Note: the frappe container was replaced. If ffc or Claude Code inside it lost their")
+		pw.Printf("  configuration, run 'ffm ffc %s' and log in to Claude Code again.\n", b.Name)
+	}
 	return nil
 }
 

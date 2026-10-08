@@ -113,7 +113,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("--lan publishes the bench to other machines; the default admin password is not allowed — set --admin-password")
 	}
 	if mode == "dev" && len(in.DomainAliases) > 0 && bind != state.BindLAN {
-		return fmt.Errorf("--domain-alias on a dev bench needs --lan: the browser reaches socket.io on the published port, which is otherwise bound to 127.0.0.1")
+		return fmt.Errorf("a dev bench with domain aliases needs --lan: the browser reaches socket.io on the published port, which is otherwise bound to 127.0.0.1")
 	}
 	sshAgent := in.SSHAgent && mode == "dev"
 	if sshAgent && os.Getenv("SSH_AUTH_SOCK") == "" {
