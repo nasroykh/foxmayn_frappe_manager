@@ -42,6 +42,7 @@ func newCreateCmd() *cobra.Command {
 		socketIOPort      int
 		domainAliases     []string
 		aliasTLS          bool
+		noSeed            bool
 	)
 
 	cmd := &cobra.Command{
@@ -102,6 +103,7 @@ func newCreateCmd() *cobra.Command {
 				SSHAgent:      sshAgent,
 				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
 				DomainAliases: domainAliases, AliasTLS: aliasTLS,
+				NoSeed: noSeed || envEnabled("FFM_NO_SEED"),
 			}, manager.CLIProgress{})
 		},
 	}
@@ -154,6 +156,9 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&aliasTLS, "alias-tls", false,
 		"Serve --domain-alias names over HTTPS with Let's Encrypt instead of plain HTTP. "+
 			"Production with SSL only; every alias must be publicly resolvable.")
+
+	cmd.Flags().BoolVar(&noSeed, "no-seed", false,
+		"Run bench init, get-app and bench build from the branch heads instead of copying a seed, and do not save one. Env: FFM_NO_SEED")
 
 	return cmd
 }

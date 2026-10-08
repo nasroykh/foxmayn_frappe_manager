@@ -200,6 +200,7 @@ Flags:
       --dangling      Also remove untagged images (from any project)
       --dry-run       Only list what would be removed
       --json          Print the list as JSON (schema ffm.clean/v1)
+      --seeds         Also remove the bench seeds ffm create copies instead of running bench init
       --yes           Do not ask before removing
 
 Global Flags:
@@ -269,6 +270,7 @@ Flags:
       --mariadb-buffer-pool string   InnoDB buffer pool size for MariaDB (e.g. 512M, 1G, 2G, 4G). Prod only; dev uses 256M. (default "1G")
       --match-host-user              Build the image with the container's frappe user remapped to your uid/gid. Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER
       --mode string                  Bench mode: dev or prod (default "dev")
+      --no-seed                      Run bench init, get-app and bench build from the branch heads instead of copying a seed, and do not save one. Env: FFM_NO_SEED
       --no-ssl                       Skip Let's Encrypt SSL in production (handle TLS externally via Caddy/Nginx)
       --node string                  Node major version: 22 or 24. Default: 22 for version-15, 24 otherwise
       --proxy-host string            Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)

@@ -60,6 +60,9 @@ type CreateInput struct {
 	// overwrites. The app code still has to be present, which is why the clone
 	// is not skipped too.
 	SkipAppInstall bool
+	// NoSeed neither uses nor saves a seed: bench init, get-app and bench
+	// build run from the branch heads.
+	NoSeed bool
 	// SkipAssetBuild omits `bench build`.
 	//
 	// Set only by Restore, which builds once after the data is in place rather

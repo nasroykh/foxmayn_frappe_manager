@@ -130,3 +130,17 @@ func BackupSchedulerLogFile() string {
 func BackupRunStateFile(name string) string {
 	return filepath.Join(BenchBackupsDir(name), ".schedule.json")
 }
+
+// SeedsDir holds the bench seeds: finished bench trees that later creates
+// with the same inputs copy instead of running bench init. FFM_SEEDS_DIR
+// overrides; the default is the user cache directory (~/.cache/ffm/seeds,
+// ~/Library/Caches/ffm/seeds).
+func SeedsDir() string {
+	if d := os.Getenv("FFM_SEEDS_DIR"); d != "" {
+		return d
+	}
+	if d, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(d, "ffm", "seeds")
+	}
+	return filepath.Join(ConfigDir(), "seeds")
+}

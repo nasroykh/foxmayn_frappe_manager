@@ -434,62 +434,44 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("create workspace dir: %w", err)
 	}
 
-	// Run bench init — dev mode also installs Claude/agent skills
-	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeSrc))
-	var benchInitCmd string
-	benchInitRepoArgs := benchInitArgs(frappeInitBranch, frappeRepoURL, toolchain)
-	baseInit := fmt.Sprintf(
-		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
-			` && rm -rf /workspace/frappe-bench`+
-			` && cp -a /tmp/ffm-bench-init /workspace/frappe-bench`+
-			` && grep -rIl '/tmp/ffm-bench-init' /workspace/frappe-bench 2>/dev/null | xargs -r sed -i 's|/tmp/ffm-bench-init|/workspace/frappe-bench|g'`+
-			` && rm -rf /tmp/ffm-bench-init`,
-		benchInitRepoArgs,
-	)
-	if mode == "dev" {
-		benchInitCmd = baseInit + " && " + bench.InstallSkillsCmd
-	} else {
-		benchInitCmd = baseInit
+	// A seed replaces bench init, get-app and bench build. Restore pins
+	// commits and unpacks archived source afterwards, so it may use a seed
+	// but never takes one.
+	seeds := seedsEnabled() && !in.NoSeed
+	key := seedKeyFor(frappeRepoURL, frappeInitBranch, toolchain, hostUID, hostGID, apps, frappeBranch)
+	seedTree, seedInfo := "", (*seedMeta)(nil)
+	if seeds {
+		seedTree, seedInfo = freshSeed(key, s.clock())
 	}
-	// When a GitHub token is provided and bench init must clone a private HTTPS repo,
-	// inject credentials directly into the one-off run container. ConfigureGitHubToken
-	// uses docker compose exec (needs a running container) so it cannot cover this step.
-	if githubToken != "" {
-		benchInitCmd = bench.GitCredentialsCmd(githubToken) + " && " + benchInitCmd
+	frappeBench := filepath.Join(workspaceDir, "frappe-bench")
+	if seedInfo != nil {
+		step(fmt.Sprintf("Copying the bench from a seed taken %s from %q (--no-seed for the branch heads)",
+			seedInfo.CreatedAt.Local().Format("2006-01-02 15:04"), seedInfo.From))
+		if err := copyTree(seedTree, frappeBench); err != nil {
+			return fmt.Errorf("copy the seed: %w", err)
+		}
+		if mode == "dev" {
+			if err := runner.Run("frappe", "bash", "-c", bench.InstallSkillsCmd); err != nil {
+				return fmt.Errorf("install skills: %w", err)
+			}
+		}
+	} else if err := s.benchInit(runner, mode, frappeInitBranch, frappeRepoURL, frappeSrc, toolchain, githubToken, workspaceDir, pw); err != nil {
+		return err
 	}
-	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
-		return fmt.Errorf("bench init: %w", err)
+	if _, err := os.Stat(filepath.Join(frappeBench, "apps")); err != nil {
+		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s", frappeBench)
 	}
-	if _, err := os.Stat(filepath.Join(workspaceDir, "frappe-bench", "apps")); err != nil {
-		return fmt.Errorf("bench init failed silently — no apps/ directory found at %s/frappe-bench", workspaceDir)
-	}
-
-	// Write wsgi.py after bench init so sites/ exists. Lives under the workspace
-	// bind mount — no extra volume entry needed in docker-compose.yml.
-	if mode == "prod" {
-		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
-			return fmt.Errorf("write wsgi.py: %w", err)
+	if seedInfo == nil && seeds {
+		// Keep common_site_config.json as bench init wrote it, for the seed.
+		if raw, err := os.ReadFile(filepath.Join(frappeBench, "sites", "common_site_config.json")); err == nil {
+			_ = os.WriteFile(filepath.Join(frappeBench, seedCommonConfig), raw, 0o644)
 		}
 	}
-	if err := bench.PatchAuthenticateJs(benchDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
-	}
-	if err := bench.PatchUtilsJs(benchDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
-	}
+	defer os.Remove(filepath.Join(frappeBench, seedCommonConfig))
 
-	if mode == "dev" {
-		frappeBench := filepath.Join(workspaceDir, "frappe-bench")
-		if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
-		}
-		// Make the RQ worker self-restart so an idle Redis timeout (which exits
-		// the worker rc=0) doesn't make honcho tear down the whole dev stack.
-		if err := bench.PatchProcfileWorker(benchDir); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
-		}
+	if err := s.afterBenchInit(benchDir, workspaceDir, name, siteName, mode); err != nil {
+		return err
 	}
-
 	// Start containers.
 	// Prod uses a two-phase start: bring up only the DB + redis + frappe tier
 	// first so that the scheduler/worker containers don't start (and crash-loop
@@ -654,10 +636,12 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			branchDesc = "default"
 		}
 
-		step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", displayName, branchDesc))
-		if out, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && "+spec.GetAppCmd()); err != nil {
-			return fmt.Errorf("bench get-app %s: %w\n%s", displayName, err, out)
+		if seedInfo == nil {
+			step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", displayName, branchDesc))
+			if out, err := runner.ExecSilent("frappe", "bash", "-c",
+				"cd /workspace/frappe-bench && "+spec.GetAppCmd()); err != nil {
+				return fmt.Errorf("bench get-app %s: %w\n%s", displayName, err, out)
+			}
 		}
 
 		if in.SkipAppInstall {
@@ -684,6 +668,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		// Restore path: the assets are built once after the data lands, rather
 		// than here and then again after bench migrate.
 		step("Skipping asset build (the restore builds once, after migrating)")
+	} else if seedInfo != nil {
+		step("Using the seed's built assets")
 	} else {
 		if mode == "prod" {
 			step("Building production assets (bench build) — this may take a few minutes")
@@ -791,6 +777,13 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("save state: %w", err)
 	}
 
+	if seeds && seedInfo == nil && !in.SkipAppInstall {
+		step("Saving this bench's tree as a seed for the next bench with the same inputs")
+		if err := captureSeed(key, frappeBench, name, s.clock()); err != nil {
+			fmt.Fprintf(pw.Stderr(), "warning: could not save a seed: %v\n", err)
+		}
+	}
+
 	pw.Printf("\nBench %q is ready.\n", name)
 	if mode == "prod" {
 		scheme := "https"
@@ -890,4 +883,65 @@ func benchInitArgs(branch, repoURL string, tc bench.Toolchain) string {
 		args += " --frappe-path " + bench.ShellQuote(repoURL)
 	}
 	return args
+}
+
+// benchInit runs bench init in a one-off frappe container, into /tmp and then
+// copied to the workspace with its paths rewritten. Dev benches also get the
+// agent skills.
+func (s *Service) benchInit(runner *bench.Runner, mode, branch, repoURL, src string, tc bench.Toolchain,
+	githubToken, workspaceDir string, pw ProgressWriter) error {
+	pw.Step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", src))
+	baseInit := fmt.Sprintf(
+		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
+			` && rm -rf /workspace/frappe-bench`+
+			` && cp -a /tmp/ffm-bench-init /workspace/frappe-bench`+
+			` && grep -rIl '/tmp/ffm-bench-init' /workspace/frappe-bench 2>/dev/null | xargs -r sed -i 's|/tmp/ffm-bench-init|/workspace/frappe-bench|g'`+
+			` && rm -rf /tmp/ffm-bench-init`,
+		benchInitArgs(branch, repoURL, tc),
+	)
+	benchInitCmd := baseInit
+	if mode == "dev" {
+		benchInitCmd = baseInit + " && " + bench.InstallSkillsCmd
+	}
+	// When a GitHub token is provided and bench init must clone a private HTTPS repo,
+	// inject credentials directly into the one-off run container. ConfigureGitHubToken
+	// uses docker compose exec (needs a running container) so it cannot cover this step.
+	if githubToken != "" {
+		benchInitCmd = bench.GitCredentialsCmd(githubToken) + " && " + benchInitCmd
+	}
+	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
+		return fmt.Errorf("bench init: %w", err)
+	}
+	return nil
+}
+
+// afterBenchInit writes the files and patches a new bench tree needs, whether
+// it came from bench init or from a seed.
+func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode string) error {
+	// Write wsgi.py after bench init so sites/ exists. Lives under the workspace
+	// bind mount — no extra volume entry needed in docker-compose.yml.
+	if mode == "prod" {
+		if err := bench.WriteWsgiWrapper(benchDir, siteName); err != nil {
+			return fmt.Errorf("write wsgi.py: %w", err)
+		}
+	}
+	if err := bench.PatchAuthenticateJs(benchDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+	}
+	if err := bench.PatchUtilsJs(benchDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+	}
+
+	if mode == "dev" {
+		frappeBench := filepath.Join(workspaceDir, "frappe-bench")
+		if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
+		}
+		// Make the RQ worker self-restart so an idle Redis timeout (which exits
+		// the worker rc=0) doesn't make honcho tear down the whole dev stack.
+		if err := bench.PatchProcfileWorker(benchDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
+		}
+	}
+	return nil
 }

@@ -226,6 +226,17 @@ internal/
                             migrate, then clear-cache) is shared with DBImport
     clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, PinApps,
                             ReallocatePorts)
+    seed.go               → seeds: a finished frappe-bench minus sites/<site>, logs, skills,
+                            .ffm-* (pruneSeedTree; logs/ and config/pids are recreated EMPTY —
+                            bench refuses set-config without them). Keyed by seedKey (image,
+                            frappe repo+branch, toolchain, uid/gid, apps). freshSeed (< 7 days)
+                            → Create copies it (cp -a, -c on darwin, --reflink=auto on linux) and
+                            skips bench init, get-app and bench build. captureSeed runs after a
+                            create from scratch (never during restore: SkipAppInstall), with the
+                            pristine common_site_config.json Create saved after bench init
+                            (.ffm-seed-common_site_config.json) — the bench's own copy carries
+                            its db/redis/socketio settings. Off on Windows and with --no-seed /
+                            FFM_NO_SEED; config.SeedsDir (FFM_SEEDS_DIR)
     clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
                             labels, image labels) with no record, no bench dir and a free lock
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
@@ -664,5 +675,7 @@ git push origin v0.1.0
   jobs.json              # async job state for the dashboard
 ```
 
-All three roots are overridable: `FFM_BENCHES_DIR`, `FFM_CONFIG_DIR` and `FFM_BACKUPS_DIR`. Setting them per job is how
+All three roots are overridable: `FFM_BENCHES_DIR`, `FFM_CONFIG_DIR` and `FFM_BACKUPS_DIR`.
+Seeds live in the user cache directory (`~/.cache/ffm/seeds`, `~/Library/Caches/ffm/seeds`;
+`FFM_SEEDS_DIR`). Setting them per job is how
 you isolate concurrent runs, so they do not share benches, ports or archives.
