@@ -305,7 +305,7 @@ store.Update("name", func(b *state.Bench) {
 used, _ := store.UsedPorts()       // map[int]bool of assigned ports
 ```
 
-Not concurrency-safe across processes — fine for a CLI.
+Add/Remove/Update lock `benches.json.lock` across their read-modify-write, so concurrent processes cannot lose updates. Load+Save by hand is not locked: use Update.
 
 ## Embedded Templates
 
@@ -610,7 +610,7 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 3. Put the behaviour in `internal/manager/`, not `internal/cli/`; use `bench.Runner`
    for docker compose operations
 4. If it needs persistent state, go through `Service` (GetBench/AddBench/UpdateBench/
-   RemoveBench) — never `state.Store` directly, which is not concurrency-safe
+   RemoveBench) — never `state.Store` directly (Service adds the in-process mutex and the bench locks)
 5. If behavior differs by mode, check `b.IsProd()` / `b.IsDev()` after `store.Get(name)`
 6. If it modifies compose or Dockerfile templates, edit `internal/bench/templates/dev/` or `prod/`
 7. If it touches config paths, update `internal/config/paths.go`
