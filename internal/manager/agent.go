@@ -78,13 +78,14 @@ func agentKeys(runner *bench.Runner, b state.Bench) (bench.APIKeys, error) {
 // configureFfc points the container's ffc at the bench's site with keys.
 //
 // `ffc site add` replaces only this bench's entry, so sites the user added
-// stay, and the secret reaches it on stdin rather than on a command line. A
-// config that did not exist yet also gets the formats ffm always set.
+// stay; it needs a config file, so the first time is `ffc init`. Either way
+// the secret reaches ffc on stdin rather than on a command line. A config
+// that did not exist yet also gets the formats ffm always set.
 func configureFfc(runner *bench.Runner, benchName string, keys bench.APIKeys) error {
 	q := bench.ShellQuote
-	cmd := "fresh=0; [ -f ~/.config/ffc/config.yaml ] || fresh=1; " +
-		"ffc site add --no-input --force --name " + q(benchName) + " --url http://localhost:8000 --api-key " + q(keys.Key) +
-		" --api-secret-stdin && ffc config set --default-site " + q(benchName) +
+	site := " --no-input --name " + q(benchName) + " --url http://localhost:8000 --api-key " + q(keys.Key) + " --api-secret-stdin"
+	cmd := "fresh=0; if [ -f ~/.config/ffc/config.yaml ]; then ffc site add --force" + site +
+		"; else fresh=1; ffc init" + site + "; fi && ffc config set --default-site " + q(benchName) +
 		` && if [ "$fresh" = 1 ]; then ffc config set --number-format french --date-format yyyy-mm-dd; fi`
 	if err := runner.ExecStdin("frappe", strings.NewReader(keys.Secret+"\n"), "bash", "-c", cmd); err != nil {
 		return fmt.Errorf("configure ffc: %w", err)

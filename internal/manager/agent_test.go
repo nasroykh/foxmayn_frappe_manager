@@ -48,7 +48,7 @@ func TestSetAgentOnAndOff(t *testing.T) {
 		t.Errorf("record after on: agent=%v ro=%v admin=%q", rec.Agent, rec.AgentReadOnly, rec.AdminPassword)
 	}
 	if !fake.Called(`set-admin-password "$p"`) || !fake.Called("'agent@ag.localhost'") ||
-		!fake.Called("ffc site add --no-input --force --name 'ag'", "--api-key 'agentkey' --api-secret-stdin") {
+		!fake.Called("ffc site add --force --no-input --name 'ag'", "ffc init --no-input --name 'ag'", "--api-key 'agentkey' --api-secret-stdin") {
 		t.Errorf("calls:\n%s", strings.Join(fake.Calls(), "\n"))
 	}
 	for _, c := range fake.Calls() {
