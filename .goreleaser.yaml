@@ -38,6 +38,16 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# checksums.txt is signed with the Ed25519 key in FFM_RELEASE_SIGNING_KEY.
+# ffm update refuses a release without a valid checksums.txt.sig; relsign
+# refuses to sign with a key that the binaries being released cannot verify.
+signs:
+  - id: checksums
+    artifacts: checksum
+    cmd: go
+    args: ["run", "./tools/relsign", "sign", "${artifact}", "${signature}"]
+    signature: "${artifact}.sig"
+
 changelog:
   sort: asc
   filters:
