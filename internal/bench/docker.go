@@ -106,8 +106,10 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 // Build builds the Docker image for the compose project. In verbose mode it
 // streams output to the terminal; otherwise output is captured and only printed
 // to stderr if the build fails, keeping create output minimal.
-func (r *Runner) Build() error {
-	args := append(r.baseArgs(), "build")
+//
+// extra is passed to `docker compose build`, e.g. "--pull", "--no-cache".
+func (r *Runner) Build(extra ...string) error {
+	args := append(append(r.baseArgs(), "build"), extra...)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {

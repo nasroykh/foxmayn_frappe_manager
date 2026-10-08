@@ -131,6 +131,9 @@ type CleanLogsInput struct {
 type RestartInput struct {
 	Name    string
 	Rebuild bool
+	// Fresh makes the rebuild ignore the layer cache and re-pull the base
+	// image, so tools installed during the build are updated too.
+	Fresh bool
 }
 
 // BenchView is a safe list/detail DTO (no DB passwords in list views).

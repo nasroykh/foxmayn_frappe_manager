@@ -110,6 +110,23 @@ const FfcSkillsRef = "v1.13.0"
 // FfcSkillsRef exposes the pinned ffc release to the Dockerfile template.
 func (ComposeData) FfcSkillsRef() string { return FfcSkillsRef }
 
+// Pinned build inputs. Floating tags made benches differ by when their image
+// was first built, and a rebuild could silently swap Python or Node under an
+// existing virtualenv. Bump these deliberately, with a test build.
+const (
+	// BenchImageTag is the frappe/bench base image of both Dockerfiles.
+	BenchImageTag = "v5.31.0"
+	// FrappeSkillsCommit is the commit of the Frappe Claude skill pack
+	// (OpenAEC-Foundation/Frappe_Claude_Skill_Package) baked into the dev image.
+	FrappeSkillsCommit = "36cfa807518f48e4210fac2a5afc6adafad4c53e"
+)
+
+// BenchImageTag exposes the pinned base image tag to the Dockerfile templates.
+func (ComposeData) BenchImageTag() string { return BenchImageTag }
+
+// FrappeSkillsCommit exposes the pinned skill pack commit to the dev Dockerfile.
+func (ComposeData) FrappeSkillsCommit() string { return FrappeSkillsCommit }
+
 // InstallSkillsCmd copies the agent skills baked into the dev image (the
 // Frappe skill pack and ffc's skills) into the bench, for Claude Code and other
 // agents. It also removes foxmayn-frappe-cli, the single ffc skill that ffc

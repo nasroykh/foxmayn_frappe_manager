@@ -26,10 +26,10 @@ services:
 {{- end}}
 
   redis-cache:
-    image: docker.io/redis:alpine
+    image: docker.io/redis:8-alpine
 
   redis-queue:
-    image: docker.io/redis:alpine
+    image: docker.io/redis:8-alpine
 
   frappe:
     build:

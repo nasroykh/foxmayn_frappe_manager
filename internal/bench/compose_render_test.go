@@ -147,3 +147,22 @@ func TestDevDockerfilePinsFfcSkills(t *testing.T) {
 		t.Fatal("dev Dockerfile still fetches ffc skills from main")
 	}
 }
+
+// Nothing a bench is built from may float: a moving tag made benches differ by
+// when they were first built.
+func TestTemplatesPinTheirInputs(t *testing.T) {
+	for _, mode := range []string{"dev", "prod"} {
+		dir := t.TempDir()
+		d := ComposeData{Mode: mode, Name: "x", Domain: "x.example.com", DBType: "mariadb"}
+		if err := WriteDockerfile(dir, d); err != nil {
+			t.Fatal(err)
+		}
+		df, _ := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+		compose := renderFor(t, d)
+		for _, floating := range []string{"frappe/bench:latest", "redis:alpine", "git clone --depth=1 https://github.com/OpenAEC"} {
+			if strings.Contains(string(df)+compose, floating) {
+				t.Errorf("%s: floating input %q", mode, floating)
+			}
+		}
+	}
+}

@@ -270,9 +270,12 @@ Stops then starts a bench in one step.
 ```
 Flags:
   --rebuild   Rebuild the Docker image before starting
+  --fresh     Rebuild ignoring the build cache and re-pulling the base image (implies --rebuild)
 ```
 
-`--rebuild` rewrites the `Dockerfile` from the current template (mode-aware) and runs `docker compose build`. Useful after an ffm upgrade adds new tools or template changes.
+`--rebuild` rewrites the `Dockerfile` from the current template (mode-aware) and runs `docker compose build`. Useful after an ffm upgrade changes the template. Docker's layer cache keeps tools installed during the build (ffc, Claude Code, starship) at the version of the first build; `--fresh` updates them too.
+
+The images a bench is built from are pinned in each ffm release: the `frappe/bench` base image, Redis 8, Traefik 3.7 (used when the shared proxy is created), the ffc skills and the Frappe skill pack. MariaDB (11.8) and PostgreSQL (18) follow their minor or major tag.
 
 ### `ffm shell [name]`
 
@@ -629,8 +632,8 @@ Prints the build version, commit hash, and build date.
 |--|--|--|
 | `frappe` | Built locally (dev image) | App server + `bench start` (honcho) + all dev tools |
 | `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database (selected via `--db-type`) |
-| `redis-cache` | `redis:alpine` | Cache |
-| `redis-queue` | `redis:alpine` | Background job queue |
+| `redis-cache` | `redis:8-alpine` | Cache |
+| `redis-queue` | `redis:8-alpine` | Background job queue |
 
 **Prod (8 containers):**
 
@@ -642,8 +645,8 @@ Prints the build version, commit hash, and build date.
 | `worker-short` | same | Short background jobs |
 | `scheduler` | same | Scheduled tasks (`bench schedule`) |
 | `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database with healthcheck (selected via `--db-type`) |
-| `redis-cache` | `redis:alpine` | Cache |
-| `redis-queue` | `redis:alpine` | Job queue |
+| `redis-cache` | `redis:8-alpine` | Cache |
+| `redis-queue` | `redis:8-alpine` | Job queue |
 
 ## Proxy container
 
@@ -651,7 +654,7 @@ A single Traefik container (`ffm-proxy`) is shared across all benches:
 
 | Container | Image | Ports |
 |--|--|--|
-| `ffm-proxy` | `traefik:3` | `0.0.0.0:80` (HTTP), `0.0.0.0:443` (HTTPS, when a prod bench uses SSL), `127.0.0.1:8080` (dashboard) |
+| `ffm-proxy` | `traefik:v3.7` | `0.0.0.0:80` (HTTP), `0.0.0.0:443` (HTTPS, when a prod bench uses SSL), `127.0.0.1:8080` (dashboard) |
 
 Configured entirely via CLI flags — no config file on disk. Uses `--restart=unless-stopped`.
 

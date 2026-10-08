@@ -1,4 +1,4 @@
-FROM docker.io/frappe/bench:latest
+FROM docker.io/frappe/bench:{{.BenchImageTag}}
 
 USER root
 {{- if .HostUID}}

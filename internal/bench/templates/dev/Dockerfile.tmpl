@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM docker.io/frappe/bench:latest
+FROM docker.io/frappe/bench:{{.BenchImageTag}}
 
 USER root
 {{- if .HostUID}}
@@ -41,7 +41,12 @@ RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 RUN curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/main/install.sh | sh
 
 # Pre-fetch Frappe Claude Skill Package (skills are copied into each bench at create time)
-RUN git clone --depth=1 https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package.git /opt/frappe-skills \
+# Pinned to a commit: the skills steer the coding agent, so a moving third-party
+# HEAD is both a supply-chain risk and a source of surprise changes.
+RUN git init -q /opt/frappe-skills \
+    && git -C /opt/frappe-skills fetch -q --depth=1 https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package.git {{.FrappeSkillsCommit}} \
+    && git -C /opt/frappe-skills checkout -q FETCH_HEAD \
+    && rm -rf /opt/frappe-skills/.git \
     && chmod -R a+rX /opt/frappe-skills
 
 # Pre-fetch the ffc agent skills from a pinned ffc release. Fetching them from
