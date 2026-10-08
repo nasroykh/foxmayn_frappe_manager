@@ -195,6 +195,8 @@ ffm backup target add r2 --type s3 … --secret-access-key-stdin   # also sftp /
 ffm backup mybench --to r2                             # encrypted upload; failed upload = failed backup
 ffm backup schedule mybench --to r2                    # upload every scheduled archive, prune there too
 ffm backup pull r2 mybench                             # newest archive back to this host
+ffm backup verify <archive> [--identity F] [--restore]  # checksums + __Auth; --restore does a real restore
+ffm notify add hc --type healthchecks --url https://hc-ping.com/<uuid>   # also ntfy/slack/telegram/webhook
 ffm backup schedule                                    # status of every schedule
 ffm backup list mybench                                # archives + full paths for ffm restore
 ffm backup prune mybench --dry-run                     # preview retention

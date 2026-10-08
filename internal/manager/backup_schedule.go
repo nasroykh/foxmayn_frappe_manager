@@ -218,6 +218,16 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 		res.Result = "would-run"
 		return res
 	}
+	notifyRunStart(log)
+	defer func() {
+		// res holds the final outcome by the time this runs; the error has
+		// already been scrubbed of the bench's secrets below.
+		r := res
+		if r.Err != nil {
+			r.Err = errors.New(scrubSecrets(r.Err.Error(), benchSecrets(b)...))
+		}
+		notifyRunResult(b.Name, r, log)
+	}()
 
 	// Hold the bench across backup AND prune, so nothing deletes, recreates
 	// or restores into it between the two.

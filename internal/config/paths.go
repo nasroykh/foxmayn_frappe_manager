@@ -156,3 +156,8 @@ func BackupRecipientsFile() string {
 func BackupTargetsFile() string {
 	return filepath.Join(ConfigDir(), "backup-targets.json")
 }
+
+// NotifyFile holds the notifiers (URLs and tokens, so 0600).
+func NotifyFile() string {
+	return filepath.Join(ConfigDir(), "notify.json")
+}

@@ -20,6 +20,7 @@ Available Commands:
   login       Open a dev bench's desk already logged in (Administrator by default)
   logs        Stream logs from a bench (all services or one)
   mail        Open the Mailpit inbox that catches a dev bench's outgoing mail
+  notify      Where ffm reports failed scheduled backups, verifies and checks (add / list / remove / test)
   open        Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
   poweroff    Stop every running bench and the shared proxy
   proxy       Manage the shared Traefik reverse proxy (sitename.localhost routing)
@@ -101,6 +102,7 @@ Available Commands:
   schedule    Back a bench up automatically, keeping a bounded set of archives
   scheduler   Manage the hourly system job that runs scheduled backups
   target      Manage off-host backup targets: S3, SFTP, a mounted directory or rclone
+  verify      Prove an archive restores: checksums, dump, and with --restore a real restore
 
 Flags:
       --encrypt               Encrypt the archive with age to the keys from 'ffm backup key init'
@@ -373,6 +375,27 @@ Global Flags:
 === ffm backup target test
 Usage:
   ffm backup target test <name> [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup verify
+Usage:
+  ffm backup verify [archive] [flags]
+
+Examples:
+  ffm backup verify ~/frappe/_backups/mybench/mybench_20261008T120000Z.ffm.tar
+  ffm backup verify mybench_….ffm.tar.age --identity ~/ffm-backup.key --restore
+  ffm backup verify --target r2 --bench mybench --identity ~/ffm-backup.key
+
+Flags:
+      --bench string      Bench whose archive --target verifies
+      --identity string   age identity file for an encrypted archive. Env: FFM_AGE_IDENTITY_FILE
+      --json              Print the result as JSON (schema ffm.verify/v1)
+      --notify            Report the result through 'ffm notify' notifiers (for a cron job)
+      --restore           Also restore into a throwaway bench, ping its site, and delete it
+      --target string     Verify the newest archive on this backup target (needs --bench)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -702,6 +725,74 @@ Usage:
 Flags:
       --json    Print the URL as JSON (schema ffm.url/v1)
       --print   Print the URL instead of opening it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm notify
+Usage:
+  ffm notify [flags]
+  ffm notify [command]
+
+Available Commands:
+  add         Add a notifier
+  list        List notifiers (no URLs or tokens)
+  remove      Forget a notifier
+  test        Send a test notification
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm notify [command] --help" for more information about a command.
+
+=== ffm notify add
+Usage:
+  ffm notify add <name> [flags]
+
+Examples:
+  ffm notify add phone --type ntfy --url https://ntfy.sh/my-secret-topic
+  echo "$SLACK_WEBHOOK" | ffm notify add team --type slack --url-stdin
+  echo "$BOT_TOKEN" | ffm notify add tg --type telegram --chat-id 123456 --token-stdin
+  ffm notify add hc --type healthchecks --url https://hc-ping.com/<uuid>
+  ffm notify add ops --type webhook --url https://example.com/hooks/ffm --on always
+
+Flags:
+      --chat-id string   telegram: chat id
+      --on string        failure (default) or always; healthchecks pings every run regardless
+      --replace          Replace a notifier with the same name
+      --token-stdin      Read the Telegram bot token or an ntfy access token from stdin
+      --type string      webhook, ntfy, telegram, slack or healthchecks
+      --url string       Endpoint URL (webhook, ntfy topic, healthchecks ping URL)
+      --url-stdin        Read the URL from stdin (required for slack)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm notify list
+Usage:
+  ffm notify list [flags]
+
+Flags:
+      --json   Print as JSON (schema ffm.notifiers/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm notify remove
+Usage:
+  ffm notify remove <name> [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm notify test
+Usage:
+  ffm notify test <name> [flags]
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

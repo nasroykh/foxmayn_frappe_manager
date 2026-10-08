@@ -73,7 +73,7 @@ the key); restoring then needs the identity file.`,
 	}
 
 	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd(), newBackupKeyCmd(),
-		newBackupTargetCmd(), newBackupPullCmd())
+		newBackupTargetCmd(), newBackupPullCmd(), newBackupVerifyCmd())
 
 	cmd.Flags().StringVar(&out, "out", "",
 		"Directory to write the archive into, or an explicit path ending in .tar "+
