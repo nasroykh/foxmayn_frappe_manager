@@ -977,6 +977,9 @@ Since template version 4 (ffm v0.13.0; `ffm reconcile` applies it):
 - No CPU or memory limits are set: a limit that is too low gets workers killed in the middle of a
   job. Add them in `docker-compose.override.yml` if the host is shared.
 
+`ffm create --mode prod` also enables the site's scheduler (a new Frappe site keeps it off until its
+setup wizard runs). `ffm doctor` flags a prod site whose scheduler is off.
+
 ## Proxy container
 
 A single Traefik container (`ffm-proxy`) is shared across all benches:

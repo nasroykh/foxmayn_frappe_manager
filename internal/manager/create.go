@@ -628,6 +628,14 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", hostCmd); err != nil {
 			return fmt.Errorf("set host_name: %w\n%s", err, out)
 		}
+		// A new site keeps its scheduler off until the setup wizard runs, so a
+		// production bench would run no scheduled jobs (backups, emails, ...).
+		step("Enabling the scheduler")
+		schedCmd := fmt.Sprintf("cd /workspace/frappe-bench && bench --site %s enable-scheduler",
+			bench.ShellQuote(siteName))
+		if out, err := runner.ExecSilent("frappe", "bash", "-c", schedCmd); err != nil {
+			return fmt.Errorf("enable scheduler: %w\n%s", err, out)
+		}
 	} else if proxyHost != "" {
 		scheme := "http"
 		if proxyPort == 443 {
