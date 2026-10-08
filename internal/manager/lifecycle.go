@@ -62,7 +62,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		}
 
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+			bench.DevServerStartCmd); err != nil {
 			return fmt.Errorf("bench start: %w", err)
 		}
 

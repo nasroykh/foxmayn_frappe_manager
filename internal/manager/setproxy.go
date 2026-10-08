@@ -73,8 +73,7 @@ func (s *Service) runSetProxy(name string, port int, host string, noSSL, reset, 
 
 	if b.IsDev() {
 		pw.Println("  Restarting dev server...")
-		restartCmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
-			" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+		restartCmd := bench.DevServerRestartCmd
 		if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 			// Non-fatal: pkill exits 1 when no process matched, which is fine.
 			pw.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
@@ -175,8 +174,7 @@ func (s *Service) runSetProxyReset(b state.Bench, runner *bench.Runner, pw Progr
 	pw.Printf("  ✓ host_name     = http://%s\n", b.SiteName)
 
 	pw.Println("  Restarting dev server...")
-	restartCmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
-		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+	restartCmd := bench.DevServerRestartCmd
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", restartCmd); err != nil {
 		pw.Printf("  (dev server restart returned non-zero — may already have been stopped)\n")
 	}
