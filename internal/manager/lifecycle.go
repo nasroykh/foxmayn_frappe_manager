@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
@@ -179,6 +180,10 @@ func (s *Service) TeardownBenchFiles(b state.Bench) {
 	if err := runner.Down(true); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
 	}
+	// `down --volumes` removes only the volumes the current compose file
+	// declares. A volume a later template dropped (yarn-cache, in v0.11.1)
+	// still carries the project label, so it goes too.
+	removeProjectVolumes(strings.ToLower(bench.ProjectName(b.Name)))
 	if err := os.RemoveAll(b.Dir); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: remove bench dir: %v\n", err)
 	}
@@ -249,4 +254,17 @@ func (s *Service) deleteLocked(name string, pw ProgressWriter) error {
 	}
 	pw.Printf("Bench %q deleted.\n", name)
 	return nil
+}
+
+// removeProjectVolumes deletes the volumes labelled with a compose project.
+func removeProjectVolumes(project string) {
+	out, err := execx.Command("docker", "volume", "ls", "-q", "--filter", "label="+composeProjectLabel+"="+project).Output()
+	if err != nil {
+		return
+	}
+	for _, v := range strings.Fields(string(out)) {
+		if o, err := execx.Command("docker", "volume", "rm", v).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: remove volume %s: %v %s\n", v, err, strings.TrimSpace(string(o)))
+		}
+	}
 }

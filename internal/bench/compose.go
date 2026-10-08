@@ -340,7 +340,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 2
+const TemplateVersion = 3
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {

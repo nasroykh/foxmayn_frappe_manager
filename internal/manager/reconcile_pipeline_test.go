@@ -36,8 +36,9 @@ func newTestBench(t *testing.T, b state.Bench) (*Service, state.Bench) {
 	return s, b
 }
 
-// psRunning is `docker compose ps` output for a running bench.
-const psRunning = "NAME   IMAGE   SERVICE   STATUS\nffm-x-frappe-1   img   frappe   Up 2 hours\n"
+// psRunning is `docker compose ps --format '{{.Service}} {{.State}}'` output
+// for a running bench.
+const psRunning = "mariadb running\nfrappe running\n"
 
 func TestReconcileRunningDevBench(t *testing.T) {
 	// `docker compose ps` reports the bench as running; everything else

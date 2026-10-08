@@ -127,7 +127,7 @@ ffm create mybench \
 ffm list          # or: ffm ls
 ```
 
-Shows all benches with live status (running/stopped), mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.
+Shows all benches with live status (running / partial = frappe container down / stopped), mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.
 
 ### Bench status
 

@@ -11,18 +11,42 @@ import (
 
 // LiveStatus queries docker compose for a bench's running state.
 func (s *Service) LiveStatus(b state.Bench) string {
-	runner := s.quietRunnerFor(b)
-	out, err := runner.PS("table")
-	if err != nil || out == "" {
+	out, err := s.quietRunnerFor(b).PS(`{{.Service}} {{.State}}`)
+	if err != nil {
 		return "unknown"
 	}
-	for _, line := range strings.Split(out, "\n")[1:] {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "running") || strings.Contains(lower, "up") {
-			return "running"
+	return benchStatus(out)
+}
+
+// Bench states reported by LiveStatus.
+const (
+	StatusRunning = "running"
+	// StatusPartial: some containers run, but not frappe, so the bench
+	// serves nothing. Until v0.11.1 this read as "running".
+	StatusPartial = "partial"
+	StatusStopped = "stopped"
+	StatusUnknown = "unknown"
+)
+
+// benchStatus reads `docker compose ps --format '{{.Service}} {{.State}}'`,
+// which lists the running containers. The bench runs when its frappe
+// container does; any other container alone makes it partial.
+func benchStatus(ps string) string {
+	any := false
+	for _, line := range strings.Split(ps, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[1] != "running" {
+			continue
 		}
+		if f[0] == "frappe" {
+			return StatusRunning
+		}
+		any = true
 	}
-	return "stopped"
+	if any {
+		return StatusPartial
+	}
+	return StatusStopped
 }
 
 // ListBenchViews returns all benches with live docker status.

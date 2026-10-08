@@ -585,6 +585,15 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", useSiteCmd); err != nil {
 		return fmt.Errorf("bench use: %w\n%s", err, out)
 	}
+	// Frappe creates encryption_key the first time a process needs it. On
+	// v16 a request process keeps site_config cached for 60 s, so the dev
+	// server, holding a copy without the key, minted its own and overwrote
+	// the one the API-key script had just used: every fresh v16 bench failed
+	// ffc setup with "Encryption key is invalid". Minting it here, before any
+	// server runs, gives every process the same key.
+	if out, err := runSiteScript(runner, siteName, mintEncryptionKeyScript); err != nil {
+		return fmt.Errorf("create the site's encryption key: %w\n%s", err, lastLines(out, 5))
+	}
 
 	// Developer mode (dev only)
 	if mode == "dev" {

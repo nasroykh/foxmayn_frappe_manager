@@ -196,7 +196,9 @@ internal/
                             skills, .mcp.json, the JS/Procfile patches, dev server, tunnel
     restart.go            → Restart; --rebuild re-renders the Dockerfile (carrying MatchHostUser),
                             rewrites wsgi.py for prod, re-applies the JS patches, rebuilds
-    benches.go            → LiveStatus / ListBenchViews / GetBenchDetail / DashboardOverview
+    benches.go            → LiveStatus (running = the frappe container runs; partial = only other
+                            containers do; stopped; unknown = docker unreachable) / ListBenchViews /
+                            GetBenchDetail / DashboardOverview
     setproxy.go           → SetProxy, mode-aware reset defaults, Caddy/Nginx snippets
     domains.go            → DomainList/Add/Remove + composeDataFor (rebuilds ComposeData from
                             state) + applyDomainChange (re-render compose, `up -d`, no data loss).
@@ -246,7 +248,7 @@ internal/
                             binds and SSH forwarding, replaces a default admin password.
                             AGENTS.md is rewritten only while it starts with agentsMDMarker
     clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
-                            labels, image labels) with no record, no bench dir and a free lock
+                            labels, image labels) with no record, no bench dir, no container (ps -a) and a free lock
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
@@ -289,8 +291,9 @@ internal/
     templates/
       dev/
         docker-compose.yml.tmpl  → 5 services (DB, redis×2, frappe, mailpit); DB conditional on DBType;
-                                   bind-mounts ./workspace, pip/yarn cache volumes (uv's cache is
-                                   inside pip-cache: UV_CACHE_DIR), Traefik labels
+                                   bind-mounts ./workspace, one pip-cache volume that also holds
+                                   uv's and yarn's caches (UV_CACHE_DIR, YARN_CACHE_FOLDER; a new
+                                   volume over a path the image lacks is root-owned), Traefik labels
                                    for <name>.localhost, conditional SSH agent socket
         Dockerfile.tmpl          → full dev image: zsh/zinit/starship/ffc/pnpm/Claude Code +
                                    pre-fetched Frappe skills; optional HostUID/HostGID remap layer
@@ -594,6 +597,15 @@ internal/
   matches the shell itself and kills it. Dev server stop/start lives in `bench.DevServerRestartCmd` /
   `DevServerStartCmd`, which use the `'[h]oncho start'` pattern; until v0.9.1 every dev restart through
   domain changes, reconcile, set-proxy and tunnel killed honcho and never started it again.
+- **Create mints the site's `encryption_key` right after `bench use`** (mintEncryptionKeyScript),
+  before any server process exists. Frappe creates it lazily, and v16 request processes cache
+  site_config for 60 s (`frappe/config.py`, `site_cache(ttl=60)`): the dev server minted a second
+  key over the one the API-key script used, and ffc setup failed on every fresh v16 bench in
+  v0.11.0 ("Encryption key is invalid"). The same cache means a site_config change made while a
+  v16 server runs (ensureDevMail on reconcile) reaches it within a minute.
+- **TeardownBenchFiles also removes every volume labelled with the bench's compose project**:
+  `down --volumes` only knows the volumes the current file declares, so one a newer template
+  dropped (yarn-cache, template 3) would outlive the bench.
 - **Template versions.** `bench.TemplateVersion` names the compose and Dockerfile templates;
   create and reconcile record it on the bench, and `ffm list` flags benches below it. Any template
   change must bump it: `TestTemplateVersionTracksTemplates` fails until the new fingerprint is

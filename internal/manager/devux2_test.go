@@ -144,12 +144,15 @@ func TestCleanPlanOnlyOrphans(t *testing.T) {
 		`{"Name":"ffm-gone_mariadb-data","Labels":"com.docker.compose.project=ffm-gone","Size":"200MB"},` +
 		`{"Name":"ffm-inflight_mariadb-data","Labels":"com.docker.compose.project=ffm-inflight","Size":"1MB"},` +
 		`{"Name":"other_data","Labels":"com.docker.compose.project=other","Size":"9GB"},` +
+		`{"Name":"ffm-used_mariadb-data","Labels":"com.docker.compose.project=ffm-used","Size":"5MB"},` +
 		`{"Name":"ffm-x","Labels":"","Size":"1MB"}]`
 	fakeexec.Install(t,
 		fakeexec.Rule{Match: "system df -v", Stdout: vols},
 		fakeexec.Rule{Match: "image ls", Stdout: "ffm-gone-frappe:latest\t3GB\tid1\nffm-live-frappe:latest\t3GB\tid2\nnginx:1\t50MB\tid3\n"},
 		fakeexec.Rule{Match: "image inspect --format {{index .Config.Labels \"com.docker.compose.project\"}} id1", Stdout: "ffm-gone"},
 		fakeexec.Rule{Match: "image inspect --format {{index .Config.Labels \"com.docker.compose.project\"}} id2", Stdout: "ffm-live"},
+		// ffm-used has no record and no directory but still has a container.
+		fakeexec.Rule{Match: "ps -a -q --filter label=com.docker.compose.project=ffm-used", Stdout: "abc123\n"},
 	)
 	s, _ := newTestBench(t, state.Bench{Name: "live", Mode: "dev", SiteName: "live.localhost", WebPort: 8080, SocketIOPort: 9080})
 	// A bench being created has its directory but no record yet.
