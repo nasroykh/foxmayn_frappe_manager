@@ -65,7 +65,9 @@ internal/
                                 --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming
     status.go                 → per-container status + credentials display; shows mode, DB engine, domain
-    ffc.go                    → generate API keys + write ffc config inside container (dev only)
+    ffc.go                    → ffm ffc: mint API keys and configure ffc/.mcp.json/AGENTS.md
+                                (manager/agent.go setupBenchAccess; dev only)
+    agent.go                  → ffm agent on|off (manager/agent.go SetAgent)
     proxy.go                  → ffm proxy subcommand group: start / stop / status
     setproxy.go               → configure socketio_port / use_ssl / host_name inside the
                                 container for reverse-proxy deployments; works for dev and prod;

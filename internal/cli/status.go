@@ -67,6 +67,8 @@ func runStatusJSON(name string, showSecrets bool) error {
 		Apps:          append([]string{}, b.Apps...),
 		Bind:          bind,
 		SSHAgent:      b.SSHAgent,
+		Agent:         b.Agent,
+		AgentReadOnly: b.AgentReadOnly,
 		DomainAliases: append([]string{}, b.DomainAliases...),
 		CreatedAt:     jsonTime(b.CreatedAt),
 		Containers:    []jsonContainer{},
@@ -145,6 +147,13 @@ func runStatus(name string) error {
 	label("branch", b.FrappeBranch)
 	if b.FrappeRepo != "" {
 		label("frappe repo", b.FrappeRepo)
+	}
+	if b.Agent {
+		ro := ""
+		if b.AgentReadOnly {
+			ro = ", MCP read-only"
+		}
+		label("agent", "ffc and MCP act as agent@"+b.SiteName+ro)
 	}
 	if b.Python != "" {
 		label("toolchain", fmt.Sprintf("Python %s, Node %s", b.Python, b.Node))

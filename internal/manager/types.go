@@ -60,6 +60,11 @@ type CreateInput struct {
 	// overwrites. The app code still has to be present, which is why the clone
 	// is not skipped too.
 	SkipAppInstall bool
+	// Agent sets up the agent-ready profile: loopback ports, no SSH agent, a
+	// random admin password when the default was left, and ffc/MCP access
+	// through a dedicated user. AgentReadOnly also limits MCP to read tools.
+	Agent         bool
+	AgentReadOnly bool
 	// NoSeed neither uses nor saves a seed: bench init, get-app and bench
 	// build run from the branch heads.
 	NoSeed bool

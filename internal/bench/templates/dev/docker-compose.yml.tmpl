@@ -59,11 +59,19 @@ services:
       # different filesystem, so uv copies instead of hardlinking.
       - UV_CACHE_DIR=/home/frappe/.cache/pip/uv
       - UV_LINK_MODE=copy
+      # Claude Code keeps its login and settings here, on the bind mount below,
+      # so they survive the container being replaced (reconcile, domain changes).
+      - CLAUDE_CONFIG_DIR=/home/frappe/.claude-config
 {{- if .ForwardSSHAgent}}
       - SSH_AUTH_SOCK=/ssh-agent
 {{- end}}
     volumes:
       - ./workspace:/workspace
+      # Bind mounts, not named volumes: ffm creates these directories as the
+      # host user (the uid the frappe user has, or is remapped to), while Docker
+      # would create a new volume's root as root wherever the image lacks it.
+      - ./home/claude:/home/frappe/.claude-config
+      - ./home/ffc:/home/frappe/.config/ffc
       - pip-cache:/home/frappe/.cache/pip
       - yarn-cache:/home/frappe/.cache/yarn
 {{- if .ForwardSSHAgent}}

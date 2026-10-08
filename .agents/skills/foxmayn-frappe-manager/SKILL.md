@@ -248,6 +248,18 @@ clones and restores with the same inputs copy it and skip bench init, get-app an
 
 Snapshots restore in place and live with the bench; they are not backups (`ffm backup` is).
 
+### Agent-ready benches
+
+```bash
+ffm create mybench --agent            # loopback ports, no SSH agent, random admin password,
+                                      # ffc + MCP act as agent@<site> (System Manager), not Administrator
+ffm create mybench --agent-read-only  # same, MCP limited to read tools
+ffm agent on mybench [--read-only]    # apply to an existing dev bench; 'ffm agent off' reverts
+```
+
+Inside every dev bench, `AGENTS.md` at `/workspace/frappe-bench` tells the agent its URLs, identity,
+test commands and Mailpit. ffc config and Claude Code login persist in `<bench>/home/`.
+
 ### Deleting a bench
 
 ```bash

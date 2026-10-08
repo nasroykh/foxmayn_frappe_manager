@@ -234,11 +234,37 @@ func (d ComposeData) AliasEntrypoint() string {
 	return "web"
 }
 
+// HomeDirs are the dev frappe user's directories kept in the bench directory
+// (./home/<dir>) so they survive the container: Claude Code's config and
+// login, and ffc's config with the bench's API secret. Hence 0700.
+var HomeDirs = []string{"claude", "ffc"}
+
+// EnsureHomeDirs creates a dev bench's ./home directories. It must run before
+// compose starts the container: Docker would create a missing bind-mount
+// source as root, and the frappe user could not write it.
+func EnsureHomeDirs(benchDir string) error {
+	for _, d := range HomeDirs {
+		p := filepath.Join(benchDir, "home", d)
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(p, 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // WriteCompose renders the compose template into the bench directory.
 // Selects the dev or prod template based on data.Mode.
 func WriteCompose(benchDir string, data ComposeData) error {
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
 		return err
+	}
+	if data.Mode != "prod" {
+		if err := EnsureHomeDirs(benchDir); err != nil {
+			return fmt.Errorf("create home directories: %w", err)
+		}
 	}
 	out, err := RenderCompose(data)
 	if err != nil {

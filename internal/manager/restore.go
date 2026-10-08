@@ -386,6 +386,8 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 		FrappeRepo:        plan.FrappeRepo,
 		Python:            python,
 		Node:              node,
+		Agent:             m.Bench.Agent,
+		AgentReadOnly:     m.Bench.AgentReadOnly,
 		Apps:              plan.createSpecs(),
 		AdminPassword:     adminPassword,
 		DBPassword:        m.Bench.DBPassword,

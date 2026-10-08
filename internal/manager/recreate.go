@@ -146,6 +146,8 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		FrappeRepo:        b.FrappeRepo,
 		Python:            b.Python,
 		Node:              b.Node,
+		Agent:             b.Agent,
+		AgentReadOnly:     b.AgentReadOnly,
 		Apps:              apps,
 		AdminPassword:     b.AdminPassword,
 		DBPassword:        b.DBPassword,

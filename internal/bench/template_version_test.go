@@ -8,8 +8,8 @@ import "testing"
 var templatesAtVersion = map[int]string{
 	1: "5ecf0c6653195aa260ea8545fddc1a09cd17b333709af53bf479b226ad10bf86",
 	// 2: per-branch Node in both Dockerfiles; dev compose: uv cache inside
-	// pip-cache, Mailpit.
-	2: "e03cb3ec23ddbfa32bbf8d5be655bc91a3180dca73c747e304f261cbf320ab25",
+	// pip-cache, Mailpit, ./home bind mounts for Claude Code and ffc.
+	2: "a61f677ea32547909056f936178874814090d3ba0375efd88bd81947ad6fafd7",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

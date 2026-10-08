@@ -69,7 +69,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 33 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 34 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -121,6 +121,8 @@ internal/
     snapshot.go           → ffm snapshot create|list|restore|delete (--name, --files, --yes,
                             --migrate, --json ffm.snapshots/v1)
     clone.go              → ffm clone <source> <new-name> (--no-files, --vendor-apps, --domain)
+    agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
+                            --agent-read-only
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
                             shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
                             --service to target another container. logs: --follow defaults TRUE
@@ -201,8 +203,7 @@ internal/
                             Also tlsModeFor / prodNoSSL / hostLANIP / domainNameWarning
     tunnel_ops.go         → TunnelEnable / TunnelDisable
     proxy_ops.go          → ProxyStatus / ProxyStart / ProxyStop
-    ffc.go                → SetupFFC: API keys + ~/.config/ffc/config.yaml + .mcp.json.
-                            NOTE: no mode gate — it will run against a prod bench and fail late
+    ffc.go                → SetupFFC: setupBenchAccess + ffc ping; refuses prod benches (no ffc there)
     claude_mcp.go         → writes workspace/frappe-bench/.mcp.json (ffc MCP server)
     clean_logs.go         → deletes old rows from 7 Frappe log tables
     exec.go               → Exec / ExecOrError: one-shot command in a container
@@ -237,6 +238,13 @@ internal/
                             (.ffm-seed-common_site_config.json) — the bench's own copy carries
                             its db/redis/socketio settings. Off on Windows and with --no-seed /
                             FFM_NO_SEED; config.SeedsDir (FFM_SEEDS_DIR)
+    agent.go              → setupBenchAccess: API keys (Administrator, or agent@<site> with System
+                            Manager when Bench.Agent) → `ffc site add --api-secret-stdin --force`
+                            (secret on stdin, other sites kept) → .mcp.json (--read-only when
+                            AgentReadOnly) → AGENTS.md. Used by create, ffm ffc, SetAgent and
+                            Start (when home/ffc/config.yaml is missing). SetAgent refuses LAN
+                            binds and SSH forwarding, replaces a default admin password.
+                            AGENTS.md is rewritten only while it starts with agentsMDMarker
     clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
                             labels, image labels) with no record, no bench dir and a free lock
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
@@ -648,8 +656,12 @@ git push origin v0.1.0
   Dockerfile             # dev: tools image; prod: minimal image
   frpc.toml              # written when tunnel is enabled (0o600 — contains token)
   mysql-logs/            # prod + MariaDB + --slow-query-log only
+  home/                  # dev only (0700), bind-mounted: claude/ → CLAUDE_CONFIG_DIR,
+                         #   ffc/ → ~/.config/ffc; created by bench.EnsureHomeDirs before compose up
   workspace/             # bind-mounted into container at /workspace
+    .ffm-snapshots/      # ffm snapshot (0700)
     frappe-bench/
+      AGENTS.md          # dev only: generated (agentsMDMarker) + CLAUDE.md "@AGENTS.md"
       .mcp.json          # Claude Code MCP config → `ffc mcp --site <bench>`
       .agents/skills/    # dev only: Frappe Claude skills + ffc skill
       .claude/skills/    # dev only: same skills for Claude Code

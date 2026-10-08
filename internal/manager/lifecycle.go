@@ -25,6 +25,13 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 	runner := s.runnerFor(b)
 
 	pw.Printf("Starting bench %q...\n", name)
+	if hasMailpit(b) {
+		// Same template version as the ./home bind mounts; Docker would
+		// create missing sources as root.
+		if err := bench.EnsureHomeDirs(b.Dir); err != nil {
+			return fmt.Errorf("create home directories: %w", err)
+		}
+	}
 	if err := runner.Up(); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
@@ -54,7 +61,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 			fmt.Fprintf(os.Stderr, "warning: could not point outgoing mail at Mailpit: %v\n", err)
 		}
 		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
-		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name); err != nil {
+		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name, b.Agent && b.AgentReadOnly); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 		// Self-restarting worker: stops an idle-Redis-timeout worker exit (rc=0)
@@ -77,6 +84,12 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		if err := bench.WaitForHTTP(url, 90*time.Second); err != nil {
 			return webServerUnreachable(runner, b.IsDev(), err)
 		}
+		if err := writeAgentsMD(b); err != nil && s.Verbose {
+			fmt.Fprintf(os.Stderr, "warning: could not write AGENTS.md: %v\n", err)
+		}
+		// ffc's config lives in ./home/ffc. When it is missing (a bench that
+		// predates the bind mount, or a deleted file), set ffc up again.
+		s.healDevAccess(b, pw)
 	}
 
 	if b.Tunnel != nil && b.Tunnel.Enabled {

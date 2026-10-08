@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
@@ -119,15 +120,45 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 	if err := ensureDevMail(b); err != nil {
 		fmt.Fprintf(pw.Stderr(), "warning: could not point outgoing mail at Mailpit: %v\n", err)
 	}
+	healed := s.healDevAccess(b, pw)
 	pw.Printf("Done. Bench %q matches this ffm version's templates.\n", b.Name)
 	printDockerfileHint(pw, b.Name, dockerfileStale)
-	if b.IsDev() {
+	if b.IsDev() && !healed {
 		// up -d replaces the frappe container, and on a dev bench some state
 		// lives in its filesystem rather than in ./workspace.
 		pw.Println("  Note: the frappe container was replaced. If ffc or Claude Code inside it lost their")
 		pw.Printf("  configuration, run 'ffm ffc %s' and log in to Claude Code again.\n", b.Name)
+	} else if b.IsDev() {
+		pw.Println("  Claude Code keeps its login in " + filepath.Join(b.Dir, "home", "claude") + " from now on; log in once more.")
 	}
 	return nil
+}
+
+// devServerWait bounds how long ffm waits for a restarted dev server.
+var devServerWait = 90 * time.Second
+
+// healDevAccess sets ffc up again on a dev bench whose ./home/ffc holds no
+// config: the bind mount is new, or the file was removed. It waits for the
+// dev server first, because ffc checks the credentials against the site. It
+// reports whether ffc is configured afterwards.
+func (s *Service) healDevAccess(b state.Bench, pw ProgressWriter) bool {
+	if !hasMailpit(b) || s.LiveStatus(b) != "running" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(b.Dir, "home", "ffc", "config.yaml")); err == nil {
+		return true
+	} else if !os.IsNotExist(err) {
+		return false
+	}
+	if err := bench.WaitForHTTP(fmt.Sprintf("http://localhost:%d", b.WebPort), devServerWait); err != nil {
+		return false
+	}
+	pw.Step("Configuring ffc (its config now lives in " + filepath.Join(b.Dir, "home", "ffc") + ")")
+	if _, err := setupBenchAccess(s.runnerFor(b), b); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not configure ffc: %v (run 'ffm ffc %s')\n", err, b.Name)
+		return false
+	}
+	return true
 }
 
 // checkReconcile refuses combinations that would leave the bench broken or
