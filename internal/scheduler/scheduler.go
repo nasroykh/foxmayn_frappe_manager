@@ -194,10 +194,58 @@ func writeCrontab(content string) error {
 	return nil
 }
 
+// ForeignJobError means ffm's crontab line belongs to another ffm
+// configuration: a different FFM_CONFIG_DIR, whose run-due backs up other
+// benches. Replacing or removing it would silently stop those backups.
+type ForeignJobError struct{ Log string }
+
+func (e ForeignJobError) Error() string {
+	return fmt.Sprintf("the hourly backup job in your crontab belongs to another ffm configuration (its log is %s); "+
+		"not touching it. Benches of only one configuration per user can be scheduled; "+
+		"'ffm backup scheduler install --force' takes the job over", e.Log)
+}
+
+// LogOf returns the --log path of a crontab line ffm wrote, or "".
+func LogOf(line string) string {
+	_, rest, ok := strings.Cut(line, " --log '")
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < len(rest); i++ {
+		if strings.HasPrefix(rest[i:], `'\''`) {
+			b.WriteByte('\'')
+			i += 3
+			continue
+		}
+		if rest[i] == '\'' {
+			return b.String()
+		}
+		b.WriteByte(rest[i])
+	}
+	return ""
+}
+
+// checkOwner refuses to change a line written for another log file.
+func checkOwner(current, logFile string, force bool) error {
+	existing := Find(current)
+	if force || existing == "" {
+		return nil
+	}
+	if owner := LogOf(existing); owner != "" && owner != logFile {
+		return ForeignJobError{Log: owner}
+	}
+	return nil
+}
+
 // Install adds or updates ffm's line. It reports whether the crontab changed.
-func Install(j Job) (bool, error) {
+// A line of another configuration is left alone unless force.
+func Install(j Job, force bool) (bool, error) {
 	current, err := ReadCrontab()
 	if err != nil {
+		return false, err
+	}
+	if err := checkOwner(current, j.LogFile, force); err != nil {
 		return false, err
 	}
 	line := j.Line()
@@ -207,14 +255,18 @@ func Install(j Job) (bool, error) {
 	return true, writeCrontab(Merge(current, line))
 }
 
-// Uninstall removes ffm's line. It reports whether the crontab changed.
-func Uninstall() (bool, error) {
+// Uninstall removes ffm's line, if it is this configuration's (logFile) or
+// force is set. It reports whether the crontab changed.
+func Uninstall(logFile string, force bool) (bool, error) {
 	current, err := ReadCrontab()
 	if err != nil {
 		return false, err
 	}
 	if Find(current) == "" {
 		return false, nil
+	}
+	if err := checkOwner(current, logFile, force); err != nil {
+		return false, err
 	}
 	return true, writeCrontab(Remove(current))
 }

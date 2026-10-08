@@ -246,6 +246,9 @@ Use "ffm backup scheduler [command] --help" for more information about a command
 Usage:
   ffm backup scheduler install [flags]
 
+Flags:
+      --force   Take over a job installed for another ffm configuration
+
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
@@ -269,6 +272,9 @@ Global Flags:
 === ffm backup scheduler uninstall
 Usage:
   ffm backup scheduler uninstall [flags]
+
+Flags:
+      --force   Remove the job even when another ffm configuration installed it
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

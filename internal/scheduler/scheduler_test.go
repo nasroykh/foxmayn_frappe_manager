@@ -104,22 +104,59 @@ esac
 	t.Setenv("PATH", dir+":"+filepath.Dir(sh))
 
 	j := testJob()
-	changed, err := Install(j)
+	changed, err := Install(j, false)
 	if err != nil || !changed {
 		t.Fatalf("first install = %v, %v", changed, err)
 	}
-	if changed, err = Install(j); err != nil || changed {
+	if changed, err = Install(j, false); err != nil || changed {
 		t.Fatalf("second install = %v, %v, want no change", changed, err)
 	}
+	// A job another configuration installed is neither replaced nor removed.
+	foreign := testJob()
+	foreign.LogFile = "/elsewhere/backup-scheduler.log"
+	os.WriteFile(table, []byte(foreign.Line()+"\n"), 0o600)
+	if _, err := Install(j, false); err == nil {
+		t.Fatal("a foreign job was replaced")
+	}
+	if _, err := Uninstall(j.LogFile, false); err == nil {
+		t.Fatal("a foreign job was removed")
+	}
+	if got, _ := os.ReadFile(table); string(got) != foreign.Line()+"\n" {
+		t.Fatalf("the foreign job changed: %q", got)
+	}
 	os.WriteFile(table, []byte("0 3 * * * certbot renew\n"+j.Line()+"\n"), 0o600)
-	if changed, err = Uninstall(); err != nil || !changed {
+	if changed, err = Uninstall(j.LogFile, false); err != nil || !changed {
 		t.Fatalf("uninstall = %v, %v", changed, err)
 	}
 	got, _ := os.ReadFile(table)
 	if string(got) != "0 3 * * * certbot renew\n" {
 		t.Fatalf("after uninstall the table is %q", got)
 	}
-	if changed, err = Uninstall(); err != nil || changed {
+	if changed, err = Uninstall(j.LogFile, false); err != nil || changed {
 		t.Fatalf("second uninstall = %v, %v, want no change", changed, err)
+	}
+}
+
+func TestOwnershipOfTheJob(t *testing.T) {
+	mine := Job{Minute: 3, FFM: "/bin/ffm", PathEnv: "/usr/bin", LogFile: "/home/u/.config/ffm/backup-scheduler.log"}
+	other := Job{Minute: 3, FFM: "/tmp/ffm-next", PathEnv: "/usr/bin", LogFile: "/home/u/test's/cfg/backup-scheduler.log",
+		Env: map[string]string{"FFM_CONFIG_DIR": "/home/u/test's/cfg"}}
+	if got := LogOf(other.Line()); got != other.LogFile {
+		t.Fatalf("LogOf = %q, want %q", got, other.LogFile)
+	}
+	crontab := "0 1 * * * echo hi\n" + other.Line() + "\n"
+	if err := checkOwner(crontab, mine.LogFile, false); err == nil {
+		t.Error("another configuration's job would be replaced")
+	} else if _, ok := err.(ForeignJobError); !ok {
+		t.Errorf("err = %T %v", err, err)
+	}
+	if err := checkOwner(crontab, mine.LogFile, true); err != nil {
+		t.Errorf("--force refused: %v", err)
+	}
+	if err := checkOwner(crontab, other.LogFile, false); err != nil {
+		t.Errorf("own job refused: %v", err)
+	}
+	if err := checkOwner("0 1 * * * echo hi\n", mine.LogFile, false); err != nil {
+		t.Errorf("no job yet: %v", err)
 	}
 }
