@@ -13,6 +13,7 @@ func newBackupCmd() *cobra.Command {
 		noFiles        bool
 		skipSpaceCheck bool
 		vendorApps     []string
+		encrypt        bool
 	)
 
 	cmd := &cobra.Command{
@@ -40,12 +41,16 @@ afterwards.
 
 The archive contains the database root password, the Administrator password and
 the site's encryption key in plain text. It is written 0600 inside a 0700
-directory; ffm warns when that cannot be enforced by the filesystem.`,
+directory; ffm warns when that cannot be enforced by the filesystem.
+--encrypt encrypts it with age to the keys set up by 'ffm backup key init'
+(<archive>.age, plus a cleartext .header.json so list and prune work without
+the key); restoring then needs the identity file.`,
 		Example: `  ffm backup
   ffm backup mybench
   ffm backup mybench --out ~/archives
   ffm backup mybench --no-files --label "before the v16 upgrade"
-  ffm backup mybench --vendor-apps my_app`,
+  ffm backup mybench --vendor-apps my_app
+  ffm backup mybench --encrypt`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := resolveBenchName(args, "Select a bench to back up")
@@ -59,11 +64,12 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 				Label:          label,
 				SkipSpaceCheck: skipSpaceCheck,
 				VendorApps:     vendorApps,
+				Encrypt:        encrypt,
 			}, manager.CLIProgress{})
 		},
 	}
 
-	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd())
+	cmd.AddCommand(newBackupListCmd(), newBackupPruneCmd(), newBackupScheduleCmd(), newBackupRunDueCmd(), newBackupSchedulerCmd(), newBackupKeyCmd())
 
 	cmd.Flags().StringVar(&out, "out", "",
 		"Directory to write the archive into, or an explicit path ending in .tar "+
@@ -73,6 +79,8 @@ directory; ffm warns when that cannot be enforced by the filesystem.`,
 		"Skip file attachments and archive the database only")
 	cmd.Flags().BoolVar(&skipSpaceCheck, "skip-space-check", false,
 		"Write the archive without checking free disk space first")
+	cmd.Flags().BoolVar(&encrypt, "encrypt", false,
+		"Encrypt the archive with age to the keys from 'ffm backup key init'")
 	cmd.Flags().StringSliceVar(&vendorApps, "vendor-apps", nil,
 		"Also archive the source of these apps (comma-separated, or 'all'), uncommitted changes "+
 			"included. Apps that cannot be cloned back are archived regardless")

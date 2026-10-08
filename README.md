@@ -560,6 +560,7 @@ Flags:  --out <path>          Directory to write into, or an explicit path endin
         --no-files            Database only, no attachments
         --skip-space-check    Do not check free disk space first
         --vendor-apps <apps>  Also archive these apps' source (comma-separated, or all)
+        --encrypt             Encrypt the archive with age (see below)
 ```
 
 The archive holds Frappe's own database dump, the site's public and private files, the site
@@ -579,6 +580,25 @@ A stopped bench is started for the backup and stopped again afterwards.
 > The archive contains the database root password, the Administrator password and the site's
 > encryption key in plain text. It is written `0600` inside a `0700` directory. ffm warns when
 > the filesystem cannot enforce that — notably a Windows drive mounted into WSL2.
+
+#### Encrypted backups (age)
+
+```bash
+ffm backup key init                      # prints the identity ONCE; ffm keeps only the public key
+ffm backup key init --out ~/ffm-backup.key   # or write it to a new 0600 file, then move it off the host
+ffm backup key add age1…                 # also encrypt to another key, e.g. an offline one
+ffm backup mybench --encrypt             # <archive>.ffm.tar.age + a cleartext <archive>.age.header.json
+ffm backup schedule mybench --encrypt    # every scheduled archive
+ffm restore mybench_….ffm.tar.age copy --identity ~/ffm-backup.key   # or FFM_AGE_IDENTITY_FILE
+```
+
+The whole archive is encrypted with [age](https://age-encryption.org) to the public keys in
+`~/.config/ffm/backup-recipients.txt`, and the plaintext is deleted once encryption has succeeded.
+age authenticates the data, so a modified or truncated archive fails to decrypt instead of
+restoring something else. The header sidecar (bench, date, trigger, contents; no secrets) lets
+`backup list` and pruning work without the key. **ffm never stores the identity**: keep it in a
+password manager or offline. Without it, no encrypted backup can be restored. Local archives
+stay unencrypted unless you ask (`--encrypt`).
 
 ### Scheduled backups
 

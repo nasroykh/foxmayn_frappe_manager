@@ -9,6 +9,7 @@ import (
 func newRestoreCmd() *cobra.Command {
 	var (
 		noFiles         bool
+		identity        string
 		dryRun          bool
 		allowNoKey      bool
 		encryptionKey   string
@@ -65,6 +66,7 @@ touching Docker.`,
 			}
 			return manager.New(verbose).Restore(manager.RestoreInput{
 				Archive:                   args[0],
+				Identity:                  identity,
 				TargetName:                target,
 				WithFiles:                 !noFiles,
 				DryRun:                    dryRun,
@@ -92,6 +94,8 @@ touching Docker.`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Validate the archive and print the plan without creating anything")
 	cmd.Flags().BoolVar(&noFiles, "no-files", false, "Restore the database only, without attachments")
+	cmd.Flags().StringVar(&identity, "identity", "",
+		"age identity file that decrypts an encrypted (.age) archive. Env: FFM_AGE_IDENTITY_FILE")
 	cmd.Flags().BoolVar(&allowNoKey, "allow-missing-encryption-key", false,
 		"Restore even though the archive has no site encryption key, accepting that Password "+
 			"fields (email passwords, integration secrets) will not decrypt")

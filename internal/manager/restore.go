@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/agecrypt"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/archive"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
@@ -52,6 +53,15 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	}
 	if _, err := os.Stat(archivePath); err != nil {
 		return fmt.Errorf("archive %s: %w", in.Archive, err)
+	}
+	if agecrypt.IsEncrypted(archivePath) {
+		pw.Step("Decrypting the archive")
+		plain, cleanup, err := decryptForRestore(archivePath, in.Identity)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		archivePath = plain
 	}
 
 	// Phase A: preflight. Nothing on the host is mutated before this passes.

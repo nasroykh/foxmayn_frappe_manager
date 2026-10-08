@@ -180,6 +180,13 @@ internal/
     restore_appsource.go  → planRestoreApps (where each app's code comes from) / planFrappe /
                             checkRestorePlan / checkBareNames (GitHub lookup before Create) /
                             installArchivedApps / syncAppsTxt
+    backup_keys.go        → age encryption (internal/agecrypt): InitBackupKey / AddBackupRecipient
+                            (config.BackupRecipientsFile — public keys only), encryptArchive
+                            (<archive>.age + cleartext <archive>.age.header.json sidecar, plaintext
+                            removed after), decryptForRestore (identity from --identity or
+                            FFM_AGE_IDENTITY_FILE, into a 0700 temp dir under the backups dir).
+                            ScanArchives reads encrypted archives' headers from the sidecar;
+                            pruning removes both files
     backup_policy.go      → PresetPolicy / ParseEvery / ValidatePolicy / ApplyKeepShorthand
     backup_retention.go   → ScanArchives / selectRetained (tiered + RetentionFloor) /
                             PruneBackups; only readable, trigger=scheduled, same-bench archives

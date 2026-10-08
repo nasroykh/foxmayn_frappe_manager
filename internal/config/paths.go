@@ -144,3 +144,9 @@ func SeedsDir() string {
 	}
 	return filepath.Join(ConfigDir(), "seeds")
 }
+
+// BackupRecipientsFile lists the age recipients (public keys) backups are
+// encrypted to, one per line. ffm never stores the identities.
+func BackupRecipientsFile() string {
+	return filepath.Join(ConfigDir(), "backup-recipients.txt")
+}
