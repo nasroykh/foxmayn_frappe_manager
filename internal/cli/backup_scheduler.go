@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 	"os"
 	"runtime"
 	"strings"
@@ -30,7 +31,7 @@ func syncSchedulerJob(svc *manager.Service, noInstall bool) error {
 		return err
 	}
 	if !any {
-		changed, err := scheduler.Uninstall()
+		changed, err := scheduler.Uninstall(config.BackupSchedulerLogFile(), false)
 		if err != nil {
 			if !errors.Is(err, scheduler.ErrUnsupported) {
 				fmt.Fprintf(os.Stderr, "warning: could not remove the hourly job: %v\n", err)
@@ -47,7 +48,7 @@ func syncSchedulerJob(svc *manager.Service, noInstall bool) error {
 		fmt.Fprintf(os.Stderr, "warning: the schedule is saved, but the hourly job was not installed: %v\n", err)
 		return nil
 	}
-	changed, err := scheduler.Install(job)
+	changed, err := scheduler.Install(job, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: the schedule is saved, but the hourly job was not installed: %v\n", err)
 		if errors.Is(err, scheduler.ErrUnsupported) && runtime.GOOS == "windows" {
@@ -75,48 +76,54 @@ any FFM_* or DOCKER_* settings present at install time — cron runs with an
 almost empty environment. Re-run 'install' after moving ffm or docker, or after
 changing those settings. On Windows, 'print' gives the Task Scheduler command.`,
 	}
+	var force bool
+	install := &cobra.Command{
+		Use:   "install",
+		Short: "Install or update the hourly job",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			job, err := scheduler.CurrentJob()
+			if err != nil {
+				return err
+			}
+			if runtime.GOOS == "windows" {
+				return fmt.Errorf("%w; create it with:\n  %s", scheduler.ErrUnsupported, scheduler.WindowsCommand(job))
+			}
+			changed, err := scheduler.Install(job, force)
+			if err != nil {
+				return err
+			}
+			if changed {
+				fmt.Printf("Installed: %s\n", job.Line())
+			} else {
+				fmt.Println("The hourly job is already installed and up to date.")
+			}
+			return nil
+		},
+	}
+	install.Flags().BoolVar(&force, "force", false, "Take over a job installed for another ffm configuration")
+	var forceUninstall bool
+	uninstall := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove the hourly job (schedules are kept but stop running)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			changed, err := scheduler.Uninstall(config.BackupSchedulerLogFile(), forceUninstall)
+			if err != nil {
+				return err
+			}
+			if changed {
+				fmt.Println("Removed the hourly job from your crontab.")
+			} else {
+				fmt.Println("The hourly job was not installed.")
+			}
+			return nil
+		},
+	}
+	uninstall.Flags().BoolVar(&forceUninstall, "force", false, "Remove the job even when another ffm configuration installed it")
 	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "install",
-			Short: "Install or update the hourly job",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				job, err := scheduler.CurrentJob()
-				if err != nil {
-					return err
-				}
-				if runtime.GOOS == "windows" {
-					return fmt.Errorf("%w; create it with:\n  %s", scheduler.ErrUnsupported, scheduler.WindowsCommand(job))
-				}
-				changed, err := scheduler.Install(job)
-				if err != nil {
-					return err
-				}
-				if changed {
-					fmt.Printf("Installed: %s\n", job.Line())
-				} else {
-					fmt.Println("The hourly job is already installed and up to date.")
-				}
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:   "uninstall",
-			Short: "Remove the hourly job (schedules are kept but stop running)",
-			Args:  cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				changed, err := scheduler.Uninstall()
-				if err != nil {
-					return err
-				}
-				if changed {
-					fmt.Println("Removed the hourly job from your crontab.")
-				} else {
-					fmt.Println("The hourly job was not installed.")
-				}
-				return nil
-			},
-		},
+		install,
+		uninstall,
 		&cobra.Command{
 			Use:   "print",
 			Short: "Print the job for installing it by hand",

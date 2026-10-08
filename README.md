@@ -645,6 +645,9 @@ Flags:  --every <interval>      1h, 6h, 24h, 168h (whole hours), or hourly/daily
   crontab running `ffm backup run-due`; the last `--off` removes it. `ffm backup scheduler
   status` checks it. The line carries the ffm path, a `PATH` that reaches docker and any
   `FFM_*` settings — re-run `ffm backup scheduler install` after moving ffm or changing them.
+  There is one such job per user, and it belongs to one configuration. ffm leaves a job another
+  `FFM_CONFIG_DIR` installed alone (warning that this schedule's job was not installed), and
+  `ffm backup scheduler install --force` takes it over.
   Runs are logged to `~/.config/ffm/backup-scheduler.log`. On Windows, `ffm backup scheduler
   print` gives the Task Scheduler command to run once.
 - Archives stay on this machine. They protect against a broken site, not a lost disk — copy

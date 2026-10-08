@@ -316,7 +316,10 @@ internal/
                             stale-lock handling exists or is needed
   scheduler/              → the single crontab line for run-due: CurrentJob / Job.Line /
                             Merge / Remove / Find / Install / Uninstall / WindowsCommand. Tagged
-                            `# ffm-backup-tick`; other crontab lines are kept byte for byte
+                            `# ffm-backup-tick`; other crontab lines are kept byte for byte.
+                            Install/Uninstall refuse a line whose --log (LogOf) is another
+                            configuration's (ForeignJobError) unless forced: a run with another
+                            FFM_CONFIG_DIR used to replace the real one's job
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
                             IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
   tunnel/
