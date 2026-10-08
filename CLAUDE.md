@@ -69,7 +69,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 22 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 27 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -109,6 +109,11 @@ internal/
     list.go               → lipgloss table over manager.ListBenchViews; alias 'ls'
                             columns: NAME MODE DB STATUS PORT DOMAIN BRANCH
     start.go / stop.go / restart.go → ~25-line wrappers; restart carries --rebuild
+    open.go               → ffm open (--mail / --traefik), ffm mail, ffm login (--user); --print
+                            prints instead of opening, --json gives ffm.url/v1. browser.go opens
+                            the URL, or fails where there is no desktop and the URL is printed
+    console.go / db.go    → ffm console and ffm db (db-console, --export, --import [--migrate]);
+                            interactive ones go through manager.Service.Interactive
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
                             shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
                             --service to target another container. logs: --follow defaults TRUE
@@ -194,6 +199,10 @@ internal/
     claude_mcp.go         → writes workspace/frappe-bench/.mcp.json (ffc MCP server)
     clean_logs.go         → deletes old rows from 7 Frappe log tables
     exec.go               → Exec / ExecOrError: one-shot command in a container
+    devtools.go           → SiteURL / MailURL / LoginURL (a sid URL: a credential, shown only on
+                            request) / DBExport / DBImport (root password via stdin) /
+                            Interactive; ensureDevMail points site_config's mail_server at the
+                            bench's Mailpit (create, start, reconcile) unless one is already set
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
@@ -231,10 +240,11 @@ internal/
     frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName)
     port.go               → AllocatePorts (web 8000 / socketio 9000, +10 per bench, max 50) plus
                             ValidBenchPortPair / CheckTCPPortsFree for --web-port/--socketio-port,
-                            and CheckBenchPortRangeFree, which probes all 12 published ports
+                            and CheckBenchPortRangeFree, which probes all 13 published ports
+                            (dev: web and socketio ranges plus Mailpit on web + 6)
     templates/
       dev/
-        docker-compose.yml.tmpl  → 4 services (DB, redis×2, frappe); DB conditional on DBType;
+        docker-compose.yml.tmpl  → 5 services (DB, redis×2, frappe, mailpit); DB conditional on DBType;
                                    bind-mounts ./workspace, pip/yarn cache volumes (uv's cache is
                                    inside pip-cache: UV_CACHE_DIR), Traefik labels
                                    for <name>.localhost, conditional SSH agent socket
@@ -598,7 +608,7 @@ git push origin v0.1.0
 
 ```
 ~/frappe/<bench-name>/
-  docker-compose.yml     # generated per bench (dev: 4 services, prod: 8 services)
+  docker-compose.yml     # generated per bench (dev: 5 services, prod: 8 services)
   Dockerfile             # dev: tools image; prod: minimal image
   frpc.toml              # written when tunnel is enabled (0o600 — contains token)
   mysql-logs/            # prod + MariaDB + --slow-query-log only

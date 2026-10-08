@@ -596,6 +596,10 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", devModeCmd); err != nil {
 			return fmt.Errorf("enable developer mode: %w\n%s", err, out)
 		}
+		if err := ensureDevMail(state.Bench{Mode: mode, Dir: benchDir, SiteName: siteName,
+			TemplateVersion: bench.TemplateVersion}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not point outgoing mail at Mailpit: %v\n", err)
+		}
 	}
 
 	// Set host_name: always for prod, optional for dev (when --proxy-host provided)

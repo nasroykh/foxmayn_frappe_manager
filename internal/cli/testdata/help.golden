@@ -5,13 +5,18 @@ Usage:
 Available Commands:
   backup      Archive a bench's site into a single restorable file
   clean-logs  Delete old log table rows to reclaim database space
+  console     Open bench console (Python REPL with the site loaded)
   create      Create and start a new Frappe bench
   dashboard   Web dashboard for managing Frappe benches
+  db          Open the site's database console, or import/export its database
   delete      Delete a bench and all its data
   domain      Manage extra hostnames that route to a bench
   ffc         Generate Frappe API keys and configure ffc inside a bench
   list        List all managed benches
+  login       Open a dev bench's desk already logged in (Administrator by default)
   logs        Stream logs from a bench (all services or one)
+  mail        Open the Mailpit inbox that catches a dev bench's outgoing mail
+  open        Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
   proxy       Manage the shared Traefik reverse proxy (sitename.localhost routing)
   reconcile   Apply this ffm version's templates to an existing bench without losing data
   recreate    Delete a bench and provision it again from saved settings
@@ -193,6 +198,14 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm console
+Usage:
+  ffm console [name] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm create
 Usage:
   ffm create <name> [flags]
@@ -290,6 +303,21 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm db
+Usage:
+  ffm db [name] [flags]
+
+Flags:
+      --export string   Dump the site's database to this file (.sql or .sql.gz)
+      --force           Overwrite the --export file if it exists
+      --import string   Replace the site's database with this .sql or .sql.gz dump
+      --migrate         Run bench migrate after --import
+      --yes             Do not ask before --import replaces the database
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm delete
 Usage:
   ffm delete [name] [flags]
@@ -381,12 +409,50 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm login
+Usage:
+  ffm login [name] [flags]
+
+Flags:
+      --print         Print the login URL instead of opening it
+      --user string   User to log in as (default "Administrator")
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm logs
 Usage:
   ffm logs [name] [service] [flags]
 
 Flags:
   -f, --follow   Follow log output (default true)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm mail
+Usage:
+  ffm mail [name] [flags]
+
+Flags:
+      --json    Print the URL as JSON (schema ffm.url/v1)
+      --print   Print the URL instead of opening it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm open
+Usage:
+  ffm open [name] [flags]
+
+Flags:
+      --json      Print the URL as JSON (schema ffm.url/v1)
+      --mail      Open the bench's Mailpit inbox instead of the site (dev only)
+      --print     Print the URL instead of opening it
+      --traefik   Open the shared Traefik proxy's dashboard
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

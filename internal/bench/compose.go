@@ -127,6 +127,9 @@ const (
 	FrappeSkillsCommit = "36cfa807518f48e4210fac2a5afc6adafad4c53e"
 )
 
+// MailPort is the host port of a dev bench's Mailpit web UI.
+func (d ComposeData) MailPort() int { return d.WebPort + MailPortOffset }
+
 // BenchImageTag exposes the pinned base image tag to the Dockerfile templates.
 func (ComposeData) BenchImageTag() string { return BenchImageTag }
 

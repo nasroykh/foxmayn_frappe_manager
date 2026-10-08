@@ -52,6 +52,10 @@ internal/
     stop.go                   → docker compose stop
     restart.go                → delegates to runStop + runStart; --rebuild flag rewrites
                                 Dockerfile from template (mode-aware) + rebuilds image
+    open.go / browser.go      → ffm open / mail / login: URL from manager (SiteURL, MailURL,
+                                LoginURL), opened in the browser or printed (--print, --json)
+    console.go / db.go        → ffm console, ffm db (db-console, --export, --import); logic in
+                                manager/devtools.go
     shell.go                  → interactive docker exec: zsh for dev, bash for prod;
                                 --exec for non-interactive one-shot commands
     logs.go                   → docker compose logs streaming

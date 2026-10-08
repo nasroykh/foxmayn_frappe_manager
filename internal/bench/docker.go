@@ -492,3 +492,21 @@ func (r *Runner) CopyTo(service, src, dest string) error {
 	}
 	return nil
 }
+
+// ExecStdin runs a command inside a service container with r as its stdin.
+// Files sent this way are written by the container's own user, unlike
+// CopyTo, whose `docker cp` lands them as root.
+func (r *Runner) ExecStdin(service string, in io.Reader, shellArgs ...string) error {
+	args := append(append(r.baseArgs(), "exec", "-T", service), shellArgs...)
+	cmd := execx.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	cmd.Stdin = in
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if msg := r.scrub(strings.TrimSpace(string(out))); msg != "" {
+			return fmt.Errorf("%w\n%s", err, msg)
+		}
+		return err
+	}
+	return nil
+}

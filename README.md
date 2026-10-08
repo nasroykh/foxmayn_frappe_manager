@@ -168,7 +168,7 @@ Steps performed:
 2. Writes `docker-compose.yml` and `Dockerfile` to `~/frappe/<name>/`
 3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, **pnpm**, and **Claude Code**; pre-fetches 60 [Frappe Claude skills](https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package) to `/opt/`. **Cached after first build.**
 4. Runs `bench init --python <version>` — clones Frappe, installs Python/Node deps with the branch's toolchain (see [Frappe versions](#frappe-versions-and-toolchains)), copies skills into `frappe-bench/.agents/skills/` and `.claude/skills/`
-5. Starts 4 containers with `workspace/` bind-mounted at `/workspace`
+5. Starts 5 containers (database, 2× Redis, frappe, Mailpit) with `workspace/` bind-mounted at `/workspace`
 6. Configures `common_site_config.json`, creates site, enables developer mode
 7. Installs any `--apps`
 8. Starts the dev server (`nohup bench start`)
@@ -338,6 +338,44 @@ Flags:
   --service string   Container to exec into (default "frappe")
   --exec string      Run a command non-interactively
 ```
+
+### `ffm open [name]`, `ffm mail [name]`, `ffm login [name]`
+
+Open the bench in the browser. Without a desktop session (SSH, a headless server) the URL is
+printed instead; `--print` always prints it and `--json` prints `{"schema": "ffm.url/v1", "url": …}`.
+
+```bash
+ffm open mybench              # the site
+ffm open mybench --mail       # the Mailpit inbox (same as 'ffm mail mybench')
+ffm open --traefik            # the shared proxy's dashboard
+ffm login mybench             # the desk, already logged in as Administrator (dev only)
+ffm login mybench --user jane@example.com --print
+```
+
+**Mail (dev).** Every dev bench runs [Mailpit](https://mailpit.axllent.org/). The site's
+`site_config.json` points `mail_server` at it, so everything the bench sends lands in the inbox
+on the web port + 6 (`http://localhost:8006` for the first bench) instead of reaching anyone.
+A default outgoing Email Account configured in the site still wins, and ffm never replaces a
+`mail_server` you set yourself. Benches created before v0.11.0 get Mailpit from `ffm reconcile`.
+
+**Login.** `ffm login` starts a session and opens `/app?sid=…`. The URL works as a password until
+the session ends, so it is printed only with `--print` or when nothing can be opened. Dev benches
+only.
+
+### `ffm console [name]` and `ffm db [name]`
+
+```bash
+ffm console mybench                         # bench --site <site> console (IPython, frappe loaded)
+ffm db mybench                              # bench --site <site> db-console (mariadb or psql)
+ffm db mybench --export dump.sql.gz         # .gz as Frappe writes it; any other name gets plain SQL
+ffm db mybench --import dump.sql.gz         # asks first; --yes skips the question (bench name required)
+ffm db mybench --import other.sql.gz --migrate --yes
+```
+
+`--import` goes through `bench restore`, which drops and recreates the site's database. Files and
+`site_config.json` stay: a dump from another site keeps this site's encryption key, so its Password
+fields will not decrypt. The root password reaches the container on stdin, never on a host command
+line. An export holds every password hash and API secret of the site and is written 0600.
 
 ### VS Code devcontainer (dev only)
 
@@ -644,7 +682,7 @@ Prints the build version, commit hash, and build date.
 ```
 ~/frappe/
   <bench-name>/
-    docker-compose.yml   # generated per bench (dev: 4 services, prod: 8 services)
+    docker-compose.yml   # generated per bench (dev: 5 services, prod: 8 services)
     Dockerfile           # dev: full tools image; prod: minimal image
     workspace/           # bind-mounted at /workspace in container
       frappe-bench/
@@ -670,7 +708,7 @@ Prints the build version, commit hash, and build date.
 
 ## Services per bench
 
-**Dev (4 containers):**
+**Dev (5 containers):**
 
 | Service | Image | Purpose |
 |--|--|--|
@@ -678,6 +716,7 @@ Prints the build version, commit hash, and build date.
 | `mariadb` or `postgres` | `mariadb:11.8` / `postgres:18` | Database (selected via `--db-type`) |
 | `redis-cache` | `redis:8-alpine` | Cache |
 | `redis-queue` | `redis:8-alpine` | Background job queue |
+| `mailpit` | `axllent/mailpit:v1.31.4` | Catches outgoing mail; UI on the web port + 6 (`ffm mail`) |
 
 **Prod (8 containers):**
 
@@ -715,6 +754,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm domain list <bench> --json` | `ffm.domains/v1` |
 | `ffm tunnel server --json [--show-secrets]` | `ffm.tunnel-servers/v1` (tokens only with `--show-secrets`) |
 | `ffm version --json` | `ffm.version/v1` |
+| `ffm open [bench] --json`, `ffm mail [bench] --json` | `ffm.url/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 
