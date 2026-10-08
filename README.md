@@ -270,6 +270,10 @@ create saves one.
   next create runs bench init again and replaces it. `--no-seed` (or `FFM_NO_SEED=1`) always
   starts from the branch heads and saves nothing; `bench update` inside a bench pulls as usual.
 - A frappe + erpnext seed is about 1.4 GB. `ffm clean --seeds` lists and removes them.
+- The copy is near-instant where the filesystem clones blocks (APFS, Btrfs, XFS). On ext4 it is
+  a real copy: 1–2 minutes for that seed on a busy test host. That still beats bench init plus
+  get-app plus bench build for erpnext, but by less. A restore (and so `ffm clone`) always runs
+  migrate and a build after loading the data, so there the seed saves only bench init and get-app.
 - Not on Windows yet.
 
 #### `--apps` formats
