@@ -1,0 +1,684 @@
+=== ffm
+Usage:
+  ffm [command]
+
+Available Commands:
+  backup      Archive a bench's site into a single restorable file
+  clean-logs  Delete old log table rows to reclaim database space
+  create      Create and start a new Frappe bench
+  dashboard   Web dashboard for managing Frappe benches
+  delete      Delete a bench and all its data
+  domain      Manage extra hostnames that route to a bench
+  ffc         Generate Frappe API keys and configure ffc inside a bench
+  list        List all managed benches
+  logs        Stream logs from a bench (all services or one)
+  proxy       Manage the shared Traefik reverse proxy (sitename.localhost routing)
+  reconcile   Apply this ffm version's templates to an existing bench without losing data
+  recreate    Delete a bench and provision it again from saved settings
+  restart     Restart a bench (stop then start)
+  restore     Rebuild a bench from a backup archive
+  set-proxy   Configure a bench to run behind a reverse proxy
+  shell       Open an interactive shell inside a bench container
+  start       Start a stopped bench
+  status      Show per-container status for a bench
+  stop        Stop a running bench (containers remain, data preserved)
+  tunnel      Expose a bench over a secure public URL via a VPS tunnel
+  update      Update ffm to the latest version
+  version     Print the ffm version
+
+Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm [command] --help" for more information about a command.
+
+=== ffm backup
+Usage:
+  ffm backup [name] [flags]
+  ffm backup [command]
+
+Examples:
+  ffm backup
+  ffm backup mybench
+  ffm backup mybench --out ~/archives
+  ffm backup mybench --no-files --label "before the v16 upgrade"
+  ffm backup mybench --vendor-apps my_app
+
+Available Commands:
+  list        List backup archives, newest first
+  prune       Apply a bench's retention policy to its scheduled archives now
+  run-due     Back up every bench whose schedule is due (run by the hourly system job)
+  schedule    Back a bench up automatically, keeping a bounded set of archives
+  scheduler   Manage the hourly system job that runs scheduled backups
+
+Flags:
+      --label string          Short note recorded in the archive
+      --no-files              Skip file attachments and archive the database only
+      --out string            Directory to write the archive into, or an explicit path ending in .tar (default: ~/frappe/_backups/<bench>/, overridable with $FFM_BACKUPS_DIR)
+      --skip-space-check      Write the archive without checking free disk space first
+      --vendor-apps strings   Also archive the source of these apps (comma-separated, or 'all'), uncommitted changes included. Apps that cannot be cloned back are archived regardless
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm backup [command] --help" for more information about a command.
+
+=== ffm backup list
+Usage:
+  ffm backup list [bench] [flags]
+
+Examples:
+  ffm backup list
+  ffm backup list mybench
+
+Flags:
+      --json   Print machine-readable JSON (schema ffm.backups/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup prune
+Usage:
+  ffm backup prune <bench> [flags]
+
+Examples:
+  ffm backup prune mybench --dry-run
+  ffm backup prune mybench
+
+Flags:
+      --dry-run   Show what would be removed without removing it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup run-due
+Usage:
+  ffm backup run-due [flags]
+
+Flags:
+      --dry-run      Report which benches are due without backing anything up
+      --log string   Append results to this file (rotated at 1 MiB) instead of stdout
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup schedule
+Usage:
+  ffm backup schedule [bench] [flags]
+
+Examples:
+  ffm backup schedule mybench --every 24h
+  ffm backup schedule mybench --every 1h --files weekly
+  ffm backup schedule mybench --every weekly --keep 3
+  ffm backup schedule mybench --off
+  ffm backup schedule
+
+Flags:
+      --every string      Interval: 1h, 6h, 24h, 168h (whole hours), or hourly/daily/weekly (default "24h")
+      --files string      Include attachments: every-run, daily, weekly or never
+      --json              With no bench: print every schedule as machine-readable JSON (schema ffm.schedules/v1)
+      --keep int          Keep N archives of the tier matching --every
+      --keep-daily int    Keep the newest archive of each of the last N days
+      --keep-hourly int   Keep the newest archive of each of the last N hours
+      --keep-weekly int   Keep the newest archive of each of the last N weeks
+      --no-install        Save the schedule without installing or removing the hourly system job
+      --off               Stop scheduled backups for the bench (archives are kept)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup scheduler
+Usage:
+  ffm backup scheduler [command]
+
+Available Commands:
+  install     Install or update the hourly job
+  print       Print the job for installing it by hand
+  status      Show whether the hourly job is installed and still valid
+  uninstall   Remove the hourly job (schedules are kept but stop running)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm backup scheduler [command] --help" for more information about a command.
+
+=== ffm backup scheduler install
+Usage:
+  ffm backup scheduler install [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup scheduler print
+Usage:
+  ffm backup scheduler print [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup scheduler status
+Usage:
+  ffm backup scheduler status [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup scheduler uninstall
+Usage:
+  ffm backup scheduler uninstall [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm clean-logs
+Usage:
+  ffm clean-logs [name] [flags]
+
+Flags:
+      --days int   Delete rows older than this many days (default 30)
+      --dry-run    Print row counts without deleting anything
+      --yes        Skip confirmation prompt
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm create
+Usage:
+  ffm create <name> [flags]
+
+Flags:
+      --acme-email string            Email for Let's Encrypt certificates (required on first --mode prod bench with SSL)
+      --admin-password string        Frappe site admin password (default "admin")
+      --alias-tls                    Serve --domain-alias names over HTTPS with Let's Encrypt instead of plain HTTP. Production with SSL only; every alias must be publicly resolvable.
+      --apps stringArray             Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch
+      --db-password string           Database root password (default "ffm123456")
+      --db-type string               Database engine: mariadb or postgres (default "mariadb")
+      --domain string                Public domain for production (required for --mode prod), e.g. erp.example.com
+      --domain-alias stringArray     Extra hostname the bench also answers on, e.g. erp.internal. Repeatable. Requires the shared proxy ('ffm proxy start') and DNS pointing the name at this host. Same as 'ffm domain add' after creation.
+      --frappe-branch string         Frappe branch (version-15 or version-16) (default "version-15")
+      --frappe-repo string           Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.
+      --github-token string          GitHub personal access token for private HTTPS repos
+      --gunicorn-workers int         Number of gunicorn worker processes (prod only). Rule of thumb: 2*CPU+1. (default 2)
+      --keep-on-failure              On failure, leave containers and the bench directory in place instead of rolling back, so logs survive for diagnosis. Env: FFM_KEEP_ON_FAILURE
+      --lan                          Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
+      --mariadb-buffer-pool string   InnoDB buffer pool size for MariaDB (e.g. 512M, 1G, 2G, 4G). Prod only; dev uses 256M. (default "1G")
+      --match-host-user              Build the image with the container's frappe user remapped to your uid/gid. Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER
+      --mode string                  Bench mode: dev or prod (default "dev")
+      --no-ssl                       Skip Let's Encrypt SSL in production (handle TLS externally via Caddy/Nginx)
+      --proxy-host string            Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)
+      --proxy-port int               Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)
+      --redis-cache-maxmem string    Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction. (default "512mb")
+      --redis-queue-maxmem string    Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped. (default "512mb")
+      --slow-query-log               Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.
+      --socketio-port int            Fixed host Socket.IO port. Must equal --web-port + 1000.
+      --ssh-agent                    Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK
+      --web-port int                 Fixed host web port instead of auto-allocating from 8000. Must be paired with --socketio-port (= web port + 1000). Each bench publishes a 6-port range, so parallel benches must be at least 10 apart.
+      --worker-long-replicas int     Number of long-queue background worker replicas (prod only). (default 1)
+      --worker-short-replicas int    Number of short-queue background worker replicas (prod only). (default 1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm dashboard
+Usage:
+  ffm dashboard [command]
+
+Available Commands:
+  logs        Show dashboard daemon log
+  start       Start the web dashboard
+  status      Show dashboard daemon status
+  stop        Stop the background dashboard
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm dashboard [command] --help" for more information about a command.
+
+=== ffm dashboard logs
+Usage:
+  ffm dashboard logs [flags]
+
+Flags:
+  -f, --follow      Follow log output
+      --lines int   Number of lines (default 50)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm dashboard start
+Usage:
+  ffm dashboard start [flags]
+
+Flags:
+      --admin-password string   HTTP Basic password for /admin
+  -d, --daemon                  Run in background
+      --listen string           Listen address (default 127.0.0.1:8787)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm dashboard status
+Usage:
+  ffm dashboard status [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm dashboard stop
+Usage:
+  ffm dashboard stop [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm delete
+Usage:
+  ffm delete [name] [flags]
+
+Aliases:
+  delete, rm, remove
+
+Flags:
+      --force       Skip confirmation prompt
+      --no-backup   Do not back the bench up before deleting it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm domain
+Usage:
+  ffm domain [flags]
+  ffm domain [command]
+
+Available Commands:
+  add         Route an extra hostname to a bench
+  list        List the hostnames routed to a bench
+  remove      Stop routing a hostname to a bench
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm domain [command] --help" for more information about a command.
+
+=== ffm domain add
+Usage:
+  ffm domain add <domain> [bench] [flags]
+
+Examples:
+  ffm domain add erp.internal
+  ffm domain add shop.test mybench
+  ffm domain add erp.example.org prodbench --tls
+
+Flags:
+      --tls   Serve the aliases over HTTPS with Let's Encrypt instead of plain HTTP. Production benches with SSL only, and every alias must be publicly resolvable — Traefik puts them in one certificate request, so a name it cannot reach fails the whole order.
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm domain list
+Usage:
+  ffm domain list [bench] [flags]
+
+Flags:
+      --json   Print machine-readable JSON (schema ffm.domains/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm domain remove
+Usage:
+  ffm domain remove <domain> [bench] [flags]
+
+Aliases:
+  remove, rm
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm ffc
+Usage:
+  ffm ffc [name] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm list
+Usage:
+  ffm list [flags]
+
+Aliases:
+  list, ls
+
+Flags:
+      --json   Print machine-readable JSON (schema ffm.list/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm logs
+Usage:
+  ffm logs [name] [service] [flags]
+
+Flags:
+  -f, --follow   Follow log output (default true)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm proxy
+Usage:
+  ffm proxy [flags]
+  ffm proxy [command]
+
+Available Commands:
+  start       Start the Traefik proxy (enables sitename.localhost routing)
+  status      Show the current proxy status
+  stop        Stop the Traefik proxy (benches remain accessible on their direct ports)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm proxy [command] --help" for more information about a command.
+
+=== ffm proxy start
+Usage:
+  ffm proxy start [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm proxy status
+Usage:
+  ffm proxy status [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm proxy stop
+Usage:
+  ffm proxy stop [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm reconcile
+Usage:
+  ffm reconcile [name] [flags]
+
+Flags:
+      --dry-run        Show what would change without touching the bench
+      --lan            Publish the ports on all interfaces
+      --loopback       Publish the ports on 127.0.0.1 only
+      --no-ssh-agent   Stop forwarding the host SSH agent
+      --ssh-agent      Forward the host SSH agent into the dev container
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm recreate
+Usage:
+  ffm recreate [name] [flags]
+
+Flags:
+      --force                 Skip confirmation prompt
+      --github-token string   GitHub token for private app repos (not stored in state)
+      --no-backup             Do not back the bench up before tearing it down
+      --proxy-host string     Override derived reverse-proxy hostname for dev (without scheme)
+      --proxy-port int        Override derived reverse-proxy public port for dev (socketio_port)
+      --reallocate-ports      Allocate a new web/socketio port pair instead of reusing stored ports
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm restart
+Usage:
+  ffm restart [name] [flags]
+
+Flags:
+      --fresh     With --rebuild: ignore the build cache and re-pull the base image, updating ffc, Claude Code and the other tools (implies --rebuild)
+      --rebuild   Rebuild the Docker image before starting
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm restore
+Usage:
+  ffm restore <archive> [name] [flags]
+
+Examples:
+  ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
+  ffm restore mybench_20260826T090000Z.ffm.tar staging
+  ffm restore mybench_20260826T090000Z.ffm.tar --dry-run
+  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps
+  ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
+
+Flags:
+      --acme-email string              Let's Encrypt account address for a production restore
+      --admin-password string          Set a new Administrator password instead of keeping the archived one
+      --allow-missing-encryption-key   Restore even though the archive has no site encryption key, accepting that Password fields (email passwords, integration secrets) will not decrypt
+      --app stringArray                Clone an app from this source instead: <app>=<git-url>[@branch] (repeatable; frappe=... sets the framework's repo)
+      --domain string                  Override the production domain recorded in the archive
+      --dry-run                        Validate the archive and print the plan without creating anything
+      --encryption-key string          Key for a GPG-encrypted database dump, when the archive does not carry it
+      --github-token string            GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it
+      --keep-on-failure                Leave a failed restore in place for diagnosis instead of removing it
+      --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
+      --no-files                       Restore the database only, without attachments
+      --no-ssl                         Serve the restored production bench over plain HTTP
+      --pin-apps                       Check each app out at the commit recorded in the archive instead of its branch head
+      --reallocate-ports               Always assign a fresh port pair instead of reusing the archive's
+      --skip-migrate                   Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions
+      --skip-space-check               Restore without checking free disk space first
+      --socketio-port int              Explicit host Socket.IO port
+      --ssh-agent                      Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK
+      --web-port int                   Explicit host web port
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm set-proxy
+Usage:
+  ffm set-proxy [name] [flags]
+
+Flags:
+      --host string   Public domain, e.g. frappe.example.com (sets per-site host_name)
+      --no-ssl        Disable SSL mode even when --port 443 is used
+      --port int      Public port the reverse proxy listens on (sets socketio_port) (default 443)
+      --print-caddy   Print a Caddy config snippet for this bench
+      --print-nginx   Print an Nginx config snippet for this bench
+      --reset         Restore creation-time defaults (dev: published socketio port, no ssl; prod: port 443, ssl on)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm shell
+Usage:
+  ffm shell [name] [flags]
+
+Flags:
+      --exec string      Run a command non-interactively and print its output
+      --service string   Container service to shell into (default "frappe")
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm start
+Usage:
+  ffm start [name] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm status
+Usage:
+  ffm status [name] [flags]
+
+Flags:
+      --json           Print machine-readable JSON (schema ffm.status/v1)
+      --show-secrets   Include the admin and database passwords in --json output
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm stop
+Usage:
+  ffm stop [name] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm tunnel
+Usage:
+  ffm tunnel [name] [flags]
+  ffm tunnel [command]
+
+Available Commands:
+  server      Manage VPS tunnel server profiles
+
+Flags:
+      --allow-default-password   Publish the bench even though it still has the default admin password
+      --off                      Disable the tunnel and restore direct-access Frappe settings
+      --print                    Print the rendered frpc.toml without applying anything
+      --server string            Tunnel server profile name (default: configured default)
+      --subdomain string         Public subdomain slug (default: bench name)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm tunnel [command] --help" for more information about a command.
+
+=== ffm tunnel server
+Usage:
+  ffm tunnel server [flags]
+  ffm tunnel server [command]
+
+Available Commands:
+  add         Add a new tunnel server profile
+  remove      Remove a tunnel server profile
+  set         Edit an existing tunnel server profile
+  use         Set the default tunnel server profile
+
+Flags:
+      --json           Print machine-readable JSON (schema ffm.tunnel-servers/v1)
+      --show-secrets   Include auth tokens in --json output
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm tunnel server [command] --help" for more information about a command.
+
+=== ffm tunnel server add
+Usage:
+  ffm tunnel server add <name> [flags]
+
+Flags:
+      --base-domain string   Base domain for tunnels, e.g. tunnel.example.com
+      --host string          VPS hostname or IP address
+      --no-tls               Disable TLS on the frp control channel
+      --port string          frps bind port (control channel), e.g. 7000
+      --token string         frps auth token
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm tunnel server remove
+Usage:
+  ffm tunnel server remove <name> [flags]
+
+Aliases:
+  remove, rm, delete
+
+Flags:
+  -y, --yes   Remove without asking for confirmation
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm tunnel server set
+Usage:
+  ffm tunnel server set <name> [flags]
+
+Flags:
+      --base-domain string   Base domain for tunnels
+      --host string          VPS hostname or IP address
+      --no-tls               Disable TLS on the frp control channel
+      --port string          frps bind port
+      --token string         frps auth token
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm tunnel server use
+Usage:
+  ffm tunnel server use <name> [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm update
+Usage:
+  ffm update [flags]
+
+Flags:
+      --check   Only check for updates, do not install
+  -y, --yes     Skip confirmation prompt
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm version
+Usage:
+  ffm version [flags]
+
+Flags:
+      --json   Print machine-readable JSON (schema ffm.version/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+

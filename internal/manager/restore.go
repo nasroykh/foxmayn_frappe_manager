@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/archive"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -803,14 +803,14 @@ func checkRestoreSpace(in RestoreInput, archiveBytes int64) error {
 
 // dockerHasVolumes reports whether any volume belongs to a compose project.
 func dockerHasVolumes(project string) bool {
-	out, err := exec.Command("docker", "volume", "ls", "-q",
+	out, err := execx.Command("docker", "volume", "ls", "-q",
 		"--filter", "label=com.docker.compose.project="+project).Output()
 	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 // dockerHasContainers reports whether any container belongs to a compose project.
 func dockerHasContainers(project string) bool {
-	out, err := exec.Command("docker", "ps", "-aq",
+	out, err := execx.Command("docker", "ps", "-aq",
 		"--filter", "label=com.docker.compose.project="+project).Output()
 	return err == nil && strings.TrimSpace(string(out)) != ""
 }

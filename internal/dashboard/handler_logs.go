@@ -2,9 +2,9 @@ package dashboard
 
 import (
 	"fmt"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"io"
 	"net/http"
-	"os/exec"
 )
 
 // LogsStream streams docker compose logs via SSE.
@@ -32,7 +32,7 @@ func (h *Handler) LogsStream(w http.ResponseWriter, r *http.Request) {
 	if service != "" {
 		args = append(args, service)
 	}
-	cmd := exec.Command("docker", args...)
+	cmd := execx.Command("docker", args...)
 	cmd.Dir = b.Dir
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
