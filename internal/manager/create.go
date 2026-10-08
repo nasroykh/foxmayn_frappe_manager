@@ -2,7 +2,6 @@ package manager
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -119,6 +118,25 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		return fmt.Errorf("a dev bench with domain aliases needs --lan: the browser reaches socket.io on the published port, which is otherwise bound to 127.0.0.1")
 	}
 	sshAgent := in.SSHAgent && mode == "dev"
+	agent := in.Agent || in.AgentReadOnly
+	agentReadOnly := in.AgentReadOnly
+	if agent {
+		switch {
+		case mode != "dev":
+			return fmt.Errorf("--agent is for dev benches")
+		case bind == state.BindLAN:
+			return fmt.Errorf("--agent keeps the bench's ports on 127.0.0.1; drop --lan")
+		case in.SSHAgent:
+			return fmt.Errorf("--agent does not forward your SSH agent into the bench; drop --ssh-agent")
+		}
+		if newBench && adminPassword == defaultAdminPassword {
+			generated, err := randomPassword()
+			if err != nil {
+				return err
+			}
+			adminPassword = generated
+		}
+	}
 	if sshAgent && os.Getenv("SSH_AUTH_SOCK") == "" {
 		return fmt.Errorf("--ssh-agent needs a running SSH agent (SSH_AUTH_SOCK is not set)")
 	}
@@ -729,8 +747,11 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 		step("Generating API keys and configuring ffc")
 		ffcConfigured = true
-		if err := setupFfcConfig(runner, name, siteName); err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffc init' inside the bench shell to configure manually)\n", err)
+		access := state.Bench{Name: name, Dir: benchDir, Mode: mode, SiteName: siteName, WebPort: webPort,
+			FrappeBranch: frappeBranch, Python: toolchain.Python, Node: toolchain.Node,
+			Agent: agent, AgentReadOnly: agentReadOnly}
+		if _, err := setupBenchAccess(runner, access); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffm ffc %s' once the bench is up)\n", err, name)
 			ffcConfigured = false
 		}
 	}
@@ -758,6 +779,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		MatchHostUser: in.MatchHostUser,
 		Bind:          bind,
 		SSHAgent:      sshAgent,
+		Agent:         agent,
+		AgentReadOnly: agentReadOnly,
 		// The compose file was rendered from this build's templates.
 		TemplateVersion: bench.TemplateVersion,
 		CreatedAt:       time.Now(),
@@ -827,35 +850,6 @@ func socketioFrappeURL(mode string) string {
 		return "http://frappe:8000"
 	}
 	return "http://127.0.0.1:8000"
-}
-
-// setupFfcConfig generates Frappe API keys via Python inside the container and
-// writes ~/.config/ffc/config.yaml. No HTTP server needs to be running.
-func setupFfcConfig(runner *bench.Runner, benchName, siteName string) error {
-	keys, err := runner.GenerateAdminAPIKeys(siteName)
-	if err != nil {
-		return err
-	}
-	return writeFfcConfig(runner, benchName, keys.Key, keys.Secret)
-}
-
-// writeFfcConfig writes the container's ~/.config/ffc/config.yaml with a single
-// site named after the bench. It is base64-encoded on the way in so no value
-// is ever interpreted by the shell.
-func writeFfcConfig(runner *bench.Runner, benchName, apiKey, apiSecret string) error {
-	cfg := fmt.Sprintf(
-		"default_site: %s\nnumber_format: french\ndate_format: yyyy-mm-dd\nsites:\n  %s:\n    url: \"http://localhost:8000\"\n    api_key: \"%s\"\n    api_secret: \"%s\"\n",
-		benchName, benchName, apiKey, apiSecret,
-	)
-	encoded := base64.StdEncoding.EncodeToString([]byte(cfg))
-	cmd := fmt.Sprintf(
-		"mkdir -p /home/frappe/.config/ffc && echo '%s' | base64 -d > /home/frappe/.config/ffc/config.yaml",
-		encoded,
-	)
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
-		return fmt.Errorf("write ffc config: %w", err)
-	}
-	return nil
 }
 
 // Defaults the CLI and dashboard offer. Prod refuses the admin one and replaces
@@ -934,7 +928,7 @@ func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode st
 
 	if mode == "dev" {
 		frappeBench := filepath.Join(workspaceDir, "frappe-bench")
-		if err := writeClaudeMcpConfigHost(frappeBench, name); err != nil {
+		if err := writeClaudeMcpConfigHost(frappeBench, name, false); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 		// Make the RQ worker self-restart so an idle Redis timeout (which exits

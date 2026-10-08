@@ -43,6 +43,8 @@ func newCreateCmd() *cobra.Command {
 		domainAliases     []string
 		aliasTLS          bool
 		noSeed            bool
+		agent             bool
+		agentReadOnly     bool
 	)
 
 	cmd := &cobra.Command{
@@ -104,6 +106,7 @@ func newCreateCmd() *cobra.Command {
 				FixedWebPort:  webPort, FixedSocketIOPort: socketIOPort,
 				DomainAliases: domainAliases, AliasTLS: aliasTLS,
 				NoSeed: noSeed || envEnabled("FFM_NO_SEED"),
+				Agent:  agent, AgentReadOnly: agentReadOnly,
 			}, manager.CLIProgress{})
 		},
 	}
@@ -157,6 +160,10 @@ func newCreateCmd() *cobra.Command {
 		"Serve --domain-alias names over HTTPS with Let's Encrypt instead of plain HTTP. "+
 			"Production with SSL only; every alias must be publicly resolvable.")
 
+	cmd.Flags().BoolVar(&agent, "agent", false,
+		"Agent-ready dev bench: ports on 127.0.0.1, no SSH agent, a random admin password unless you set one, "+
+			"and ffc/MCP acting as a dedicated System Manager user (agent@<site>) instead of Administrator")
+	cmd.Flags().BoolVar(&agentReadOnly, "agent-read-only", false, "Like --agent, with the MCP server limited to read tools")
 	cmd.Flags().BoolVar(&noSeed, "no-seed", false,
 		"Run bench init, get-app and bench build from the branch heads instead of copying a seed, and do not save one. Env: FFM_NO_SEED")
 

@@ -2,8 +2,6 @@ package manager
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // SetupFFC generates API keys and writes ffc config inside the bench container.
@@ -24,23 +22,17 @@ func (s *Service) SetupFFC(name string, pw ProgressWriter) error {
 	runner := s.runnerFor(b)
 
 	pw.Printf("Setting up ffc for bench %q...\n", name)
-	pw.Println("  [1] Generating Frappe API keys")
-	keys, err := runner.GenerateAdminAPIKeys(b.SiteName)
-	if err != nil {
-		return fmt.Errorf("generate API keys: %w", err)
+	who := "Administrator"
+	if b.Agent {
+		who = agentEmail(b)
 	}
-
-	pw.Println("  [2] Writing ~/.config/ffc/config.yaml inside the container")
-	if err := writeFfcConfig(runner, name, keys.Key, keys.Secret); err != nil {
+	pw.Printf("  [1] Minting API keys for %s and configuring ffc, .mcp.json and AGENTS.md\n", who)
+	keys, err := setupBenchAccess(runner, b)
+	if err != nil {
 		return err
 	}
 
-	frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
-	if err := ensureClaudeMcpConfigHost(frappeBench, name); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
-	}
-
-	pw.Println("  [3] Verifying ffc connectivity (ffc ping)")
+	pw.Println("  [2] Verifying ffc connectivity (ffc ping)")
 	out, pingErr := runner.ExecSilent("frappe", "bash", "-c", "ffc ping")
 
 	pw.Printf("\nffc configured on bench %q.\n", name)

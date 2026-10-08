@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx/fakeexec"
@@ -113,3 +114,5 @@ func TestReconcileDryRunChangesNothing(t *testing.T) {
 		t.Errorf("dry run ran commands: %v", fake.Calls())
 	}
 }
+
+func init() { devServerWait = 50 * time.Millisecond }

@@ -26,6 +26,8 @@ func fullBench() state.Bench {
 		SocketIOPort:      9010,
 		FrappeBranch:      "version-16",
 		FrappeRepo:        "https://github.com/acme/frappe",
+		Agent:             true,
+		AgentReadOnly:     true,
 		Python:            "3.12",
 		Node:              "22",
 		AdminPassword:     "s3cret-admin",

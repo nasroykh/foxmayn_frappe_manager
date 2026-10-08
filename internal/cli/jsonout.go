@@ -67,6 +67,8 @@ type jsonStatus struct {
 	Apps          []string        `json:"apps"`
 	Bind          string          `json:"bind"`
 	SSHAgent      bool            `json:"ssh_agent"`
+	Agent         bool            `json:"agent"`
+	AgentReadOnly bool            `json:"agent_read_only"`
 	DomainAliases []string        `json:"domain_aliases"`
 	CreatedAt     string          `json:"created_at,omitempty"`
 	Containers    []jsonContainer `json:"containers"`

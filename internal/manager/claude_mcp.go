@@ -19,23 +19,24 @@ type claudeMcpServerEntry struct {
 	Args    []string `json:"args"`
 }
 
-func claudeMcpConfigBytes(benchName string) ([]byte, error) {
+func claudeMcpConfigBytes(benchName string, readOnly bool) ([]byte, error) {
+	args := []string{"mcp", "--site", benchName}
+	if readOnly {
+		args = append(args, "--read-only")
+	}
 	cfg := claudeMcpFile{
 		MCPServers: map[string]claudeMcpServerEntry{
-			"frappe": {
-				Command: "ffc",
-				Args:    []string{"mcp", "--site", benchName},
-			},
+			"frappe": {Command: "ffc", Args: args},
 		},
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
-func writeClaudeMcpConfigHost(frappeBenchDir, benchName string) error {
+func writeClaudeMcpConfigHost(frappeBenchDir, benchName string, readOnly bool) error {
 	if err := os.MkdirAll(frappeBenchDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir frappe-bench: %w", err)
 	}
-	payload, err := claudeMcpConfigBytes(benchName)
+	payload, err := claudeMcpConfigBytes(benchName, readOnly)
 	if err != nil {
 		return fmt.Errorf("marshal .mcp.json: %w", err)
 	}
@@ -46,12 +47,12 @@ func writeClaudeMcpConfigHost(frappeBenchDir, benchName string) error {
 	return nil
 }
 
-func ensureClaudeMcpConfigHost(frappeBenchDir, benchName string) error {
+func ensureClaudeMcpConfigHost(frappeBenchDir, benchName string, readOnly bool) error {
 	path := filepath.Join(frappeBenchDir, ".mcp.json")
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat .mcp.json: %w", err)
 	}
-	return writeClaudeMcpConfigHost(frappeBenchDir, benchName)
+	return writeClaudeMcpConfigHost(frappeBenchDir, benchName, readOnly)
 }

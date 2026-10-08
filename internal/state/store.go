@@ -125,6 +125,11 @@ type Bench struct {
 	// is opt-in because a bench created with it broke every later compose call
 	// made without SSH_AUTH_SOCK (cron backups, sudo, the dashboard daemon).
 	SSHAgent bool `json:"ssh_agent,omitempty"`
+	// Agent marks the agent-ready profile (ffm create --agent, ffm agent on):
+	// ffc and the MCP server use a dedicated System Manager user instead of
+	// Administrator. AgentReadOnly limits the MCP server to read tools.
+	Agent         bool `json:"agent,omitempty"`
+	AgentReadOnly bool `json:"agent_read_only,omitempty"`
 	// TemplateVersion is the bench.TemplateVersion this bench's
 	// docker-compose.yml was last rendered from, by create or reconcile. Zero
 	// on records written before it existed.
