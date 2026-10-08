@@ -64,6 +64,7 @@ func runList(asJSON bool) error {
 	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 	runningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	stoppedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	partialStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	domainStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true)
@@ -87,7 +88,11 @@ func runList(asJSON bool) error {
 		}
 
 		statusRendered := runningStyle.Render(v.Status)
-		if strings.ToLower(v.Status) != "running" {
+		switch strings.ToLower(v.Status) {
+		case "running":
+		case "partial":
+			statusRendered = partialStyle.Render(v.Status)
+		default:
 			statusRendered = stoppedStyle.Render(v.Status)
 		}
 
@@ -121,11 +126,19 @@ func runList(asJSON bool) error {
 	if !proxyUp && devBenchExists {
 		fmt.Printf("\n  %s\n", mutedStyle.Render("Run 'ffm proxy start' to enable sitename.localhost routing."))
 	}
-	var outdated []string
+	var outdated, partial []string
 	for _, v := range views {
 		if v.TemplatesOutdated {
 			outdated = append(outdated, v.Name)
 		}
+		if v.Status == "partial" {
+			partial = append(partial, v.Name)
+		}
+	}
+	if len(partial) > 0 {
+		fmt.Printf("\n  %s\n", partialStyle.Render(fmt.Sprintf(
+			"Partly running (the frappe container is down): %s. Run 'ffm restart <bench>'; 'ffm logs <bench> frappe' shows why it stopped.",
+			strings.Join(partial, ", "))))
 	}
 	if len(outdated) > 0 {
 		fmt.Printf("\n  %s\n", stoppedStyle.Render(fmt.Sprintf(

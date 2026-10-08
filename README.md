@@ -311,6 +311,9 @@ Both `--frappe-repo` and `--github-token` are also available in the interactive 
 ### `ffm list` / `ffm ls`
 
 Lists all managed benches with their live status, mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.
+The status is `running` when the bench's frappe container runs, `partial` when only other containers
+do (the bench serves nothing: `ffm restart <bench>`, and `ffm logs <bench> frappe` for the cause),
+`stopped`, or `unknown` when Docker cannot be asked.
 
 ### `ffm status [name]`
 
@@ -426,7 +429,8 @@ Stops every running bench and the shared proxy (`--keep-proxy` leaves the proxy 
 ### `ffm clean`
 
 Lists, then removes after confirmation, the Docker volumes and images of ffm benches that no longer
-exist: no record, no bench directory and no ffm operation in progress. A bench tracked under another
+exist: no record, no bench directory, no container (running or stopped) and no ffm operation in
+progress. A bench tracked under another
 `FFM_CONFIG_DIR` looks gone from here, so read the list.
 
 ```bash

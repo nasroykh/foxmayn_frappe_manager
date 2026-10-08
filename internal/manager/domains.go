@@ -283,7 +283,7 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
 	}
 
-	if s.LiveStatus(b) != "running" {
+	if st := s.LiveStatus(b); st != StatusRunning && st != StatusPartial {
 		pw.Println("  Bench is not running — the new routing applies on the next 'ffm start'.")
 		return nil
 	}

@@ -19,7 +19,7 @@ func (s *Service) Poweroff(keepProxy bool, pw ProgressWriter) error {
 	var failed []string
 	stopped := 0
 	for _, b := range benches {
-		if s.LiveStatus(b) == "stopped" {
+		if s.LiveStatus(b) == StatusStopped {
 			continue
 		}
 		if err := s.Stop(b.Name, pw); err != nil {

@@ -142,7 +142,7 @@ var devServerWait = 90 * time.Second
 // dev server first, because ffc checks the credentials against the site. It
 // reports whether ffc is configured afterwards.
 func (s *Service) healDevAccess(b state.Bench, pw ProgressWriter) bool {
-	if !hasMailpit(b) || s.LiveStatus(b) != "running" {
+	if !hasMailpit(b) || s.LiveStatus(b) != StatusRunning {
 		return false
 	}
 	if _, err := os.Stat(filepath.Join(b.Dir, "home", "ffc", "config.yaml")); err == nil {

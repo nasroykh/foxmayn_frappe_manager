@@ -57,6 +57,11 @@ func (s *Service) CleanPlan(in CleanInput) ([]CleanItem, error) {
 		if _, err := os.Stat(config.BenchDir(name)); err == nil {
 			return "", false
 		}
+		// Containers, running or stopped, mean the project is in use: a
+		// bench another FFM_CONFIG_DIR tracks, or one run by hand.
+		if dockerOut("ps", "-a", "-q", "--filter", "label="+composeProjectLabel+"="+project) != "" {
+			return "", false
+		}
 		release, err := s.lockBench(name)
 		if err != nil {
 			return "", false

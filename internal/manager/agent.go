@@ -36,6 +36,13 @@ frappe.db.commit()
 print("FFM_KEYS=" + json.dumps({"api_key": keys.get("api_key") or frappe.db.get_value("User", email, "api_key"), "api_secret": keys["api_secret"]}))
 `
 
+// mintEncryptionKeyScript makes Frappe write the site's encryption_key now.
+const mintEncryptionKeyScript = `import sys, frappe
+from frappe.utils.password import get_encryption_key
+frappe.init(site=sys.argv[1], sites_path=".")
+get_encryption_key()
+`
+
 // disableAgentScript disables the agent user, which also stops its API keys.
 const disableAgentScript = `import sys, frappe
 frappe.init(site=sys.argv[1], sites_path=".")

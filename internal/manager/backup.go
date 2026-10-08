@@ -88,7 +88,18 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	// refusing here would block the most valuable moment to take a backup: just
 	// before `ffm delete` or `ffm recreate`.
 	startedForBackup := false
-	if status := s.LiveStatus(b); status != "running" {
+	status := s.LiveStatus(b)
+	if status == StatusPartial {
+		// Something runs, so the user meant the bench to be up: bring back
+		// what is missing and leave it running afterwards.
+		pw.Step("Starting the bench's frappe and database containers (they were down)")
+		if err := runner.UpServices(dbService(b), "frappe"); err != nil {
+			return fmt.Errorf("start bench for backup: %w", err)
+		}
+		if err := s.waitForDB(runner, b, pw); err != nil {
+			return err
+		}
+	} else if status != StatusRunning {
 		if in.SkipIfStopped {
 			// "unknown" means docker could not be asked at all — under cron,
 			// typically a PATH without docker. Reporting that as "stopped"

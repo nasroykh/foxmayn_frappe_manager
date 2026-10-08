@@ -84,10 +84,13 @@ func TestDevComposeHasUVCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(out), "uv-cache") {
-		t.Error("dev compose mounts a uv-cache volume; its root would be owned by root")
+	for _, bad := range []string{"uv-cache", "yarn-cache"} {
+		if strings.Contains(string(out), bad) {
+			t.Errorf("dev compose mounts a %s volume; its root would be owned by root", bad)
+		}
 	}
-	for _, want := range []string{"pip-cache:/home/frappe/.cache/pip", "UV_CACHE_DIR=/home/frappe/.cache/pip/uv", "UV_LINK_MODE=copy"} {
+	for _, want := range []string{"pip-cache:/home/frappe/.cache/pip", "UV_CACHE_DIR=/home/frappe/.cache/pip/uv",
+		"YARN_CACHE_FOLDER=/home/frappe/.cache/pip/yarn", "UV_LINK_MODE=copy"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("dev compose lacks %q", want)
 		}
