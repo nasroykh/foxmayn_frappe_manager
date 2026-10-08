@@ -102,6 +102,25 @@ type ComposeData struct {
 	HostGID int
 }
 
+// FfcSkillsRef is the ffc release whose agent skills the dev image bundles.
+// Pinned so an ffc reorganisation cannot break image builds; bump it with
+// ffc releases.
+const FfcSkillsRef = "v1.13.0"
+
+// FfcSkillsRef exposes the pinned ffc release to the Dockerfile template.
+func (ComposeData) FfcSkillsRef() string { return FfcSkillsRef }
+
+// InstallSkillsCmd copies the agent skills baked into the dev image (the
+// Frappe skill pack and ffc's skills) into the bench, for Claude Code and other
+// agents. It also removes foxmayn-frappe-cli, the single ffc skill that ffc
+// v1.13.0 replaced.
+const InstallSkillsCmd = "mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills" +
+	" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/" +
+	" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/" +
+	" && cp -r /opt/ffc-skills/. /workspace/frappe-bench/.agents/skills/" +
+	" && cp -r /opt/ffc-skills/. /workspace/frappe-bench/.claude/skills/" +
+	" && rm -rf /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli"
+
 // domainLabelRe matches a single DNS label: alphanumeric, inner hyphens only.
 var domainLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 

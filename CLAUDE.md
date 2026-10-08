@@ -467,7 +467,7 @@ internal/
   control. `--no-ssl` calls `EnsureNetwork()` instead and publishes ports directly.
 - **Claude/agent skills + ffc** — dev benches only. Skills are pre-fetched into the dev image and
   copied during bench init; `Service.Start` back-fills them idempotently if
-  `.claude/skills/foxmayn-frappe-cli/SKILL.md` is missing, and also rewrites `.mcp.json` (wiring
+  `.claude/skills/ffc-core/SKILL.md` is missing (ffc skills come from a pinned ffc release, `bench.FfcSkillsRef`), and also rewrites `.mcp.json` (wiring
   Claude Code to `ffc mcp --site <name>`) and re-applies the three patches above.
 - **Private repos** — `--apps` takes short names, SSH URLs, HTTPS URLs, and `@branch` suffixes.
   SSH agent forwarding is opt-in with `--ssh-agent` (dev only), persisted as `Bench.SSHAgent`; the

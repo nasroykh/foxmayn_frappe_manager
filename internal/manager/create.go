@@ -421,13 +421,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		benchInitRepoArgs,
 	)
 	if mode == "dev" {
-		benchInitCmd = baseInit +
-			` && mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills` +
-			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/` +
-			` && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/` +
-			` && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli` +
-			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/` +
-			` && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/`
+		benchInitCmd = baseInit + " && " + bench.InstallSkillsCmd
 	} else {
 		benchInitCmd = baseInit
 	}

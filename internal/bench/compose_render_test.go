@@ -128,3 +128,22 @@ func TestWriteComposeKeepsPreviousVersion(t *testing.T) {
 		t.Fatalf(".bak mode = %v, want 0600", st.Mode().Perm())
 	}
 }
+
+// The dev image must fetch ffc's skills from a pinned release, never main:
+// fetching main broke every dev image build when ffc reorganised its skills.
+func TestDevDockerfilePinsFfcSkills(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteDockerfile(dir, ComposeData{Mode: "dev", DBType: "mariadb"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "refs/tags/"+FfcSkillsRef) {
+		t.Fatalf("dev Dockerfile does not fetch ffc skills at %s", FfcSkillsRef)
+	}
+	if strings.Contains(string(out), "foxmayn_frappe_cli/main/skills") {
+		t.Fatal("dev Dockerfile still fetches ffc skills from main")
+	}
+}

@@ -44,10 +44,19 @@ RUN curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/mai
 RUN git clone --depth=1 https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package.git /opt/frappe-skills \
     && chmod -R a+rX /opt/frappe-skills
 
-# Pre-fetch ffc skill
-RUN mkdir -p /opt/ffc-skill \
-    && curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/main/skills/foxmayn-frappe-cli/SKILL.md \
-       -o /opt/ffc-skill/SKILL.md
+# Pre-fetch the ffc agent skills from a pinned ffc release. Fetching them from
+# ffc's main branch broke every dev image build when ffc reorganised its skills
+# (v1.13.0 split foxmayn-frappe-cli into focused skills). The ffc-dev* skills
+# are for working on ffc itself and are left out.
+RUN mkdir -p /opt/ffc-skills /tmp/ffc-src \
+    && curl -fsSL https://codeload.github.com/nasroykh/foxmayn_frappe_cli/tar.gz/refs/tags/{{.FfcSkillsRef}} \
+       | tar -xz -C /tmp/ffc-src --strip-components=1 \
+    && for d in /tmp/ffc-src/skills/*/; do \
+         case "$(basename "$d")" in ffc-dev*) ;; *) cp -r "$d" /opt/ffc-skills/ ;; esac; \
+       done \
+    && test -f /opt/ffc-skills/ffc-core/SKILL.md \
+    && rm -rf /tmp/ffc-src \
+    && chmod -R a+rX /opt/ffc-skills
 
 # Install pnpm via corepack (system-wide)
 RUN corepack enable pnpm

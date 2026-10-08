@@ -42,13 +42,11 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 
 	if b.IsDev() {
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"[ -f /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/SKILL.md ] ||"+
-				" (mkdir -p /workspace/frappe-bench/.agents/skills /workspace/frappe-bench/.claude/skills"+
-				" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.agents/skills/"+
-				" && cp -r /opt/frappe-skills/skills/source/. /workspace/frappe-bench/.claude/skills/"+
-				" && mkdir -p /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli"+
-				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.agents/skills/foxmayn-frappe-cli/"+
-				" && cp /opt/ffc-skill/SKILL.md /workspace/frappe-bench/.claude/skills/foxmayn-frappe-cli/)"); err != nil && s.Verbose {
+			// Images built before the ffc skills were split have no
+			// /opt/ffc-skills; those benches keep the skills they have until
+			// 'ffm restart --rebuild'.
+			"[ -f /workspace/frappe-bench/.claude/skills/ffc-core/SKILL.md ] || [ ! -d /opt/ffc-skills ] ||"+
+				" ("+bench.InstallSkillsCmd+")"); err != nil && s.Verbose {
 			pw.Printf("warning: could not install frappe skills: %v\n", err)
 		}
 
