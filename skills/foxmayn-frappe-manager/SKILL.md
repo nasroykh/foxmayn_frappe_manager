@@ -223,6 +223,10 @@ ffm login mybench --print           # desk URL already logged in as Administrato
 ffm db mybench --export dump.sql.gz # site database to a file (0600; holds password hashes)
 ffm db mybench --import dump.sql.gz --yes [--migrate]   # replaces the site database
 ffm console mybench                 # bench console; needs a terminal
+ffm test myapp mybench --doctype "Thing" --junit r.xml   # run-tests on the dev site; non-zero exit on failure
+ffm debug on mybench                # web server under debugpy on localhost:<web+5>; 'off' to undo
+ffm poweroff                        # stop every bench and the proxy
+ffm clean --dry-run                 # volumes/images left by deleted benches; --yes to remove
 ```
 
 For agents: use `--print`/`--json` (no browser), and `ffm shell <bench> --exec "bench --site <site> execute …"`
