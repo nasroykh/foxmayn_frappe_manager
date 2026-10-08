@@ -270,7 +270,7 @@ create saves one.
 
 - A seed freezes each app at the commit it was taken at and is used for 7 days; after that, the
   next create runs bench init again and replaces it. `--no-seed` (or `FFM_NO_SEED=1`) always
-  starts from the branch heads and saves nothing; `bench update` inside a bench pulls as usual.
+  starts from the branch heads and saves nothing; `ffm app update` pulls a bench to the heads later.
 - A frappe + erpnext seed is about 1.4 GB. `ffm clean --seeds` lists and removes them.
 - The copy is near-instant where the filesystem clones blocks (APFS, Btrfs, XFS). On ext4 it is
   a real copy: 1–2 minutes for that seed on a busy test host. That still beats bench init plus
@@ -320,6 +320,52 @@ do (the bench serves nothing: `ffm restart <bench>`, and `ffm logs <bench> frapp
 ### `ffm status [name]`
 
 Shows per-container status, credentials, ports, and URLs. Prod benches show the domain URL instead of `localhost`.
+
+### `ffm app` — add, remove, list and update apps
+
+```bash
+ffm app list mybench [--json]                   # version, branch, commit, installed on the site (ffm.apps/v1)
+ffm app add hrms mybench                        # get-app, install-app, build --app, restart
+ffm app add https://github.com/org/my_app@main mybench [--github-token …] [--no-install]
+ffm app remove hrms mybench [--keep-code]       # snapshot first, then uninstall-app (data goes) and remove-app
+ffm app update mybench --dry-run                # the apps, branches, commits and the plan
+ffm app update mybench [--apps erpnext]         # pull, requirements, migrate, build — rolled back on failure
+ffm app update mybench --to-branch version-16   # major upgrade, with the new branch's Python and Node
+```
+
+`ffm app update` runs one locked pipeline:
+
+1. Refuse uncommitted changes in any app (ffm's own frappe patches excepted), and apps whose
+   HEAD is not their upstream branch (local or pinned commits: the pull resets onto upstream).
+   Apps without an upstream remote (e.g. made with `bench new-app`) are left as they are.
+2. Back the site's database up and take a snapshot.
+3. Turn maintenance mode on and pause the scheduler.
+4. Pull (`bench update --pull --reset`, which keeps ffm's shallow clones shallow), install
+   requirements, clear the cache, migrate and build, then re-apply ffm's realtime patches.
+5. Restart, check `/api/method/ping`, turn maintenance off and resume the scheduler.
+
+If a step after 3 fails, ffm rolls back. Every app goes back to its previous commit and branch,
+the toolchain to its previous version, the requirements are reinstalled, the snapshot is
+restored and the assets are rebuilt. `--no-rollback` leaves the bench in maintenance mode for
+inspection instead.
+
+`--to-branch` moves frappe and every app on the bench's branch to the new one, with a shallow
+fetch of that branch rather than `bench switch-to-branch` (which unshallows every app and installs
+the new requirements into the old virtualenv). It rebuilds the image for the new Node and a new
+virtualenv for the new Python (version-16: 3.14 and 24; the old one is kept until the update
+succeeds, so a rollback puts it back as it was), then migrates. Apps on other branches stay on theirs. `ffm update` (no `app`) still updates ffm itself.
+
+### `ffm site` — migrate, maintenance mode, Frappe's scheduler
+
+```bash
+ffm site mybench [--json]                      # maintenance mode and scheduler state (ffm.site/v1)
+ffm site migrate mybench                       # bench migrate, output streamed
+ffm site maintenance on|off mybench            # visitors get a maintenance page
+ffm site scheduler on|off|pause|resume mybench # Frappe's scheduled jobs
+```
+
+`on`/`off` change the System Settings flag; `pause`/`resume` stop jobs for a maintenance window
+without changing it. This is Frappe's scheduler, not `ffm backup scheduler` (ffm's own backups).
 
 ### `ffm doctor [name]`
 
@@ -1010,6 +1056,8 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm backup verify … --json` | `ffm.verify/v1` |
 | `ffm notify list --json` | `ffm.notifiers/v1` (no URLs or tokens) |
 | `ffm doctor [bench] --json` | `ffm.doctor/v1` |
+| `ffm site [bench] --json` | `ffm.site/v1` |
+| `ffm app list [bench] --json` | `ffm.apps/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 

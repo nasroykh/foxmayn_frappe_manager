@@ -269,6 +269,19 @@ ffm agent on mybench [--read-only]    # apply to an existing dev bench; 'ffm age
 Inside every dev bench, `AGENTS.md` at `/workspace/frappe-bench` tells the agent its URLs, identity,
 test commands and Mailpit. ffc config and Claude Code login persist in `<bench>/home/`.
 
+### Apps, updates and site operations
+
+```bash
+ffm app list mybench --json                      # apps, branches, commits, installed?
+ffm app add hrms mybench                         # get-app + install-app + build + restart
+ffm app remove hrms mybench --yes                # snapshot first; uninstall deletes the app's data
+ffm app update mybench --dry-run                 # then without --dry-run (--yes); rolls back on failure
+ffm app update mybench --to-branch version-16 --yes   # major upgrade incl. Python/Node
+ffm site migrate mybench | ffm site maintenance on|off mybench | ffm site scheduler pause|resume mybench
+```
+
+Never `ffm shell --exec "bench update"`: it reverts ffm's realtime patches and has no rollback.
+
 ### Deleting a bench
 
 ```bash

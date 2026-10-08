@@ -70,7 +70,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 36 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 38 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -125,6 +125,9 @@ internal/
     agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
                             --agent-read-only
     doctor.go             → ffm doctor [bench] (--json ffm.doctor/v1, --notify)
+    site.go               → ffm site [bench] / migrate / maintenance on|off / scheduler on|off|pause|resume
+    app.go                → ffm app list|add|remove|update (update ≠ `ffm update`, which is ffm's
+                            self-update; --to-branch, --dry-run, --no-rollback, --yes)
     notify.go             → ffm notify add|list|remove|test (Slack URL / Telegram token from stdin)
     backup_key.go / backup_target.go / backup_verify.go → ffm backup key|target|pull|verify
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
@@ -199,6 +202,23 @@ internal/
                             files by listed size. Keys are "<bench>/<file>". pruneRemote reuses
                             prunable + selectRetained; run-due prunes remotely only after the
                             upload succeeded. PullArchive downloads into the bench backups dir
+    site.go               → SiteStatus (maintenance_mode from site_config, `scheduler status
+                            --format json`), SiteMigrate/migrateLocked, setMaintenance, setScheduler
+                            (on/off = enable/disable, pause/resume keep the user's setting)
+    apps.go               → ListApps (listAppsScript), AppAdd (get-app; the app's name is what get-app
+                            added to apps.txt, not the repo's), AppRemove (snapshot first, uninstall-app
+                            --yes --no-backup --force, remove-app), restartAppProcesses (dev honcho /
+                            prod app containers, then ping), withoutApp
+    update.go             → Update: planUpdate (branch+commit per app, dirty trees refused except
+                            ffmPatchedPaths) → backup (db) + snapshot → maintenance on + scheduler pause
+                            → applyUpdate (revertFfmPatches first: bench's pull --rebase refuses ffm's
+                            edits; bench update --pull --reset, or switchBranchScript (shallow git fetch +
+                            checkout -B, not bench switch-to-branch) + pruneStaleScript + changeToolchain +
+                            old env moved to env.ffm-prev + setup env; requirements, clear-cache, migrate,
+                            build, reapplyPatches, restart) → maintenance off + resume. Failure
+                            → rollbackUpdate (git checkout -B branch commit, prune, toolchain back + env.ffm-prev
+                            moved back, requirements, clear-cache, restoreSnapshotLocked, build). Snapshot
+                            create/restore have *Locked variants
     doctor.go             → Doctor: read-only checks (containers + RestartCount, ping direct and via
                             Traefik, doctorJobsScript = DB connect + is_scheduler_inactive + per-queue
                             backlog and RQ workers listening on it, TLS leaf verified for the domain,
