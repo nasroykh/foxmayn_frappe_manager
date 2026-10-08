@@ -17,8 +17,10 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "ffm",
 		Short: "Foxmayn Frappe Manager — local Frappe bench lifecycle manager",
-		Long: `ffm wraps frappe_docker's devcontainer compose pattern so you can
-create, start, stop, and delete Frappe development benches with a single command.`,
+		Long: `ffm creates and manages Frappe benches with Docker Compose: development
+benches with Claude Code and ffc built in, production benches behind Traefik with
+Let's Encrypt, backups with scheduled retention and restore, domain aliases,
+a VPS tunnel and a web dashboard.`,
 		SilenceUsage: true,
 		Version: fmt.Sprintf("%s (commit %s, built %s)",
 			version.Version, version.Commit, version.Date),

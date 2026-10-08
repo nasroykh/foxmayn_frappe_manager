@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +17,12 @@ func (s *Service) SetupFFC(name string, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	// ffc is installed only in the dev image. On prod this would mint a new
+	// Administrator API secret (breaking whatever used the old one) and then
+	// report success for a tool that is not there.
+	if !b.IsDev() {
+		return fmt.Errorf("ffc is set up on dev benches only; %q is a %s bench", b.Name, b.Mode)
+	}
 	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
 
 	pw.Printf("Setting up ffc for bench %q...\n", name)
@@ -28,17 +33,8 @@ func (s *Service) SetupFFC(name string, pw ProgressWriter) error {
 	}
 
 	pw.Println("  [2] Writing ~/.config/ffc/config.yaml inside the container")
-	cfg := fmt.Sprintf(
-		"default_site: %s\nnumber_format: french\ndate_format: yyyy-mm-dd\nsites:\n  %s:\n    url: \"http://localhost:8000\"\n    api_key: \"%s\"\n    api_secret: \"%s\"\n",
-		name, name, keys.Key, keys.Secret,
-	)
-	encoded := base64.StdEncoding.EncodeToString([]byte(cfg))
-	writeCmd := fmt.Sprintf(
-		"mkdir -p /home/frappe/.config/ffc && echo '%s' | base64 -d > /home/frappe/.config/ffc/config.yaml",
-		encoded,
-	)
-	if _, err := runner.ExecSilent("frappe", "bash", "-c", writeCmd); err != nil {
-		return fmt.Errorf("write ffc config: %w", err)
+	if err := writeFfcConfig(runner, name, keys.Key, keys.Secret); err != nil {
+		return err
 	}
 
 	frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")

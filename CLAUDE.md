@@ -124,11 +124,12 @@ internal/
     update.go             → ffm update: releases API, semver compare, atomic self-replace
     update_check.go       → background update notice (24 h TTL); returns immediately when
                             $FFM_NO_UPDATE_CHECK or $CI is set
-    claude_mcp.go         → DEAD CODE — superseded by internal/manager/claude_mcp.go. Safe to delete.
 
   manager/                → the shared service layer. All bench operations live here. Output goes
-                            through ProgressWriter, never straight to stdout, so the CLI and the
-                            dashboard's job runner share one pipeline.
+                            through ProgressWriter, so the CLI and the dashboard's job runner share
+                            one pipeline. Warnings and failure dumps still go straight to os.Stderr
+                            (create, lifecycle, bench/docker.go), so in the dashboard they land in
+                            dashboard.log, not in the job.
     service.go            → Service{Store, Verbose, mu, now}; serialises all store
                             access behind a mutex because the dashboard is concurrent; clock()
                             is the test-overridable time source
@@ -203,7 +204,7 @@ internal/
     handler_logs.go       → SSE docker compose log stream
     handler_csrf.go       → HMAC double-submit CSRF tokens
     config.go             → dashboard.json; DefaultListenAddr 127.0.0.1:8787
-    templates/ static/    → layout + 9 pages; admin.css, admin.js
+    templates/ static/    → layout + 10 pages; admin.css, admin.js
 
   server/server.go        → net/http server (Go 1.22 method+pattern routes). GET /health always;
                             /admin/* only when an admin password is set; WriteTimeout 0 for SSE
@@ -227,7 +228,7 @@ internal/
         docker-compose.yml.tmpl  → 4 services (DB, redis×2, frappe); DB conditional on DBType;
                                    bind-mounts ./workspace, pip/yarn cache volumes, Traefik labels
                                    for <name>.localhost, conditional SSH agent socket
-        Dockerfile.tmpl          → full dev image: zsh/zinit/starship/Go/ffc/pnpm/Claude Code +
+        Dockerfile.tmpl          → full dev image: zsh/zinit/starship/ffc/pnpm/Claude Code +
                                    pre-fetched Frappe skills; optional HostUID/HostGID remap layer
       prod/
         docker-compose.yml.tmpl  → 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
@@ -274,8 +275,8 @@ internal/
   dump to stderr only on failure). `internal/proxy` and `internal/tunnel` bypass compose entirely
   and use raw `docker run`.
 - **Port allocation** starts at web=8000 / socketio=9000, +10 per bench, capped at 50 benches.
-  Each pair is checked against the state store and a live host probe. Each bench publishes a
-  **6-port range** (`WebPort`..`WebPort+5`), so explicit `--web-port` values must be ≥10 apart —
+  Each pair is checked against the state store and a live host probe. A dev bench publishes a
+  **6-port range** (`WebPort`..`WebPort+5`; prod publishes one port each), so explicit `--web-port` values must be ≥10 apart —
   `CheckTCPPortsFree` only probes the two base ports and will not catch a range collision.
 - **Non-interactive safety** — every huh form and spinner is guarded by `isInteractive()`, which
   probes `/dev/tty` (the descriptor huh itself uses) rather than stat-ing stdin, because
@@ -573,7 +574,7 @@ git push origin v0.1.0
   .update_check.json     # cached latest release tag (24 h TTL; skipped when $CI is set)
   .acme_email            # saved Let's Encrypt email
   tunnel.json            # VPS tunnel server profiles (0o600 — contains tokens)
-  dashboard.json         # dashboard listen addr + admin password (0600 when a password is set)
+  dashboard.json         # dashboard listen addr + admin password (0600, re-applied on every save)
   dashboard.pid          # PID of a backgrounded `ffm dashboard start --daemon`
   dashboard.log          # dashboard daemon log
   jobs.json              # async job state for the dashboard

@@ -49,7 +49,7 @@ make install
 |--|--|--|
 | **Purpose** | Local dev with Claude Code, ffc, hot-reload | VPS deployment |
 | **Containers** | 4 (frappe + db + redis×2) | 8 (gunicorn + socketio + worker-long + worker-short + scheduler + db + redis×2) |
-| **Image** | Full dev tools (zsh, starship, Go, ffc, Claude Code) | Minimal (no dev tools) |
+| **Image** | Full dev tools (zsh, starship, ffc, pnpm, Claude Code) | Minimal (no dev tools) |
 | **Database** | MariaDB 11.8 or PostgreSQL 18 (experimental) | MariaDB 11.8 or PostgreSQL 18 (experimental) |
 | **Site name** | `<name>.localhost` | Your public domain |
 | **SSL** | Via shared Traefik proxy | Let's Encrypt (or `--no-ssl` for external Caddy/Nginx) |
@@ -147,7 +147,7 @@ Steps performed:
 
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
 2. Writes `docker-compose.yml` and `Dockerfile` to `~/frappe/<name>/`
-3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **Go**, **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, **pnpm**, and **Claude Code**; pre-fetches 60 [Frappe Claude skills](https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package) to `/opt/`. **Cached after first build.**
+3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, **pnpm**, and **Claude Code**; pre-fetches 60 [Frappe Claude skills](https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package) to `/opt/`. **Cached after first build.**
 4. Runs `bench init` — clones Frappe, installs Python/Node deps, copies skills into `frappe-bench/.agents/skills/` and `.claude/skills/`
 5. Starts 4 containers with `workspace/` bind-mounted at `/workspace`
 6. Configures `common_site_config.json`, creates site, enables developer mode
@@ -277,7 +277,7 @@ Flags:
 ### `ffm shell [name]`
 
 Opens an interactive shell inside the `frappe` container:
-- **Dev**: `zsh` with zinit, autosuggestions, syntax-highlighting, starship
+- **Dev**: `zsh` with zinit and starship
 - **Prod**: `bash`
 
 Use `--exec` to run a single command non-interactively:
@@ -365,7 +365,7 @@ ffm set-proxy myprod  --host erp.example.com    --print-nginx
 
 ### `ffm ffc [name]`
 
-Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the bench container. Dev benches only. Run if ffc setup failed during `ffm create` or to regenerate keys.
+Generates Frappe API keys and writes `~/.config/ffc/config.yaml` inside the bench container. Dev benches only; refused on prod, where ffc is not installed. Run if ffc setup failed during `ffm create` or to regenerate keys.
 
 ### `ffm backup [name]`
 
@@ -520,13 +520,59 @@ ffm reconcile mybench --ssh-agent   # keep forwarding the SSH agent (dev)
 
 **Upgrading to v0.8.1.** Run `ffm reconcile <bench>` on every prod bench: before v0.8.1, prod workers never consumed Frappe's `default` queue, so most scheduled jobs and plain `frappe.enqueue` calls never ran, and gunicorn was reachable over plain HTTP on the published port.
 
+### `ffm recreate [name]`
+
+Tears the bench down (containers, **volumes** and directory) and creates it again from its saved settings. All site data is lost: take an `ffm backup` first, or use `ffm reconcile` when you only want this version's templates.
+
+```
+Flags:
+  --force              Skip confirmation prompt
+  --reallocate-ports   Take a new port pair instead of reusing the stored one
+  --github-token       Token for private app repos (not stored)
+  --proxy-port / --proxy-host   Override the derived reverse-proxy settings (dev)
+```
+
+### `ffm clean-logs [name]`
+
+Deletes rows older than `--days` (default 30, minimum 1) from Frappe's log tables, including `tabVersion` (document history) and `tabSessions`. MariaDB benches only.
+
+```
+Flags:
+  --days int   Delete rows older than this many days (default 30)
+  --dry-run    Print row counts without deleting anything
+  --yes        Skip confirmation prompt
+```
+
+### `ffm domain`
+
+Routes extra hostnames (for example a LAN name such as `erp.internal`) to a bench through the shared Traefik proxy. ffm configures the routing; pointing DNS at this host is up to you, and `domain add` prints the records to create. A dev bench with aliases needs its ports on the LAN (`ffm reconcile <bench> --lan`).
+
+```bash
+ffm domain list [bench]
+ffm domain add erp.internal [bench] [--tls]   # --tls: HTTPS with Let's Encrypt (prod with SSL only)
+ffm domain remove erp.internal [bench]
+```
+
+### `ffm tunnel [name]`
+
+Exposes a bench through a frp server on a VPS you own. Refused while the bench still has the default admin password, unless `--allow-default-password` is passed.
+
+```bash
+ffm tunnel server add myvps          # configure a server profile
+ffm tunnel mybench                   # enable with the default server
+ffm tunnel mybench --server myvps    # use a specific profile
+ffm tunnel mybench --off             # disable and restore direct access
+ffm tunnel mybench --print           # show frpc.toml without applying
+ffm tunnel server list|set|use|remove [--yes]
+```
+
 ### `ffm delete [name]`
 
-Stops and removes all containers, volumes, and the bench directory.
+Stops and removes all containers, volumes, the images built for the bench, and the bench directory.
 
 ```
 Aliases: rm, remove
-Flags:  --force   Skip confirmation prompt
+Flags:  --force   Skip confirmation prompt (the bench name is then required)
 ```
 
 ### `ffm update`
@@ -588,7 +634,7 @@ Prints the build version, commit hash, and build date.
 
 | Service | Image | Purpose |
 |--|--|--|
-| `frappe` | Built locally (minimal image) | Gunicorn (`bench serve --port 8000`) |
+| `frappe` | Built locally (minimal image) | Gunicorn (`wsgi:application` on port 8000) |
 | `socketio` | same | Node SocketIO server |
 | `worker-long` | same | Long background jobs |
 | `worker-short` | same | Short background jobs |
@@ -614,6 +660,13 @@ Configured entirely via CLI flags — no config file on disk. Uses `--restart=un
 | `FFM_BENCHES_DIR` | `~/frappe` | Where bench directories are stored |
 | `FFM_CONFIG_DIR` | `~/.config/ffm` | Where the state file is stored |
 | `FFM_BACKUPS_DIR` | `~/frappe/_backups` | Where `ffm backup` archives are written |
+| `FFM_NON_INTERACTIVE` | unset | Never prompt; fail with the flag to pass instead (also implied by `CI` or no terminal) |
+| `FFM_INTERACTIVE` | unset | Force prompting back on when no terminal is detected |
+| `FFM_NO_UPDATE_CHECK` | unset | Skip the background update notice (also skipped when `CI` is set) |
+| `FFM_KEEP_ON_FAILURE` | unset | Same as `ffm create --keep-on-failure` |
+| `FFM_MATCH_HOST_USER` | unset | Same as `ffm create --match-host-user` |
+
+Global flags: `--verbose` (show docker compose output), `--non-interactive`. Shell completion: `ffm completion bash|zsh|fish|powershell`.
 
 ## Building from source
 

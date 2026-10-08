@@ -29,6 +29,12 @@ func (s *Service) CleanLogs(in CleanLogsInput, pw ProgressWriter) error {
 	if b.IsPostgres() {
 		return fmt.Errorf("clean-logs does not yet support PostgreSQL benches")
 	}
+	// The cutoff is NOW() - INTERVAL days DAY: 0 deletes every row, and a
+	// negative value moves the cutoff into the future, including tabVersion
+	// (document history) and tabSessions (logs everyone out).
+	if in.Days < 1 {
+		return fmt.Errorf("--days must be at least 1 (got %d)", in.Days)
+	}
 
 	runner := bench.NewRunner(b.Name, b.Dir, s.Verbose)
 	dbNameScript := fmt.Sprintf(

@@ -51,7 +51,7 @@ Each dev bench has:
 - 4 Docker containers: `frappe` (app + honcho dev server), `mariadb` or `postgres`, `redis-cache`, `redis-queue`
 - Site name: `<name>.localhost` (routed via shared Traefik proxy)
 - Admin: `administrator / admin` (default)
-- Tools in container: zsh + zinit + starship + Go + ffc + pnpm + Claude Code + 60 Frappe skills
+- Tools in container: zsh + zinit + starship + ffc + pnpm + Claude Code + 60 Frappe skills
 - Bench files on host at `~/frappe/<name>/workspace/frappe-bench/` (bind-mounted)
 
 ### Production mode (`--mode prod`)

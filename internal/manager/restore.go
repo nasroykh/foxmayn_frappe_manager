@@ -163,7 +163,7 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	}
 
 	if in.DryRun {
-		printRestorePlan(pw, m, plan, target, webPort, socketIOPort, withFiles, archivePath)
+		printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath)
 		return nil
 	}
 
@@ -816,7 +816,7 @@ func dockerHasContainers(project string) bool {
 }
 
 // printRestorePlan renders what --dry-run would have done.
-func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target string, webPort, socketIOPort int,
+func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target, domainOverride string, webPort, socketIOPort int,
 	withFiles bool, archivePath string) {
 
 	pw.Printf("\nThe archive is valid and this restore would succeed.\n\n")
@@ -827,7 +827,7 @@ func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target st
 		pw.Printf("  Label:         %s\n", m.Header.Label)
 	}
 	pw.Printf("  From bench:    %s  (site %s)\n", m.Header.BenchName, m.Header.SiteName)
-	pw.Printf("  New bench:     %s  (site %s)\n", target, restoredSiteName(m, target))
+	pw.Printf("  New bench:     %s  (site %s)\n", target, restoredSiteName(m, target, domainOverride))
 	pw.Printf("  Mode:          %s, %s, frappe %s\n", m.Header.Mode, m.Header.DBType, m.Header.FrappeVersion)
 	if webPort > 0 {
 		pw.Printf("  Ports:         %d / %d\n", webPort, socketIOPort)
@@ -845,8 +845,14 @@ func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target st
 }
 
 // restoredSiteName is the site the restored bench will serve.
-func restoredSiteName(m Manifest, target string) string {
+func restoredSiteName(m Manifest, target, domainOverride string) string {
 	if m.Header.Mode == "prod" {
+		if domainOverride != "" {
+			if d, err := bench.NormalizeDomain(domainOverride); err == nil {
+				return d
+			}
+			return domainOverride
+		}
 		return m.Bench.Domain
 	}
 	return target + ".localhost"
