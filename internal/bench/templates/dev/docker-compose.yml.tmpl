@@ -31,6 +31,16 @@ services:
   redis-queue:
     image: docker.io/redis:8-alpine
 
+  # Catches every mail the bench sends: site_config's mail_server points here
+  # unless the site has its own default outgoing Email Account. The web UI is
+  # published on the web port + 6 ('ffm mail'); SMTP stays on the bench network.
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.31.4
+    environment:
+      MP_MAX_MESSAGES: 5000
+    ports:
+      - "{{if .PublishHost}}{{.PublishHost}}:{{end}}{{.MailPort}}:8025"
+
   frappe:
     build:
       context: .

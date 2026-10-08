@@ -27,7 +27,10 @@ import (
 type Rule struct {
 	Match  string
 	Stdout string
-	Exit   int
+	// StdoutBytes is written after Stdout, for binary output: the rules
+	// reach the helper as JSON, which would mangle bytes that are not UTF-8.
+	StdoutBytes []byte
+	Exit        int
 }
 
 // Fake is an installed fake.
@@ -113,6 +116,7 @@ func HelperMain() {
 	for _, r := range rules {
 		if strings.Contains(line, r.Match) {
 			fmt.Print(r.Stdout)
+			os.Stdout.Write(r.StdoutBytes)
 			os.Exit(r.Exit)
 		}
 	}

@@ -115,6 +115,10 @@ func (s *Service) Reconcile(in ReconcileInput, pw ProgressWriter) error {
 	if err := s.applyDomainChange(b, pw); err != nil {
 		return err
 	}
+	b.TemplateVersion = bench.TemplateVersion
+	if err := ensureDevMail(b); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not point outgoing mail at Mailpit: %v\n", err)
+	}
 	pw.Printf("Done. Bench %q matches this ffm version's templates.\n", b.Name)
 	printDockerfileHint(pw, b.Name, dockerfileStale)
 	if b.IsDev() {

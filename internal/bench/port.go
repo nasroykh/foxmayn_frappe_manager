@@ -72,13 +72,17 @@ func probePort(port int) error {
 // same for Socket.IO, so a bench occupies six ports per base, not one.
 const PublishedPortSpan = 6
 
+// MailPortOffset puts a dev bench's Mailpit UI on its web port + 6: the first
+// port above the published web range, still inside the bench's block of ten.
+const MailPortOffset = PublishedPortSpan
+
 // BenchPortRange returns every host port a bench publishes for a port pair.
 func BenchPortRange(webPort, socketIOPort int) []int {
-	ports := make([]int, 0, PublishedPortSpan*2)
+	ports := make([]int, 0, PublishedPortSpan*2+1)
 	for i := 0; i < PublishedPortSpan; i++ {
 		ports = append(ports, webPort+i, socketIOPort+i)
 	}
-	return ports
+	return append(ports, webPort+MailPortOffset)
 }
 
 // CheckBenchPortRangeFree probes every port a bench would publish, not just the

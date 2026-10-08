@@ -214,6 +214,20 @@ the site is renamed.
 
 ---
 
+### Browser, mail, console and database (dev)
+
+```bash
+ffm open mybench --print            # site URL (--json: ffm.url/v1); without --print it opens a browser
+ffm mail mybench --print            # Mailpit inbox: every mail a dev bench sends lands here
+ffm login mybench --print           # desk URL already logged in as Administrator (the URL is a credential)
+ffm db mybench --export dump.sql.gz # site database to a file (0600; holds password hashes)
+ffm db mybench --import dump.sql.gz --yes [--migrate]   # replaces the site database
+ffm console mybench                 # bench console; needs a terminal
+```
+
+For agents: use `--print`/`--json` (no browser), and `ffm shell <bench> --exec "bench --site <site> execute …"`
+instead of `ffm console`. Benches created before v0.11.0 get Mailpit from `ffm reconcile <bench>`.
+
 ### Deleting a bench
 
 ```bash
@@ -380,7 +394,7 @@ code ~/frappe/mybench
 
 ```
 ~/frappe/<bench-name>/
-  docker-compose.yml       # generated per bench (dev: 4 services, prod: 7+ services)
+  docker-compose.yml       # generated per bench (dev: 5 services, prod: 8+ services)
   Dockerfile               # dev: extends frappe/bench with tools; prod: minimal
   workspace/               # bind-mounted at /workspace in container
     frappe-bench/          # actual Frappe bench (apps/, sites/, etc.)

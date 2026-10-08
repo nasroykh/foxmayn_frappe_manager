@@ -50,6 +50,9 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 			pw.Printf("warning: could not install frappe skills: %v\n", err)
 		}
 
+		if err := ensureDevMail(b); err != nil && s.Verbose {
+			fmt.Fprintf(os.Stderr, "warning: could not point outgoing mail at Mailpit: %v\n", err)
+		}
 		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
 		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
