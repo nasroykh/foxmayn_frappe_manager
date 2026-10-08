@@ -642,7 +642,7 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 			fmt.Fprintf(pw.Stderr(), "warning: could not patch the Procfile worker: %v\n", err)
 		}
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+			bench.DevServerStartCmd); err != nil {
 			return fmt.Errorf("start the dev server: %w", err)
 		}
 		if err := bench.WaitForHTTP(fmt.Sprintf("http://localhost:%d", b.WebPort), 60*time.Second); err != nil {

@@ -702,7 +702,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if mode == "dev" {
 		step("Starting dev server")
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"); err != nil {
+			bench.DevServerStartCmd); err != nil {
 			return fmt.Errorf("bench start: %w", err)
 		}
 

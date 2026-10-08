@@ -312,8 +312,7 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 // container. pkill exits non-zero when nothing matched, which is not an error.
 func restartDevServer(runner *bench.Runner, pw ProgressWriter) {
 	pw.Println("  Restarting dev server...")
-	cmd := "pkill -f 'honcho start' 2>/dev/null; sleep 1" +
-		" && cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+	cmd := bench.DevServerRestartCmd
 	if _, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
 		pw.Println("  (dev server restart returned non-zero — it may already have been stopped)")
 	}

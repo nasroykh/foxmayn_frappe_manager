@@ -517,6 +517,10 @@ internal/
   below the minor a host already runs: its RDB files may not load in an older Redis.
   `TestTemplatesPinTheirInputs` fails on floating tags. `restart --fresh` builds with
   `--pull --no-cache`.
+- **Never `pkill -f '<text>'` from a `bash -c` whose command line contains `<text>`**: Linux pkill
+  matches the shell itself and kills it. Dev server stop/start lives in `bench.DevServerRestartCmd` /
+  `DevServerStartCmd`, which use the `'[h]oncho start'` pattern; until v0.9.1 every dev restart through
+  domain changes, reconcile, set-proxy and tunnel killed honcho and never started it again.
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
 - `skills/ffm-dev/` and `skills/foxmayn-frappe-manager/` are copies of the same two skills under
