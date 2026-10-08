@@ -235,7 +235,8 @@ internal/
     templates/
       dev/
         docker-compose.yml.tmpl  → 4 services (DB, redis×2, frappe); DB conditional on DBType;
-                                   bind-mounts ./workspace, pip/yarn cache volumes, Traefik labels
+                                   bind-mounts ./workspace, pip/yarn cache volumes (uv's cache is
+                                   inside pip-cache: UV_CACHE_DIR), Traefik labels
                                    for <name>.localhost, conditional SSH agent socket
         Dockerfile.tmpl          → full dev image: zsh/zinit/starship/ffc/pnpm/Claude Code +
                                    pre-fetched Frappe skills; optional HostUID/HostGID remap layer
@@ -520,6 +521,15 @@ internal/
   archive credentials, so whatever create accepts also restores. A prod `--domain` becomes the
   site name, so `Create` runs it through `bench.NormalizeDomain` too (restore always did).
   `ffm exec` is the one deliberate exception: it runs the user's own command.
+- **Toolchain per Frappe branch** (`internal/bench/toolchain.go`): `ToolchainFor` gives version-15
+  Python 3.12 / Node 22 and everything else 3.14 / 24; `--python` / `--node` override, limited
+  to `ImagePythons` / `ImageNodes` (what `BenchImageTag` ships — bump them together). Python
+  reaches bench init as `--python python3.X` (pyenv shim). Node is switched in both Dockerfiles
+  by `nvm alias default` + `nvm use` (PATH goes through `~/.nvm/current`), before `corepack`.
+  Recorded as `Bench.Python` / `Bench.Node`; empty on older records, whose Dockerfile keeps the
+  image default so a rebuild never swaps Node under existing node_modules. Restore reuses the
+  archived pair only when the frappe branch is unchanged. The default branch is
+  `bench.DefaultFrappeBranch` (`version-16`).
 - **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
   image), `FrappeSkillsCommit` (skill pack) and `FfcSkillsRef` (ffc skills); Redis is
   `redis:8-alpine` in the templates and Traefik `traefik:v3.7` in `proxy.Image`. Do not pin Redis

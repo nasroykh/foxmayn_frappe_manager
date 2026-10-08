@@ -104,6 +104,7 @@ func (s *Service) composeDataFor(b state.Bench) (bench.ComposeData, error) {
 		BenchDir:          b.Dir,
 		HostUID:           hostUID,
 		HostGID:           hostGID,
+		NodeMajor:         b.Node,
 		WebPort:           b.WebPort,
 		WebPortEnd:        b.WebPort + 5,
 		SocketIOPort:      b.SocketIOPort,

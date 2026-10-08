@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/version"
@@ -191,8 +192,8 @@ func (h *Handler) Static(w http.ResponseWriter, r *http.Request) {
 }
 
 type dashboardPageData struct {
-	Meta   PageMeta
-	Stats  manager.DashboardStats
+	Meta    PageMeta
+	Stats   manager.DashboardStats
 	Benches []manager.BenchView
 }
 
@@ -234,8 +235,8 @@ func (h *Handler) BenchesList(w http.ResponseWriter, r *http.Request) {
 }
 
 type benchDetailData struct {
-	Meta   PageMeta
-	Bench  manager.BenchDetail
+	Meta  PageMeta
+	Bench manager.BenchDetail
 }
 
 func (h *Handler) BenchDetail(w http.ResponseWriter, r *http.Request) {
@@ -266,7 +267,7 @@ func (h *Handler) BenchNew(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "bench_form_body", &benchFormData{
 		Meta: h.meta(r, "New bench", "benches"),
 		Form: manager.CreateInput{
-			Mode: "dev", FrappeBranch: "version-15", DBType: "mariadb",
+			Mode: "dev", FrappeBranch: bench.DefaultFrappeBranch, DBType: "mariadb",
 			AdminPassword: "admin", DBPassword: "ffm123456",
 			MariaDBBufferPool: "1G", GunicornWorkers: 2,
 			WorkerLongCount: 1, WorkerShortCount: 1,

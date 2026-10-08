@@ -373,10 +373,19 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 		aliasTLS = m.Bench.AliasTLS
 	}
 
+	// The archived toolchain applies only to the branch it was chosen for: an
+	// --app frappe=…@<other branch> override gets that branch's default.
+	var python, node string
+	if plan.FrappeBranch == m.Bench.FrappeBranch {
+		python, node = m.Bench.Python, m.Bench.Node
+	}
+
 	return CreateInput{
 		Name:              target,
 		FrappeBranch:      plan.FrappeBranch,
 		FrappeRepo:        plan.FrappeRepo,
+		Python:            python,
+		Node:              node,
 		Apps:              plan.createSpecs(),
 		AdminPassword:     adminPassword,
 		DBPassword:        m.Bench.DBPassword,

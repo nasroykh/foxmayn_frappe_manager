@@ -62,6 +62,8 @@ func runStatusJSON(name string, showSecrets bool) error {
 		Bench:         benchJSON(view),
 		Dir:           b.Dir,
 		FrappeRepo:    b.FrappeRepo,
+		Python:        b.Python,
+		Node:          b.Node,
 		Apps:          append([]string{}, b.Apps...),
 		Bind:          bind,
 		SSHAgent:      b.SSHAgent,
@@ -143,6 +145,11 @@ func runStatus(name string) error {
 	label("branch", b.FrappeBranch)
 	if b.FrappeRepo != "" {
 		label("frappe repo", b.FrappeRepo)
+	}
+	if b.Python != "" {
+		label("toolchain", fmt.Sprintf("Python %s, Node %s", b.Python, b.Node))
+	} else {
+		label("toolchain", "image defaults (created before ffm chose one per branch)")
 	}
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
 	if b.DBPassword != "" {

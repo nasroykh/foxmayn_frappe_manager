@@ -206,7 +206,7 @@ Flags:
       --db-type string               Database engine: mariadb or postgres (default "mariadb")
       --domain string                Public domain for production (required for --mode prod), e.g. erp.example.com
       --domain-alias stringArray     Extra hostname the bench also answers on, e.g. erp.internal. Repeatable. Requires the shared proxy ('ffm proxy start') and DNS pointing the name at this host. Same as 'ffm domain add' after creation.
-      --frappe-branch string         Frappe branch (version-15 or version-16) (default "version-15")
+      --frappe-branch string         Frappe branch (version-16 or version-15) (default "version-16")
       --frappe-repo string           Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.
       --github-token string          GitHub personal access token for private HTTPS repos
       --gunicorn-workers int         Number of gunicorn worker processes (prod only). Rule of thumb: 2*CPU+1. (default 2)
@@ -216,8 +216,10 @@ Flags:
       --match-host-user              Build the image with the container's frappe user remapped to your uid/gid. Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER
       --mode string                  Bench mode: dev or prod (default "dev")
       --no-ssl                       Skip Let's Encrypt SSL in production (handle TLS externally via Caddy/Nginx)
+      --node string                  Node major version: 22 or 24. Default: 22 for version-15, 24 otherwise
       --proxy-host string            Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)
       --proxy-port int               Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)
+      --python string                Python version for the bench virtualenv: 3.12 or 3.14. Default: 3.12 for version-15, 3.14 otherwise
       --redis-cache-maxmem string    Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction. (default "512mb")
       --redis-queue-maxmem string    Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped. (default "512mb")
       --slow-query-log               Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.

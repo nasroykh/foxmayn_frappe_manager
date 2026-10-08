@@ -53,6 +53,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 	name := in.Name
 	frappeBranch := in.FrappeBranch
+	if frappeBranch == "" {
+		frappeBranch = bench.DefaultFrappeBranch
+	}
 	frappeRepo := in.FrappeRepo
 	apps := in.Apps
 	adminPassword := in.AdminPassword
@@ -226,11 +229,22 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
+	toolchain := bench.ToolchainFor(frappeInitBranch)
+	if in.Python != "" {
+		toolchain.Python = in.Python
+	}
+	if in.Node != "" {
+		toolchain.Node = in.Node
+	}
+	if err := toolchain.ValidateFor(frappeInitBranch); err != nil {
+		return err
+	}
+
 	frappeSrc := frappeInitBranch
 	if frappeRepoURL != "" {
 		frappeSrc = frappeRepoURL + "@" + frappeInitBranch
 	}
-	pw.Printf("Creating bench %q  (frappe: %s  mode: %s", name, frappeSrc, mode)
+	pw.Printf("Creating bench %q  (frappe: %s  python: %s  node: %s  mode: %s", name, frappeSrc, toolchain.Python, toolchain.Node, mode)
 	if mode == "prod" {
 		pw.Printf("  domain: %s", domain)
 	}
@@ -365,6 +379,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		BenchDir:          benchDir,
 		HostUID:           hostUID,
 		HostGID:           hostGID,
+		NodeMajor:         toolchain.Node,
 		WebPort:           webPort,
 		WebPortEnd:        webPort + 5,
 		SocketIOPort:      socketIOPort,
@@ -422,10 +437,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// Run bench init — dev mode also installs Claude/agent skills
 	step(fmt.Sprintf("Initializing bench (frappe %s) — this takes several minutes on first run", frappeSrc))
 	var benchInitCmd string
-	benchInitRepoArgs := "--frappe-branch " + bench.ShellQuote(frappeInitBranch)
-	if frappeRepoURL != "" {
-		benchInitRepoArgs += " --frappe-path " + bench.ShellQuote(frappeRepoURL)
-	}
+	benchInitRepoArgs := benchInitArgs(frappeInitBranch, frappeRepoURL, toolchain)
 	baseInit := fmt.Sprintf(
 		`bench init %s --skip-redis-config-generation --no-backups --verbose /tmp/ffm-bench-init`+
 			` && rm -rf /workspace/frappe-bench`+
@@ -741,6 +753,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		SocketIOPort:  socketIOPort,
 		FrappeBranch:  frappeBranch,
 		FrappeRepo:    frappeRepo,
+		Python:        toolchain.Python,
+		Node:          toolchain.Node,
 		AdminPassword: adminPassword,
 		DBPassword:    dbPassword,
 		DBType:        dbType,
@@ -862,4 +876,14 @@ func randomPassword() (string, error) {
 		return "", fmt.Errorf("generate password: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// benchInitArgs returns the source and toolchain arguments of bench init.
+// --python picks the virtualenv's interpreter; Node comes from the image.
+func benchInitArgs(branch, repoURL string, tc bench.Toolchain) string {
+	args := "--frappe-branch " + bench.ShellQuote(branch) + " --python " + bench.ShellQuote(tc.PythonBin())
+	if repoURL != "" {
+		args += " --frappe-path " + bench.ShellQuote(repoURL)
+	}
+	return args
 }

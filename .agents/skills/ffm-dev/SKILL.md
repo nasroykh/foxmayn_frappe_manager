@@ -74,6 +74,8 @@ internal/
     compose.go                → renders docker-compose.yml and Dockerfile from //go:embed
                                 templates (dev/ or prod/ based on Mode); also writes
                                 .devcontainer/devcontainer.json (dev only)
+    toolchain.go              → Python/Node per Frappe branch (ToolchainFor), DefaultFrappeBranch,
+                                the versions the pinned image ships (ImagePythons, ImageNodes)
     docker.go                 → Runner: all docker compose interactions (Build, Run, Up,
                                 Down, Exec, ExecSilent, ExecOutputInDir, PS, Logs, etc.)
     frappe_api.go             → Runner.GenerateAdminAPIKeys(): bench execute + JSON parse

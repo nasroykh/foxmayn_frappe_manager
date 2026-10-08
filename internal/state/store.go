@@ -60,7 +60,13 @@ type Bench struct {
 	// @branch suffix) used at create time. Empty means the official
 	// frappe/frappe repo was used. Persisted so Recreate reuses the same fork
 	// instead of silently falling back to the official repo.
-	FrappeRepo    string `json:"frappe_repo,omitempty"`
+	FrappeRepo string `json:"frappe_repo,omitempty"`
+	// Python ("3.12") and Node ("22") are the toolchain bench init and the
+	// image were set up with. Empty on benches created before ffm chose a
+	// toolchain per branch: those run on the image defaults, and a rebuild
+	// keeps them there rather than swapping Node under existing node_modules.
+	Python        string `json:"python,omitempty"`
+	Node          string `json:"node,omitempty"`
 	AdminPassword string `json:"admin_password"`
 	DBPassword    string `json:"db_password"`
 	// DBType is "mariadb" or "postgres". Empty is treated as "mariadb" for backward compatibility.
