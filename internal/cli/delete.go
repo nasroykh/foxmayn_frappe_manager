@@ -18,6 +18,12 @@ func newDeleteCmd() *cobra.Command {
 		Short:   "Delete a bench and all its data",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// With --force nothing confirms the target, so it must be named:
+			// the picker auto-selects when only one bench exists, and the
+			// working directory can select one implicitly.
+			if force && len(args) == 0 {
+				return fmt.Errorf("--force requires the bench name: ffm delete <name> --force")
+			}
 			name, err := resolveBenchName(args, "Select a bench to delete")
 			if err != nil {
 				return err

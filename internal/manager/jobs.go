@@ -45,10 +45,10 @@ type Job struct {
 
 // JobStore manages background jobs.
 type JobStore struct {
-	mu       sync.RWMutex
-	jobs     map[string]*Job
-	byBench  map[string]string // bench name -> active job id
-	path     string
+	mu      sync.RWMutex
+	jobs    map[string]*Job
+	byBench map[string]string // bench name -> active job id
+	path    string
 }
 
 // NewJobStore creates an in-memory job store with optional persistence path.
@@ -106,13 +106,6 @@ func (s *Service) StartCreate(ctx context.Context, js *JobStore, in CreateInput)
 func (s *Service) StartRecreate(ctx context.Context, js *JobStore, in RecreateInput) (string, error) {
 	return s.startJob(ctx, js, JobRecreate, in.Name, func(pw ProgressWriter) error {
 		return s.Recreate(in, pw)
-	})
-}
-
-// StartRestartRebuild enqueues restart with --rebuild.
-func (s *Service) StartRestartRebuild(ctx context.Context, js *JobStore, name string) (string, error) {
-	return s.startJob(ctx, js, JobRestart, name, func(pw ProgressWriter) error {
-		return s.Restart(RestartInput{Name: name, Rebuild: true}, pw)
 	})
 }
 

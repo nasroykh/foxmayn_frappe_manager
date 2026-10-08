@@ -62,7 +62,7 @@ func newDashboardStartCmd() *cobra.Command {
 				return err
 			}
 			if daemon {
-				return startDashboardDaemon(cfg.ListenAddr, cfg.AdminPassword)
+				return startDashboardDaemon(cfg.ListenAddr)
 			}
 			return runDashboardForeground(cfg.ListenAddr, cfg.AdminPassword)
 		},
@@ -84,7 +84,7 @@ func runDashboardForeground(addr, password string) error {
 	return s.Run(ctx)
 }
 
-func dashboardPIDPath() string  { return config.DashboardPIDFile() }
+func dashboardPIDPath() string { return config.DashboardPIDFile() }
 func dashboardLogPath() string { return config.DashboardLogFile() }
 
 func isDashboardRunning() (pid int, alive bool) {
@@ -96,17 +96,13 @@ func isDashboardRunning() (pid int, alive bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return pid, false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return pid, false
-	}
-	return pid, true
+	return pid, processAlive(pid)
 }
 
-func startDashboardDaemon(addr, password string) error {
+// startDashboardDaemon re-executes ffm in the background. The admin password
+// is not passed on the command line, where every local user could read it in
+// `ps`: the daemon reads it from dashboard.json, saved just before.
+func startDashboardDaemon(addr string) error {
 	if pid, alive := isDashboardRunning(); alive {
 		return fmt.Errorf("dashboard already running (PID %d)", pid)
 	}
@@ -117,11 +113,12 @@ func startDashboardDaemon(addr, password string) error {
 	if err := os.MkdirAll(config.ConfigDir(), 0o755); err != nil {
 		return err
 	}
-	logFile, err := os.OpenFile(dashboardLogPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(dashboardLogPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
-	args := []string{"__dashboard-daemon", "--listen", addr, "--admin-password", password}
+	_ = os.Chmod(dashboardLogPath(), 0o600)
+	args := []string{"__dashboard-daemon", "--listen", addr}
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -132,7 +129,7 @@ func startDashboardDaemon(addr, password string) error {
 		return err
 	}
 	_ = logFile.Close()
-	if err := os.WriteFile(dashboardPIDPath(), []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(dashboardPIDPath(), []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		return err
 	}
 	fmt.Printf("Dashboard started (PID %d). Log: %s\n", cmd.Process.Pid, dashboardLogPath())
@@ -160,11 +157,7 @@ func newDashboardStopCmd() *cobra.Command {
 				_ = os.Remove(dashboardPIDPath())
 				return nil
 			}
-			proc, err := os.FindProcess(pid)
-			if err != nil {
-				return err
-			}
-			if err := proc.Signal(syscall.SIGTERM); err != nil {
+			if err := stopProcess(pid); err != nil {
 				return err
 			}
 			_ = os.Remove(dashboardPIDPath())

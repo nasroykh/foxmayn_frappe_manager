@@ -9,8 +9,8 @@ import (
 
 // Config holds persisted dashboard settings.
 type Config struct {
-	ListenAddr     string `json:"listen_addr"`
-	AdminPassword  string `json:"admin_password,omitempty"`
+	ListenAddr    string `json:"listen_addr"`
+	AdminPassword string `json:"admin_password,omitempty"`
 }
 
 // DefaultListenAddr is the default bind address (localhost only).
@@ -48,5 +48,10 @@ func SaveConfig(cfg Config) error {
 	if cfg.AdminPassword != "" {
 		mode = 0o600
 	}
-	return os.WriteFile(config.DashboardConfigFile(), data, mode)
+	if err := os.WriteFile(config.DashboardConfigFile(), data, mode); err != nil {
+		return err
+	}
+	// WriteFile applies the mode only when it creates the file; a file first
+	// written without a password (0644) must not stay world-readable.
+	return os.Chmod(config.DashboardConfigFile(), mode)
 }

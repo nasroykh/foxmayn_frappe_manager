@@ -22,6 +22,9 @@ func newTunnelServerCmd() *cobra.Command {
   ffm tunnel server set <name>        edit an existing profile
   ffm tunnel server remove <name>     remove a profile
   ffm tunnel server use <name>        set as the default server`,
+		// Without this an unknown or mistyped subcommand ("remov x") fell
+		// through to listing and exited 0.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTunnelServerList()
 		},
@@ -183,7 +186,8 @@ func newTunnelServerSetCmd() *cobra.Command {
 }
 
 func newTunnelServerRemoveCmd() *cobra.Command {
-	return &cobra.Command{
+	var removeYes bool
+	cmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a tunnel server profile",
@@ -198,11 +202,10 @@ func newTunnelServerRemoveCmd() *cobra.Command {
 				return fmt.Errorf("tunnel server %q not found", name)
 			}
 
-			if !isInteractive() {
-				return mustNotPrompt("tunnel server removal confirmation",
-					"removal is interactive-only; edit ~/.config/ffm/tunnel.json directly instead")
+			confirmed := removeYes
+			if !confirmed && !isInteractive() {
+				return mustNotPrompt("tunnel server removal confirmation", "pass --yes")
 			}
-			confirmed := false
 			form := huh.NewForm(
 				huh.NewGroup(
 					huh.NewConfirm().
@@ -213,8 +216,13 @@ func newTunnelServerRemoveCmd() *cobra.Command {
 						Value(&confirmed),
 				),
 			)
-			if err := form.Run(); err != nil {
-				return err
+			if !removeYes {
+				if err := form.WithKeyMap(benchPickKeyMap()).Run(); err != nil {
+					if cancelled(err) {
+						return nil
+					}
+					return err
+				}
 			}
 			if !confirmed {
 				fmt.Println("Cancelled.")
@@ -240,6 +248,8 @@ func newTunnelServerRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&removeYes, "yes", "y", false, "Remove without asking for confirmation")
+	return cmd
 }
 
 func newTunnelServerUseCmd() *cobra.Command {

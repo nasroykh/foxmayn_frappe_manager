@@ -26,15 +26,3 @@ func (s *Service) Exec(in ExecInput) (string, error) {
 	}
 	return runner.ExecSilent(service, "bash", "-c", "cd "+workdir+" && "+in.Command)
 }
-
-// ExecOrError wraps Exec and formats errors with output.
-func (s *Service) ExecOrError(in ExecInput) error {
-	out, err := s.Exec(in)
-	if err != nil {
-		return fmt.Errorf("exec: %w\n%s", err, out)
-	}
-	if out != "" {
-		fmt.Print(out)
-	}
-	return nil
-}

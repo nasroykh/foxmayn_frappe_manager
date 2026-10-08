@@ -82,7 +82,7 @@ internal/
       dev/
         docker-compose.yml.tmpl → 4-service dev compose (frappe+honcho, mariadb OR postgres,
                                    redis×2); DB service is conditional on ComposeData.DBType
-        Dockerfile.tmpl         → full dev image: zsh+zinit+starship+Go+ffc+pnpm+Claude Code
+        Dockerfile.tmpl         → full dev image: zsh+zinit+starship+ffc+pnpm+Claude Code
       prod/
         docker-compose.yml.tmpl → 7-service prod compose (gunicorn, socketio, workers,
                                    scheduler, mariadb OR postgres, redis×2); DB service,
@@ -317,7 +317,7 @@ Templates live at `internal/bench/templates/` and are embedded at compile time v
 internal/bench/templates/
   dev/
     docker-compose.yml.tmpl   // 4-service dev compose
-    Dockerfile.tmpl           // full image: zsh+zinit+starship+Go+ffc+pnpm+Claude Code
+    Dockerfile.tmpl           // full image: zsh+zinit+starship+ffc+pnpm+Claude Code
   prod/
     docker-compose.yml.tmpl   // 7-service prod compose with Traefik labels
     Dockerfile.tmpl           // minimal image (no dev tools)
@@ -360,7 +360,7 @@ bench.WriteDevcontainer(benchDir, data)   // → .devcontainer/devcontainer.json
 | `mariadb` or `postgres` | default entrypoint          | Conditional on `{{.DBType}}`; has healthcheck                   |
 | `redis-cache`        | default                        |                                                                 |
 | `redis-queue`        | default                        |                                                                 |
-| `frappe`             | `bench serve --port 8000`      | gunicorn; depends_on db service (healthy); Traefik labels       |
+| `frappe`             | gunicorn `wsgi:application` :8000 | gunicorn; depends_on db service (healthy); Traefik labels       |
 | `socketio`           | `node apps/frappe/socketio.js` | Traefik labels for `/socket.io` path                            |
 | `worker-long`        | `bench worker --queue long,default,short` | No ports                                                        |
 | `worker-short`       | `bench worker --queue short,default` | No ports                                                        |

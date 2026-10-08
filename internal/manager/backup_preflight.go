@@ -322,13 +322,31 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 		})
 	}
 	// The domain is rendered into a Traefik router rule between backticks, where
-	// an unvalidated value injects router configuration.
-	if d := m.Bench.Domain; d != "" {
-		if _, err := bench.NormalizeDomain(d); err != nil {
+	// an unvalidated value injects router configuration. Only the domain the
+	// restore will actually use is checked: --domain replaces the archived one,
+	// and is itself validated here rather than minutes later inside Create.
+	if in.Domain != "" {
+		if _, err := bench.NormalizeDomain(in.Domain); err != nil {
 			problems = append(problems, Problem{
-				Message: fmt.Sprintf("the archive's domain is not a valid hostname: %v", err),
+				Message: fmt.Sprintf("--domain is not a valid hostname: %v", err),
 			})
 		}
+	} else if d := m.Bench.Domain; d != "" {
+		if _, err := bench.NormalizeDomain(d); err != nil {
+			problems = append(problems, Problem{
+				Message:  fmt.Sprintf("the archive's domain is not a valid hostname: %v", err),
+				Override: "--domain <host>",
+			})
+		}
+	}
+	// Aliases are restored only under the archived bench name (restoreCreateInput),
+	// so under a new name they are never used and must not block the restore.
+	target := in.TargetName
+	if target == "" {
+		target = m.Header.BenchName
+	}
+	if target != m.Header.BenchName {
+		return problems
 	}
 	for _, a := range m.Bench.DomainAliases {
 		if _, err := bench.NormalizeDomain(a); err != nil {

@@ -140,7 +140,11 @@ func (r *Runner) UpServices(services ...string) error {
 func (r *Runner) Down(removeVolumes bool) error {
 	args := []string{"down", "--remove-orphans"}
 	if removeVolumes {
-		args = append(args, "-v")
+		// A full teardown (delete, recreate) also drops the images compose built
+		// for this bench; prod tags one per service, about 2.7 GB with shared
+		// layers, and they were left behind. The build cache is kept, so a
+		// recreate still rebuilds quickly.
+		args = append(args, "-v", "--rmi", "local")
 	}
 	return r.withOutput(r.compose(args...)).Run()
 }

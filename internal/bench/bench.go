@@ -31,6 +31,12 @@ func ValidateNewName(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
+	// Docker Compose project names must be lowercase, and the project is
+	// "ffm-<name>", so an uppercase name used to pass here and then fail at
+	// the first compose call, after files had been written.
+	if name != strings.ToLower(name) {
+		return fmt.Errorf("bench name %q is invalid: use lowercase letters, digits and hyphens", name)
+	}
 	if reservedNames[strings.ToLower(name)] {
 		return fmt.Errorf("bench name %q is reserved (it is an 'ffm backup' subcommand) — choose another", name)
 	}

@@ -17,3 +17,12 @@ func TestValidateNewNameRejectsReserved(t *testing.T) {
 		t.Errorf("ValidateNewName(listing) = %v", err)
 	}
 }
+
+func TestValidateNewNameRejectsUppercase(t *testing.T) {
+	if err := ValidateNewName("MyBench"); err == nil {
+		t.Fatal("uppercase name accepted; docker compose rejects the project name ffm-MyBench")
+	}
+	if err := ValidateNewName("my-bench2"); err != nil {
+		t.Fatalf("lowercase name rejected: %v", err)
+	}
+}

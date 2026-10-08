@@ -5,9 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"path/filepath"
-
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 )
 
 // LogsStream streams docker compose logs via SSE.
@@ -89,21 +86,4 @@ func splitLines(s string) []string {
 		out = append(out, s[start:])
 	}
 	return out
-}
-
-// LogsTail returns the last N lines (non-streaming helper).
-func (h *Handler) LogsTail(name, service string, tail int) (string, error) {
-	b, err := h.Svc.GetBench(name)
-	if err != nil {
-		return "", err
-	}
-	runner := bench.NewRunner(b.Name, b.Dir, false)
-	_ = runner
-	cmd := exec.Command("docker", "compose", "logs", "--tail", fmt.Sprintf("%d", tail))
-	if service != "" {
-		cmd.Args = append(cmd.Args, service)
-	}
-	cmd.Dir = filepath.Clean(b.Dir)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
 }

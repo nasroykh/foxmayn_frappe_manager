@@ -801,8 +801,6 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	return nil
 }
 
-// setupFfcConfig generates Frappe API keys via Python inside the container and
-// writes ~/.config/ffc/config.yaml. No HTTP server needs to be running.
 func socketioFrappeURL(mode string) string {
 	if mode == "prod" {
 		return "http://frappe:8000"
@@ -810,15 +808,23 @@ func socketioFrappeURL(mode string) string {
 	return "http://127.0.0.1:8000"
 }
 
+// setupFfcConfig generates Frappe API keys via Python inside the container and
+// writes ~/.config/ffc/config.yaml. No HTTP server needs to be running.
 func setupFfcConfig(runner *bench.Runner, benchName, siteName string) error {
 	keys, err := runner.GenerateAdminAPIKeys(siteName)
 	if err != nil {
 		return err
 	}
+	return writeFfcConfig(runner, benchName, keys.Key, keys.Secret)
+}
 
+// writeFfcConfig writes the container's ~/.config/ffc/config.yaml with a single
+// site named after the bench. It is base64-encoded on the way in so no value
+// is ever interpreted by the shell.
+func writeFfcConfig(runner *bench.Runner, benchName, apiKey, apiSecret string) error {
 	cfg := fmt.Sprintf(
 		"default_site: %s\nnumber_format: french\ndate_format: yyyy-mm-dd\nsites:\n  %s:\n    url: \"http://localhost:8000\"\n    api_key: \"%s\"\n    api_secret: \"%s\"\n",
-		benchName, benchName, keys.Key, keys.Secret,
+		benchName, benchName, apiKey, apiSecret,
 	)
 	encoded := base64.StdEncoding.EncodeToString([]byte(cfg))
 	cmd := fmt.Sprintf(

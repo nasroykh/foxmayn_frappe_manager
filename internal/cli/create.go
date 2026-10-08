@@ -56,8 +56,7 @@ func newCreateCmd() *cobra.Command {
 				// defaults to "dev", so an automated caller that passes every other
 				// flag but omits --mode would still land here.
 				if !isInteractive() {
-					return mustNotPrompt("bench mode",
-						"pass --mode dev or --mode prod (dev also needs --frappe-branch and/or --apps)")
+					return mustNotPrompt("bench mode", "pass --mode dev or --mode prod")
 				}
 				if err := runCreateFormFull(&mode, &frappeBranch, &frappeRepo, &apps, &domain, &acmeEmail, &noSSL, &adminPassword, &dbType, &mariadbBufferPool, &gunicornWorkers, &githubToken); err != nil {
 					if cancelled(err) {
@@ -65,12 +64,10 @@ func newCreateCmd() *cobra.Command {
 					}
 					return err
 				}
-			} else if mode == "dev" && !branchSet && !appsSet {
-				// Explicit --mode dev but no branch/apps: show dev-only form.
-				if !isInteractive() {
-					return mustNotPrompt("Frappe branch and apps",
-						"pass --frappe-branch and/or --apps")
-				}
+			} else if mode == "dev" && !branchSet && !appsSet && isInteractive() {
+				// Explicit --mode dev but no branch/apps: offer the dev-only form.
+				// Without a terminal the flag defaults apply; they used to be
+				// demanded again although --frappe-branch has a default.
 				if err := runCreateForm(&frappeBranch, &frappeRepo, &apps, &dbType, &githubToken); err != nil {
 					if cancelled(err) {
 						return nil
