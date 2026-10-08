@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,6 +119,10 @@ type Bench struct {
 	// is opt-in because a bench created with it broke every later compose call
 	// made without SSH_AUTH_SOCK (cron backups, sudo, the dashboard daemon).
 	SSHAgent bool `json:"ssh_agent,omitempty"`
+	// TemplateVersion is the bench.TemplateVersion this bench's
+	// docker-compose.yml was last rendered from, by create or reconcile. Zero
+	// on records written before it existed.
+	TemplateVersion int `json:"template_version,omitempty"`
 	// Tunnel holds the VPS tunnel configuration. Nil means no tunnel configured.
 	Tunnel *TunnelState `json:"tunnel,omitempty"`
 	// BackupSchedule is the scheduled-backup policy set by `ffm backup
@@ -225,6 +230,14 @@ func (s *Store) Save(benches []Bench) error {
 	data, err := json.MarshalIndent(benches, "", "  ")
 	if err != nil {
 		return err
+	}
+	// Keep the previous version: one bad write (or a bug in a caller) would
+	// otherwise lose every bench's record, passwords included, with no way
+	// back. The copy is as private as the file.
+	if prev, err := os.ReadFile(s.path); err == nil && !bytes.Equal(prev, data) {
+		if err := writeFileAtomic(s.path+".bak", prev, 0o600); err != nil {
+			return fmt.Errorf("back up %s: %w", filepath.Base(s.path), err)
+		}
 	}
 	return writeFileAtomic(s.path, data, 0o600)
 }

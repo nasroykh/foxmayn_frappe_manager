@@ -522,6 +522,10 @@ internal/
   matches the shell itself and kills it. Dev server stop/start lives in `bench.DevServerRestartCmd` /
   `DevServerStartCmd`, which use the `'[h]oncho start'` pattern; until v0.9.1 every dev restart through
   domain changes, reconcile, set-proxy and tunnel killed honcho and never started it again.
+- **Template versions.** `bench.TemplateVersion` names the compose and Dockerfile templates;
+  create and reconcile record it on the bench, and `ffm list` flags benches below it. Any template
+  change must bump it: `TestTemplateVersionTracksTemplates` fails until the new fingerprint is
+  recorded. `benches.json` keeps a `.bak` of the previous version on every save.
 - **Machine contract** (`internal/cli/jsonout.go`, `exitcode.go`): read commands take `--json` and
   print one object with a versioned `schema` (`ffm.list/v1` …). Only add fields within a version;
   anything else bumps it. Secrets only with `--show-secrets`. Exit codes come from typed errors

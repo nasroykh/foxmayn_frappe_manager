@@ -2,7 +2,9 @@ package bench
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -276,25 +278,45 @@ func WriteDockerfile(benchDir string, data ComposeData) error {
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
 		return err
 	}
+	out, err := RenderDockerfile(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(benchDir, "Dockerfile"), out, 0o644)
+}
 
+// RenderDockerfile returns the Dockerfile for data without writing it.
+func RenderDockerfile(data ComposeData) ([]byte, error) {
 	tmplStr := devDockerfileTmpl
 	if data.Mode == "prod" {
 		tmplStr = prodDockerfileTmpl
 	}
-
 	tmpl, err := template.New("dockerfile").Parse(tmplStr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	dest := filepath.Join(benchDir, "Dockerfile")
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return nil, err
 	}
-	defer f.Close()
+	return buf.Bytes(), nil
+}
 
-	return tmpl.Execute(f, data)
+// TemplateVersion identifies the compose and Dockerfile templates of this
+// ffm build. It is recorded on each bench when the bench is created or
+// reconciled, so ffm can tell which benches were built from older templates.
+// Bump it whenever a template changes; TestTemplateVersionTracksTemplates
+// fails until you do.
+const TemplateVersion = 1
+
+// templatesFingerprint hashes every template, for the version guard test.
+func templatesFingerprint() string {
+	h := sha256.New()
+	for _, t := range []string{devComposeTmpl, devDockerfileTmpl, prodComposeTmpl, prodDockerfileTmpl} {
+		h.Write([]byte(t))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // WriteWsgiWrapper writes wsgi.py into the bench workspace at

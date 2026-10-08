@@ -47,6 +47,7 @@ func fullBench() state.Bench {
 		MatchHostUser:     true,
 		Bind:              "lan",
 		SSHAgent:          true,
+		TemplateVersion:   1,
 		Tunnel:            &state.TunnelState{Server: "vps1", Subdomain: "demo", Enabled: true},
 		CreatedAt:         time.Date(2026, 8, 26, 9, 0, 0, 0, time.UTC),
 	}
