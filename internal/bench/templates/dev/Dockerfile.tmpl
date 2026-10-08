@@ -63,6 +63,18 @@ RUN mkdir -p /opt/ffc-skills /tmp/ffc-src \
     && rm -rf /tmp/ffc-src \
     && chmod -R a+rX /opt/ffc-skills
 
+{{- if .NodeMajor}}
+
+# Node {{.NodeMajor}} for this bench's Frappe branch. PATH reaches node through
+# ~/.nvm/current, which `nvm use` repoints (the base image sets
+# NVM_SYMLINK_CURRENT); the default alias covers shells that source nvm.sh.
+# It runs before corepack, which puts its shims next to the active node.
+USER frappe
+RUN bash -c '. "$NVM_DIR/nvm.sh" && nvm alias default {{.NodeMajor}} >/dev/null && nvm use {{.NodeMajor}} >/dev/null' \
+    && node --version | grep -q '^v{{.NodeMajor}}\.'
+USER root
+{{- end}}
+
 # Install pnpm via corepack (system-wide)
 RUN corepack enable pnpm
 

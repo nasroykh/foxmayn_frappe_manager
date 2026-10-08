@@ -78,8 +78,12 @@ Each prod bench has:
 # Interactive form (choose mode, DB engine, version + apps)
 ffm create mybench
 
-# Dev bench — explicit flags
+# Dev bench — explicit flags (version-16 is the default branch)
 ffm create mybench --frappe-branch version-16 --apps erpnext --apps hrms
+
+# Frappe v15 bench: gets Python 3.12 and Node 22 automatically
+# (override with --python 3.12|3.14 and --node 22|24; `ffm status` shows the toolchain)
+ffm create mybench --frappe-branch version-15 --apps erpnext@version-15
 
 # Dev bench with PostgreSQL (experimental)
 ffm create mybench --db-type postgres

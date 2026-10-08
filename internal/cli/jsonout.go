@@ -56,10 +56,14 @@ type jsonList struct {
 }
 
 type jsonStatus struct {
-	Schema        string          `json:"schema"`
-	Bench         jsonBench       `json:"bench"`
-	Dir           string          `json:"dir"`
-	FrappeRepo    string          `json:"frappe_repo,omitempty"`
+	Schema     string    `json:"schema"`
+	Bench      jsonBench `json:"bench"`
+	Dir        string    `json:"dir"`
+	FrappeRepo string    `json:"frappe_repo,omitempty"`
+	// Python and Node are omitted for benches created before ffm recorded
+	// a toolchain; those run on the image defaults.
+	Python        string          `json:"python,omitempty"`
+	Node          string          `json:"node,omitempty"`
 	Apps          []string        `json:"apps"`
 	Bind          string          `json:"bind"`
 	SSHAgent      bool            `json:"ssh_agent"`

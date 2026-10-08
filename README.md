@@ -167,7 +167,7 @@ Steps performed:
 1. Allocates a free host port pair (web: 8000+, socketio: 9000+)
 2. Writes `docker-compose.yml` and `Dockerfile` to `~/frappe/<name>/`
 3. Builds the Docker image — installs **zsh**, **zinit**, **starship**, **[ffc](https://github.com/nasroykh/foxmayn_frappe_cli)**, **pnpm**, and **Claude Code**; pre-fetches 60 [Frappe Claude skills](https://github.com/OpenAEC-Foundation/Frappe_Claude_Skill_Package) to `/opt/`. **Cached after first build.**
-4. Runs `bench init` — clones Frappe, installs Python/Node deps, copies skills into `frappe-bench/.agents/skills/` and `.claude/skills/`
+4. Runs `bench init --python <version>` — clones Frappe, installs Python/Node deps with the branch's toolchain (see [Frappe versions](#frappe-versions-and-toolchains)), copies skills into `frappe-bench/.agents/skills/` and `.claude/skills/`
 5. Starts 4 containers with `workspace/` bind-mounted at `/workspace`
 6. Configures `common_site_config.json`, creates site, enables developer mode
 7. Installs any `--apps`
@@ -193,7 +193,10 @@ Flags:
   --no-ssl                Skip Let's Encrypt — use when Caddy/Nginx already handles TLS
   --acme-email string     Email for Let's Encrypt (required on first prod+SSL bench;
                           saved to ~/.config/ffm/.acme_email for subsequent benches)
-  --frappe-branch string  Frappe branch to initialise (default "version-15")
+  --frappe-branch string  Frappe branch to initialise (default "version-16")
+  --python string         Python for the virtualenv: 3.12 or 3.14
+                          (default: 3.12 for version-15, 3.14 otherwise)
+  --node string           Node major: 22 or 24 (default: 22 for version-15, 24 otherwise)
   --frappe-repo string    Custom Frappe repo URL with optional @branch suffix
                           (e.g. https://github.com/your-org/frappe.git@main).
                           Defaults to the official frappe/frappe repo.
@@ -233,6 +236,25 @@ Production tuning (prod only unless noted):
   --slow-query-log              MariaDB slow query log, 2s threshold, written to
                                 <bench>/mysql-logs/ (prod + MariaDB only)
 ```
+
+#### Frappe versions and toolchains
+
+Each bench gets the Python and Node its Frappe branch is built for. Both come with the pinned
+`frappe/bench` image, so nothing extra is downloaded.
+
+| Branch | Python | Node | Status |
+| --- | --- | --- | --- |
+| `version-16` (default) | 3.14 | 24 | Supported. Frappe requires Python 3.14 and Node 24 |
+| `version-15` | 3.12 | 22 | Supported. Frappe allows Python 3.10–3.14 and Node 18+ |
+| `develop`, fork branches | 3.14 | 24 | Best effort; override with `--python` / `--node` |
+| `version-14` | — | — | Not supported (end of life 2026-01-31; needs Python 3.10/3.11, which the image lacks) |
+
+PostgreSQL stays experimental, as Frappe itself labels it.
+
+`ffm status` shows a bench's toolchain. Benches created before ffm v0.11.0 keep running on the
+image defaults (Python 3.14 and Node 24 for every branch); `ffm recreate` rebuilds them with the
+branch's toolchain. uv's package cache lives in the `pip-cache` volume, so a replaced container
+does not download Python packages again (`ffm reconcile` sets this up on existing dev benches).
 
 #### `--apps` formats
 

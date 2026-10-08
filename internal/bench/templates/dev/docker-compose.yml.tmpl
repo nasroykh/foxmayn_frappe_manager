@@ -42,6 +42,13 @@ services:
     environment:
       - SHELL=/bin/zsh
       - FRAPPE_SOCKETIO_PORT=9000
+      # bench installs Python packages with uv. Its cache lives in the
+      # pip-cache volume: a volume of its own would mount over a path the image
+      # does not have, and Docker would create it root-owned (yarn-cache has
+      # that problem). The virtualenv is on the ./workspace bind mount, a
+      # different filesystem, so uv copies instead of hardlinking.
+      - UV_CACHE_DIR=/home/frappe/.cache/pip/uv
+      - UV_LINK_MODE=copy
 {{- if .ForwardSSHAgent}}
       - SSH_AUTH_SOCK=/ssh-agent
 {{- end}}

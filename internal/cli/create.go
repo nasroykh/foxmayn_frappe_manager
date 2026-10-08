@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 )
 
@@ -13,6 +14,8 @@ func newCreateCmd() *cobra.Command {
 	var (
 		frappeBranch      string
 		frappeRepo        string
+		python            string
+		node              string
 		apps              []string
 		adminPassword     string
 		dbPassword        string
@@ -86,6 +89,7 @@ func newCreateCmd() *cobra.Command {
 
 			return manager.New(verbose).Create(manager.CreateInput{
 				Name: args[0], FrappeBranch: frappeBranch, FrappeRepo: frappeRepo, Apps: apps,
+				Python: python, Node: node,
 				AdminPassword: adminPassword, DBPassword: dbPassword, DBType: dbType,
 				GithubToken: githubToken, ProxyPort: proxyPort, ProxyHost: proxyHost,
 				Mode: mode, Domain: domain, NoSSL: noSSL, AcmeEmail: acmeEmail,
@@ -102,7 +106,12 @@ func newCreateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", "version-15", "Frappe branch (version-15 or version-16)")
+	cmd.Flags().StringVar(&frappeBranch, "frappe-branch", bench.DefaultFrappeBranch, "Frappe branch (version-16 or version-15)")
+	cmd.Flags().StringVar(&python, "python", "",
+		"Python version for the bench virtualenv: "+strings.Join(bench.ImagePythons, " or ")+
+			". Default: 3.12 for version-15, 3.14 otherwise")
+	cmd.Flags().StringVar(&node, "node", "",
+		"Node major version: "+strings.Join(bench.ImageNodes, " or ")+". Default: 22 for version-15, 24 otherwise")
 	cmd.Flags().StringVar(&frappeRepo, "frappe-repo", "", "Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.")
 	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
@@ -152,8 +161,8 @@ func newCreateCmd() *cobra.Command {
 // runCreateForm shows an interactive TUI to choose Frappe version, apps, and DB engine.
 func runCreateForm(branch *string, frappeRepo *string, apps *[]string, dbType *string, githubToken *string) error {
 	versionOptions := []huh.Option[string]{
-		huh.NewOption("Frappe v15 (stable)", "version-15"),
-		huh.NewOption("Frappe v16 (latest)", "version-16"),
+		huh.NewOption("Frappe v16 (Python 3.14, Node 24)", "version-16"),
+		huh.NewOption("Frappe v15 (Python 3.12, Node 22)", "version-15"),
 	}
 
 	appOptions := []huh.Option[string]{
@@ -162,7 +171,7 @@ func runCreateForm(branch *string, frappeRepo *string, apps *[]string, dbType *s
 	}
 
 	// Defaults
-	*branch = "version-15"
+	*branch = bench.DefaultFrappeBranch
 	if *dbType == "" {
 		*dbType = "mariadb"
 	}
@@ -218,7 +227,7 @@ func runCreateForm(branch *string, frappeRepo *string, apps *[]string, dbType *s
 // It asks dev or prod first, then shows the relevant follow-up fields.
 func runCreateFormFull(mode, branch *string, frappeRepo *string, apps *[]string, domain, acmeEmail *string, noSSL *bool, adminPassword, dbType, mariadbBufferPool *string, gunicornWorkers *int, githubToken *string) error {
 	*mode = "dev"
-	*branch = "version-15"
+	*branch = bench.DefaultFrappeBranch
 	if *dbType == "" {
 		*dbType = "mariadb"
 	}
@@ -245,8 +254,8 @@ func runCreateFormFull(mode, branch *string, frappeRepo *string, apps *[]string,
 
 	// Step 2 (prod): domain, SSL, branch, apps, DB tuning
 	versionOptions := []huh.Option[string]{
-		huh.NewOption("Frappe v15 (stable)", "version-15"),
-		huh.NewOption("Frappe v16 (latest)", "version-16"),
+		huh.NewOption("Frappe v16 (Python 3.14, Node 24)", "version-16"),
+		huh.NewOption("Frappe v15 (Python 3.12, Node 22)", "version-15"),
 	}
 	appOptions := []huh.Option[string]{
 		huh.NewOption("ERPNext", "erpnext"),

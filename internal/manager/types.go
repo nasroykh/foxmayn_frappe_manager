@@ -6,9 +6,13 @@ type CreateInput struct {
 	// must not be refused a name that has since become reserved.
 	recreating bool
 
-	Name              string
-	FrappeBranch      string
-	FrappeRepo        string
+	Name         string
+	FrappeBranch string
+	FrappeRepo   string
+	// Python and Node override the toolchain bench.ToolchainFor picks for the
+	// Frappe branch. Empty means the branch default.
+	Python            string
+	Node              string
 	Apps              []string
 	AdminPassword     string
 	DBPassword        string

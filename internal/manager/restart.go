@@ -30,6 +30,7 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 		}
 		if err := bench.WriteDockerfile(b.Dir, bench.ComposeData{
 			Mode: b.Mode, DBType: b.DBEngine(), HostUID: hostUID, HostGID: hostGID,
+			NodeMajor: b.Node,
 		}); err != nil {
 			return fmt.Errorf("write Dockerfile: %w", err)
 		}

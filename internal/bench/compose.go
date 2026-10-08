@@ -102,6 +102,10 @@ type ComposeData struct {
 	// manager.hostUserIDs enforces that.
 	HostUID int
 	HostGID int
+	// NodeMajor makes the Dockerfile switch the image's nvm default to this
+	// Node major (Toolchain.Node). Empty keeps the image default, which is
+	// what benches recorded before toolchains existed were built with.
+	NodeMajor string
 }
 
 // FfcSkillsRef is the ffc release whose agent skills the dev image bundles.
@@ -307,7 +311,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 1
+const TemplateVersion = 2
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {
