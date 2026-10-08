@@ -46,9 +46,13 @@ func TestJobFinishesWhileBeingListed(t *testing.T) {
 	if j := waitFinished(t, js, id); j.Status != JobSucceeded {
 		t.Fatalf("status = %v, want succeeded", j.Status)
 	}
-	if _, err := s.startJob(nil, js, JobCreate, "b1", func(ProgressWriter) error { return nil }); err != nil {
+	id2, err := s.startJob(nil, js, JobCreate, "b1", func(ProgressWriter) error { return nil })
+	if err != nil {
 		t.Fatalf("bench still blocked after its job finished: %v", err)
 	}
+	// Let the second job's goroutine finish writing jobs.json before TempDir
+	// is removed.
+	waitFinished(t, js, id2)
 }
 
 // Run with -race: readers and the job goroutine touch the same records.
@@ -96,9 +100,11 @@ func TestLoadMarksDeadJobsInterrupted(t *testing.T) {
 	if j, _ := js.GetJob("1"); j.Status != JobInterrupted {
 		t.Fatalf("status = %v, want interrupted", j.Status)
 	}
-	if _, err := (&Service{}).startJob(nil, js, JobCreate, "b3", func(ProgressWriter) error { return nil }); err != nil {
+	id2, err := (&Service{}).startJob(nil, js, JobCreate, "b3", func(ProgressWriter) error { return nil })
+	if err != nil {
 		t.Fatalf("bench blocked by a dead job: %v", err)
 	}
+	waitFinished(t, js, id2)
 	var onDisk []*Job
 	raw, _ := os.ReadFile(path)
 	_ = json.Unmarshal(raw, &onDisk)

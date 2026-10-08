@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -146,7 +147,7 @@ func (js *JobStore) persistLocked() {
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(config.ConfigDir(), 0o755)
+	_ = os.MkdirAll(filepath.Dir(js.path), 0o755)
 	_ = os.WriteFile(js.path, data, 0o600)
 }
 
