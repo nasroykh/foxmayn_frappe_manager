@@ -25,6 +25,7 @@ func newBackupScheduleCmd() *cobra.Command {
 		keepWeekly int
 		files      string
 		off        bool
+		encrypt    bool
 		noInstall  bool
 		asJSON     bool
 	)
@@ -106,6 +107,14 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 			if cmd.Flags().Changed("files") {
 				p.Files = files
 			}
+			if cmd.Flags().Changed("encrypt") {
+				if encrypt {
+					if _, err := manager.BackupRecipients(); err != nil {
+						return err
+					}
+				}
+				p.Encrypt = encrypt
+			}
 			if err := svc.SetBackupSchedule(name, &p); err != nil {
 				return err
 			}
@@ -119,6 +128,7 @@ system job ('ffm backup run-due'); 'ffm backup scheduler' manages it.`,
 	cmd.Flags().IntVar(&keepDaily, "keep-daily", 0, "Keep the newest archive of each of the last N days")
 	cmd.Flags().IntVar(&keepWeekly, "keep-weekly", 0, "Keep the newest archive of each of the last N weeks")
 	cmd.Flags().StringVar(&files, "files", "", "Include attachments: every-run, daily, weekly or never")
+	cmd.Flags().BoolVar(&encrypt, "encrypt", false, "Encrypt scheduled archives with age (ffm backup key init); --encrypt=false turns it off")
 	cmd.Flags().BoolVar(&off, "off", false, "Stop scheduled backups for the bench (archives are kept)")
 	cmd.Flags().BoolVar(&noInstall, "no-install", false, "Save the schedule without installing or removing the hourly system job")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "With no bench: print every schedule as machine-readable JSON (schema ffm.schedules/v1)")
@@ -136,8 +146,12 @@ func describePolicy(p state.BackupPolicy) string {
 	if p.KeepWeekly > 0 {
 		keep = append(keep, fmt.Sprintf("%d weekly", p.KeepWeekly))
 	}
-	return fmt.Sprintf("every %s, keeping %s (never fewer than %d), attachments %s",
-		everyLabel(p.EveryHours), strings.Join(keep, " + "), manager.RetentionFloor, p.Files)
+	enc := ""
+	if p.Encrypt {
+		enc = ", encrypted with age"
+	}
+	return fmt.Sprintf("every %s, keeping %s (never fewer than %d), attachments %s%s",
+		everyLabel(p.EveryHours), strings.Join(keep, " + "), manager.RetentionFloor, p.Files, enc)
 }
 
 func everyLabel(h int) string {

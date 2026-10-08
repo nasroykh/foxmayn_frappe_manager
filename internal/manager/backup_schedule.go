@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/agecrypt"
 	"io"
 	"os"
 	"time"
@@ -232,6 +233,7 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 		NoFiles:       !res.WithFiles,
 		Trigger:       TriggerScheduled,
 		SkipIfStopped: true,
+		Encrypt:       b.BackupSchedule != nil && b.BackupSchedule.Encrypt,
 	}, logProgress{w: log})
 	switch {
 	case errors.Is(err, ErrBenchStopped):
@@ -242,6 +244,9 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 		res.Result = RunOK
 		if after, serr := scheduleStatus(b); serr == nil && !after.LastSuccess.IsZero() {
 			res.Archive = archiveFileName(b.Name, TriggerScheduled, after.LastSuccess)
+			if b.BackupSchedule != nil && b.BackupSchedule.Encrypt {
+				res.Archive += agecrypt.Ext
+			}
 		}
 		pr, perr := pruneWithPolicy(b.Name, *b.BackupSchedule, false, s.clock(), time.Local)
 		res.Pruned = len(pr.Removed)

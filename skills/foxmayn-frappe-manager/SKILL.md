@@ -188,6 +188,9 @@ ffm backup schedule mybench --every 24h                # daily, ~3-4 weeks of hi
 ffm backup schedule mybench --every 1h --files weekly  # hourly DB, weekly attachments
 ffm backup schedule mybench --every weekly --keep 3
 ffm backup schedule mybench --off                      # stop; archives are kept
+ffm backup key init --out ~/ffm-backup.key             # age key pair; ffm keeps only the public key
+ffm backup mybench --encrypt                           # .ffm.tar.age (restore: --identity <file>)
+ffm backup schedule mybench --encrypt                  # encrypt scheduled archives
 ffm backup schedule                                    # status of every schedule
 ffm backup list mybench                                # archives + full paths for ffm restore
 ffm backup prune mybench --dry-run                     # preview retention

@@ -223,6 +223,9 @@ type BackupInput struct {
 	// be cloned back — typically to keep uncommitted changes. "all" selects
 	// every app. Apps that cannot be cloned are archived regardless.
 	VendorApps []string
+	// Encrypt encrypts the finished archive with age to the recipients in
+	// config.BackupRecipientsFile and deletes the plaintext.
+	Encrypt bool
 	// writtenTo, when set, receives the path of the archive once it is
 	// complete. Used by the operations that back up before destroying data.
 	writtenTo *string
@@ -235,7 +238,10 @@ type BackupInput struct {
 // failed restore leaves the host exactly as it found it.
 type RestoreInput struct {
 	// Archive is the path to a .ffm.tar file.
-	Archive string
+	// Identity is the age identity file that decrypts an encrypted archive
+	// (default $FFM_AGE_IDENTITY_FILE).
+	Identity string
+	Archive  string
 	// TargetName is the bench to create. Empty means the name recorded in the
 	// archive.
 	TargetName string

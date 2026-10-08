@@ -37,6 +37,12 @@ func (s *Service) Backup(in BackupInput, pw ProgressWriter) error {
 	if err != nil {
 		return err
 	}
+	if in.Encrypt {
+		// Refuse before minutes of dumping, not after.
+		if _, err := BackupRecipients(); err != nil {
+			return err
+		}
+	}
 	release, err := s.lockBench(b.Name)
 	if err != nil {
 		return err
@@ -317,6 +323,15 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	if err := w.Close(); err != nil {
 		return err
 	}
+	if in.Encrypt {
+		pw.Step("Encrypting the archive with age")
+		enc, err := encryptArchive(dest, headerJSON)
+		if err != nil {
+			os.Remove(dest)
+			return err
+		}
+		dest = enc
+	}
 
 	info, _ := os.Stat(dest)
 	pw.Printf("\nBacked up %q.\n", b.Name)
@@ -348,7 +363,12 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	if startedForBackup {
 		pw.Printf("  Note:      the bench was started for this backup and has been stopped again.\n")
 	}
-	pw.Printf("\nRestore it with:\n  ffm restore %s <newname>\n", dest)
+	if in.Encrypt {
+		pw.Printf("  Encrypted: yes (age); restoring needs the identity: --identity <file>\n")
+		pw.Printf("\nRestore it with:\n  ffm restore %s <newname> --identity <file>\n", dest)
+	} else {
+		pw.Printf("\nRestore it with:\n  ffm restore %s <newname>\n", dest)
+	}
 	if in.writtenTo != nil {
 		*in.writtenTo = dest
 	}

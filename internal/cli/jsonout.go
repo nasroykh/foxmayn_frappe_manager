@@ -94,6 +94,7 @@ type jsonArchive struct {
 	Label      string   `json:"label,omitempty"`
 	FfmVer     string   `json:"ffm_version,omitempty"`
 	Unreadable string   `json:"unreadable,omitempty"`
+	Encrypted  bool     `json:"encrypted,omitempty"`
 }
 
 type jsonArchives struct {

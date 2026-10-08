@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/agecrypt"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/archive"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
@@ -29,6 +30,9 @@ type ArchiveInfo struct {
 	Path   string
 	Size   int64
 	Header Header
+	// Encrypted is true for an age-encrypted archive; its header comes from
+	// the cleartext sidecar.
+	Encrypted bool
 	// Err is set when the header could not be read. Such a file is listed
 	// but never pruned: ffm does not delete what it cannot identify.
 	Err error
@@ -50,15 +54,21 @@ func ScanArchives(benchName string) ([]ArchiveInfo, error) {
 	}
 	var out []ArchiveInfo
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".ffm.tar") {
+		encrypted := strings.HasSuffix(e.Name(), ".ffm.tar"+agecrypt.Ext)
+		if e.IsDir() || !(strings.HasSuffix(e.Name(), ".ffm.tar") || encrypted) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		info := ArchiveInfo{Path: path}
+		info := ArchiveInfo{Path: path, Encrypted: encrypted}
 		if fi, err := e.Info(); err == nil {
 			info.Size = fi.Size()
 		}
-		raw, err := archive.PeekHeader(path)
+		var raw []byte
+		if encrypted {
+			raw, err = os.ReadFile(sidecarPath(path))
+		} else {
+			raw, err = archive.PeekHeader(path)
+		}
 		if err == nil {
 			info.Header, err = ParseHeader(raw)
 		}
@@ -198,6 +208,9 @@ func pruneWithPolicy(benchName string, p state.BackupPolicy, dryRun bool, now ti
 	for _, a := range res.Removed {
 		if err := os.Remove(a.Path); err != nil && !os.IsNotExist(err) {
 			return res, fmt.Errorf("remove %s: %w", filepath.Base(a.Path), err)
+		}
+		if a.Encrypted {
+			_ = os.Remove(sidecarPath(a.Path))
 		}
 	}
 	for _, path := range res.Partials {

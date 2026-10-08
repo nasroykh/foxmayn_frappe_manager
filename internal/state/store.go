@@ -47,6 +47,8 @@ type BackupPolicy struct {
 	// Files is how often a scheduled run includes attachments:
 	// "every-run", "daily", "weekly" or "never".
 	Files string `json:"files,omitempty"`
+	// Encrypt encrypts scheduled archives with age (ffm backup key init).
+	Encrypt bool `json:"encrypt,omitempty"`
 }
 
 // Bench holds the persisted state for a single managed bench.

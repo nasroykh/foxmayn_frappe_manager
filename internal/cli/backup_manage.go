@@ -75,6 +75,7 @@ func printArchivesJSON(benches []string) error {
 				j.Trigger = manager.TriggerManual
 			}
 			j.Contents = append([]string{}, a.Header.Tiers...)
+			j.Encrypted = a.Encrypted
 			j.Label = a.Header.Label
 			j.FfmVer = a.Header.FfmVersion
 			out.Archives = append(out.Archives, j)
@@ -106,6 +107,9 @@ func printArchives(benches []string) error {
 			content := "db"
 			if a.Header.HasTier(manager.TierFiles) {
 				content = "db+files"
+			}
+			if a.Encrypted {
+				content += " (age)"
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name,
 				a.CreatedAt().Local().Format("2006-01-02 15:04"), trigger, content,
