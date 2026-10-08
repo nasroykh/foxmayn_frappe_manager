@@ -70,7 +70,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 34 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 35 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -124,6 +124,8 @@ internal/
     clone.go              → ffm clone <source> <new-name> (--no-files, --vendor-apps, --domain)
     agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
                             --agent-read-only
+    notify.go             → ffm notify add|list|remove|test (Slack URL / Telegram token from stdin)
+    backup_key.go / backup_target.go / backup_verify.go → ffm backup key|target|pull|verify
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
                             shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
                             --service to target another container. logs: --follow defaults TRUE
@@ -196,6 +198,14 @@ internal/
                             files by listed size. Keys are "<bench>/<file>". pruneRemote reuses
                             prunable + selectRetained; run-due prunes remotely only after the
                             upload succeeded. PullArchive downloads into the bench backups dir
+    backup_verify.go      → VerifyBackup: decrypt → archive.Extract (restore's guards) →
+                            verifyMembers → dumpHasAuthTable (streams the gzip); with Restore,
+                            verifyByRestore: Restore under verify-<hex> (prod: <name>.verify.invalid,
+                            NoSSL), GET /api/method/ping, Delete in a defer whatever happened
+    notify.go             → notifiers (internal/notify: webhook, ntfy, telegram, slack,
+                            healthchecks) in config.NotifyFile (0600). Notify never fails the
+                            caller. runOne sends the healthchecks start ping, then the result with
+                            the error scrubbed by benchSecrets; skipped-stopped/busy count as OK
     backup_policy.go      → PresetPolicy / ParseEvery / ValidatePolicy / ApplyKeepShorthand
     backup_retention.go   → ScanArchives / selectRetained (tiered + RetentionFloor) /
                             PruneBackups; only readable, trigger=scheduled, same-bench archives

@@ -631,6 +631,40 @@ ffm restore ~/frappe/_backups/mybench/<file>.age copy --identity ~/ffm-backup.ke
 - Make the off-host copy survive a compromised host: S3 Object Lock or a lifecycle rule on the
   bucket, an append-only account on the SFTP server.
 
+#### Proving a backup restores: `ffm backup verify`
+
+```bash
+ffm backup verify ~/frappe/_backups/mybench/<archive>.ffm.tar         # seconds
+ffm backup verify <archive>.age --identity ~/ffm-backup.key --restore  # minutes: a real restore
+ffm backup verify --target r2 --bench mybench --identity ~/ffm-backup.key --notify
+```
+
+`verify` decrypts the archive (age authenticates every byte). It then unpacks it with the guards a
+restore uses, checks every member against the SHA-256 in the manifest, and checks that the
+database dump contains Frappe's `__Auth` table. `--restore` also restores the archive into a
+throwaway bench (`verify-<random>`), asks its site for `/api/method/ping`, and deletes the bench.
+A production archive is restored as production with no TLS, under a name nobody resolves.
+`--json` prints `ffm.verify/v1`. Run it from cron with `--notify`.
+
+#### Notifications: `ffm notify`
+
+```bash
+ffm notify add phone --type ntfy --url https://ntfy.sh/<secret-topic>
+echo "$SLACK_WEBHOOK" | ffm notify add team --type slack --url-stdin
+echo "$BOT_TOKEN" | ffm notify add tg --type telegram --chat-id 123456 --token-stdin
+ffm notify add hc --type healthchecks --url https://hc-ping.com/<uuid>
+ffm notify add ops --type webhook --url https://example.com/hooks/ffm --on always   # JSON POST
+ffm notify list [--json] | test <name> | remove <name>
+```
+
+Scheduled backups report through every notifier, and so does `backup verify --notify`. Only
+failures are reported unless a notifier says `--on always`; a bench skipped because it is
+stopped or busy is not a failure. A healthchecks notifier gets a start ping before every
+scheduled run, then success or `/fail` with the error (credentials scrubbed). The service then
+alerts when pings stop arriving, which is the only way to notice a scheduler that never runs.
+URLs and tokens live in `~/.config/ffm/notify.json` (0600). Slack URLs and Telegram tokens are
+read from stdin only. A notifier that cannot be reached is logged and never fails a backup.
+
 ### Scheduled backups
 
 `ffm backup schedule` backs a bench up automatically and keeps a **bounded** set of archives,
@@ -937,6 +971,8 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm clean --json [--dry-run] [--seeds]` | `ffm.clean/v1` |
 | `ffm snapshot list [bench] --json` | `ffm.snapshots/v1` |
 | `ffm backup target list --json` | `ffm.targets/v1` (no secrets) |
+| `ffm backup verify … --json` | `ffm.verify/v1` |
+| `ffm notify list --json` | `ffm.notifiers/v1` (no URLs or tokens) |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 
