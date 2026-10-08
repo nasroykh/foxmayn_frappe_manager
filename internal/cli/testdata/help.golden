@@ -6,6 +6,7 @@ Available Commands:
   backup      Archive a bench's site into a single restorable file
   clean       Remove volumes and images left by deleted benches (and, opt-in, Docker caches)
   clean-logs  Delete old log table rows to reclaim database space
+  clone       Copy a bench, its site's data and app commits, to a new bench
   console     Open bench console (Python REPL with the site loaded)
   create      Create and start a new Frappe bench
   dashboard   Web dashboard for managing Frappe benches
@@ -27,6 +28,7 @@ Available Commands:
   restore     Rebuild a bench from a backup archive
   set-proxy   Configure a bench to run behind a reverse proxy
   shell       Open an interactive shell inside a bench container
+  snapshot    Quick local rollback points for a bench's database (create / list / restore / delete)
   start       Start a stopped bench
   status      Show per-container status for a bench
   stop        Stop a running bench (containers remain, data preserved)
@@ -212,6 +214,26 @@ Flags:
       --days int   Delete rows older than this many days (default 30)
       --dry-run    Print row counts without deleting anything
       --yes        Skip confirmation prompt
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm clone
+Usage:
+  ffm clone <source> <new-name> [flags]
+
+Examples:
+  ffm clone mybench mybench-try
+  ffm clone mybench scratch --vendor-apps myapp --no-files
+
+Flags:
+      --domain string         Domain of the copy (required when cloning a production bench)
+      --keep-archive          Keep the intermediate backup archive
+      --lan                   Publish the copy's ports on all interfaces
+      --no-files              Leave the site's attachments behind
+      --no-ssl                Production copy without Let's Encrypt
+      --vendor-apps strings   Carry these apps' working trees, uncommitted changes included ('all' for every app)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -661,6 +683,76 @@ Usage:
 Flags:
       --exec string      Run a command non-interactively and print its output
       --service string   Container service to shell into (default "frappe")
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm snapshot
+Usage:
+  ffm snapshot [flags]
+  ffm snapshot [command]
+
+Available Commands:
+  create      Take a snapshot
+  delete      Delete a snapshot
+  list        List a bench's snapshots, newest first
+  restore     Roll the bench's site back to a snapshot (the newest unless --name)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm snapshot [command] --help" for more information about a command.
+
+=== ffm snapshot create
+Usage:
+  ffm snapshot create [bench] [flags]
+
+Flags:
+      --files         Also capture the site's public and private files
+      --name string   Snapshot name (default: the UTC time, e.g. 20261008-104500)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm snapshot delete
+Usage:
+  ffm snapshot delete [bench] [flags]
+
+Aliases:
+  delete, rm
+
+Flags:
+      --name string   Snapshot to delete
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm snapshot list
+Usage:
+  ffm snapshot list [bench] [flags]
+
+Aliases:
+  list, ls
+
+Flags:
+      --json   Print as JSON (schema ffm.snapshots/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm snapshot restore
+Usage:
+  ffm snapshot restore [bench] [flags]
+
+Flags:
+      --migrate       Run bench migrate afterwards
+      --name string   Snapshot to restore (default: the newest)
+      --yes           Do not ask first (the bench name is then required)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

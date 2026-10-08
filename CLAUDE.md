@@ -69,7 +69,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 31 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 33 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -118,6 +118,9 @@ internal/
                             ffm debug on|off|(status)
     poweroff.go / clean.go → ffm poweroff; ffm clean (--dry-run/--yes/--json, --build-cache,
                             --dangling)
+    snapshot.go           → ffm snapshot create|list|restore|delete (--name, --files, --yes,
+                            --migrate, --json ffm.snapshots/v1)
+    clone.go              → ffm clone <source> <new-name> (--no-files, --vendor-apps, --domain)
     shell.go / logs.go    → the last commands that drive bench.Runner directly.
                             shell: zsh for dev frappe, bash otherwise; --exec for one-shot,
                             --service to target another container. logs: --follow defaults TRUE
@@ -214,6 +217,15 @@ internal/
                             the original in a "# ffm debug, original:" comment; refused on LAN
                             binds; writes .vscode/launch.json only when absent
     poweroff.go           → Poweroff: Stop every running bench, then the proxy
+    snapshot.go           → CreateSnapshot / ListSnapshots / RestoreSnapshot / DeleteSnapshot.
+                            Stored in <bench>/workspace/.ffm-snapshots/<name>/ (bind mount, so
+                            bench backup writes in place); snapshot.json is written LAST and
+                            marks a complete snapshot. Restore is IN PLACE (bench restore with
+                            the root password on stdin) — the one exception to create-only
+                            restore, see the vault's ADR-005. afterDatabaseSwap (optional
+                            migrate, then clear-cache) is shared with DBImport
+    clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, PinApps,
+                            ReallocatePorts)
     clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
                             labels, image labels) with no record, no bench dir and a free lock
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user

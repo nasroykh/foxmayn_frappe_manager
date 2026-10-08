@@ -323,12 +323,8 @@ func (s *Service) DBImport(in DBImportInput, pw ProgressWriter) error {
 	if err := runner.ExecStdin("frappe", strings.NewReader(b.DBPassword+"\n"), "bash", "-c", cmd); err != nil {
 		return fmt.Errorf("bench restore: %w", err)
 	}
-	if in.Migrate {
-		pw.Step("Running bench migrate")
-		if out, err := runner.ExecSilent("frappe", "bash", "-c",
-			"cd /workspace/frappe-bench && bench --site "+q(b.SiteName)+" migrate"); err != nil {
-			return fmt.Errorf("bench migrate: %w\n%s", err, lastLines(out, 15))
-		}
+	if err := afterDatabaseSwap(runner, b, in.Migrate, pw); err != nil {
+		return err
 	}
 	pw.Printf("Database of %q replaced from %s.\n", b.Name, in.Path)
 	if !in.Migrate {

@@ -232,6 +232,18 @@ ffm clean --dry-run                 # volumes/images left by deleted benches; --
 For agents: use `--print`/`--json` (no browser), and `ffm shell <bench> --exec "bench --site <site> execute …"`
 instead of `ffm console`. Benches created before v0.11.0 get Mailpit from `ffm reconcile <bench>`.
 
+### Snapshots and clones (disposable work)
+
+```bash
+ffm snapshot create mybench --name before-change   # seconds; DB only (--files for attachments)
+# … migrate, git switch, let an agent loose …
+ffm snapshot restore mybench --yes                  # roll the site's DB back to the newest snapshot
+ffm snapshot list mybench --json                    # ffm.snapshots/v1
+ffm clone mybench mybench-try                        # a full copy under a new name (backup + restore)
+```
+
+Snapshots restore in place and live with the bench; they are not backups (`ffm backup` is).
+
 ### Deleting a bench
 
 ```bash
