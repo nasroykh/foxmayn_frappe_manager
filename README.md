@@ -29,6 +29,25 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 
 Installs to `%LOCALAPPDATA%\Programs\ffm` and adds it to your user `PATH` automatically. No admin rights required.
 
+### Debian / Ubuntu / Fedora / RHEL packages
+
+Each release also ships `.deb` and `.rpm` packages for amd64 and arm64:
+
+```bash
+curl -fsSLO https://github.com/nasroykh/foxmayn_frappe_manager/releases/latest/download/ffm_<version>_linux_amd64.deb
+sudo apt install ./ffm_<version>_linux_amd64.deb      # or: sudo dnf install ./ffm_<version>_linux_amd64.rpm
+```
+
+A package-installed ffm is upgraded with the package manager; `ffm update` refuses to replace it.
+
+### Verifying a download
+
+`checksums.txt` is signed (`checksums.txt.sig`, checked by `install.sh` and `ffm update`), every archive and package has an SPDX SBOM (`*.sbom.json`), and every file has a GitHub build-provenance attestation:
+
+```bash
+gh attestation verify ffm_<version>_linux_amd64.tar.gz -R nasroykh/foxmayn_frappe_manager
+```
+
 ### Go install (requires Go toolchain)
 
 ```bash

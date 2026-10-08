@@ -40,3 +40,4 @@ Thumbs.db
 .agent/
 .claude/
 .cursor/
+dist/
