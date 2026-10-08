@@ -37,6 +37,19 @@ func ToolchainFor(branch string) Toolchain {
 	return Toolchain{Python: "3.14", Node: "24"}
 }
 
+// ValidateFor refuses versions the bench image does not ship, and versions the
+// Frappe branch cannot run on: version-16 requires Python 3.14 and Node 24,
+// and bench init would only fail on them minutes in.
+func (t Toolchain) ValidateFor(branch string) error {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	if strings.HasPrefix(branch, "version-16") && (t.Python != "3.14" || t.Node != "24") {
+		return fmt.Errorf("Frappe version-16 requires Python 3.14 and Node 24 (got Python %s, Node %s)", t.Python, t.Node)
+	}
+	return nil
+}
+
 // Validate refuses versions the bench image does not ship.
 func (t Toolchain) Validate() error {
 	if !slices.Contains(ImagePythons, t.Python) {

@@ -236,7 +236,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	if in.Node != "" {
 		toolchain.Node = in.Node
 	}
-	if err := toolchain.Validate(); err != nil {
+	if err := toolchain.ValidateFor(frappeInitBranch); err != nil {
 		return err
 	}
 

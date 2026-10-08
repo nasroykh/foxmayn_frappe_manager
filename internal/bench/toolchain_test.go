@@ -40,6 +40,18 @@ func TestToolchainValidateRefusesWhatTheImageLacks(t *testing.T) {
 	}
 }
 
+func TestToolchainValidateForVersion16(t *testing.T) {
+	if err := (Toolchain{Python: "3.12", Node: "24"}).ValidateFor("version-16"); err == nil {
+		t.Error("Python 3.12 accepted for version-16")
+	}
+	if err := (Toolchain{Python: "3.14", Node: "22"}).ValidateFor("version-16"); err == nil {
+		t.Error("Node 22 accepted for version-16")
+	}
+	if err := (Toolchain{Python: "3.14", Node: "22"}).ValidateFor("version-15"); err != nil {
+		t.Errorf("version-15 on 3.14/22 refused: %v", err)
+	}
+}
+
 func TestDockerfileSwitchesNodeOnlyWhenRecorded(t *testing.T) {
 	for _, mode := range []string{"dev", "prod"} {
 		out, err := RenderDockerfile(ComposeData{Mode: mode, DBType: "mariadb", NodeMajor: "22"})
