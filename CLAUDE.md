@@ -330,7 +330,10 @@ internal/
         Dockerfile.tmpl          → full dev image: zsh/zinit/starship/ffc/pnpm/Claude Code +
                                    pre-fetched Frappe skills; optional HostUID/HostGID remap layer
       prod/
-        docker-compose.yml.tmpl  → 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
+        docker-compose.yml.tmpl  → (v4: healthchecks on frappe/socketio/redis/DB, no-new-privileges
+                                   on all, redis-queue volume + AOF, workers depend on frappe healthy,
+                                   bench's gunicorn flags, flush_log_at_trx_commit 1 unless
+                                   MariaDBFastCommit) 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
                                    socketio, worker-long, worker-short, scheduler) + an x-logging
                                    anchor (json-file 10m×3); Traefik labels + per-bench
                                    HTTP→HTTPS redirect; optional ./mysql-logs bind

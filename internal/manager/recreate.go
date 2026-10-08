@@ -162,6 +162,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		MariaDBBufferPool: mariadbBufferPool,
 		GunicornWorkers:   b.GunicornWorkers,
 		WorkerLongCount:   b.WorkerLongCount,
+		MariaDBFastCommit: b.MariaDBFastCommit,
 		WorkerShortCount:  b.WorkerShortCount,
 		RedisCacheMaxmem:  b.RedisCacheMaxmem,
 		RedisQueueMaxmem:  b.RedisQueueMaxmem,

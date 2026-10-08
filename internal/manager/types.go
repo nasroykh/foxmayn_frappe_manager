@@ -31,6 +31,7 @@ type CreateInput struct {
 	RedisCacheMaxmem  string
 	RedisQueueMaxmem  string
 	SlowQueryLog      bool
+	MariaDBFastCommit bool
 	FixedWebPort      int
 	FixedSocketIOPort int
 	// DomainAliases are extra hostnames Traefik routes to this bench on top of
