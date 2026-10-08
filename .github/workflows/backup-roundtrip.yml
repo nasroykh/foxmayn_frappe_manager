@@ -11,13 +11,19 @@
 # wrong database, an app whose tables never arrive, a site_config that says one
 # thing while the database says another — exits 0.
 #
-# workflow_dispatch only: it builds a full Frappe bench twice and takes ~30
-# minutes. --match-host-user is mandatory, since GitHub runners are uid 1001
-# while the frappe/bench image is uid 1000 (see uid-probe.yml).
+# It also exercises the v0.11 disposable-bench paths on real Docker: a
+# snapshot rollback and a clone (which goes through the seed the first create
+# saved), both asserted on data.
+#
+# Weekly and on demand: it builds Frappe benches and takes 30-45 minutes.
+# --match-host-user is mandatory, since GitHub runners are uid 1001 while the
+# frappe/bench image is uid 1000 (see uid-probe.yml).
 name: backup-roundtrip
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
 
 permissions:
   contents: read
@@ -35,6 +41,13 @@ jobs:
           echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
           echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
           echo "FFM_BACKUPS_DIR=$RUNNER_TEMP/ffm-backups" >> "$GITHUB_ENV"
+
+      # Three benches, their images and a seed do not fit in a stock runner's
+      # free space; the preinstalled SDKs this job never uses do.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - uses: actions/checkout@v5
 
@@ -64,8 +77,10 @@ jobs:
             exec -T frappe bash -c '
               set -e
               cd /workspace/frappe-bench
-              printf "CI No Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app --no-git ci_nogit
-              printf "CI Local Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app ci_localgit
+              # Answers: title, description, publisher, email, license, CI
+              # workflow, and (v16+) the branch name, left at its default.
+              printf "CI No Git\nci\nCI\nci@example.com\nmit\nN\n\n" | bench new-app --no-git ci_nogit
+              printf "CI Local Git\nci\nCI\nci@example.com\nmit\nN\n\n" | bench new-app ci_localgit
               echo "MARKER = \"ci-nogit\"" > apps/ci_nogit/ci_nogit/marker.py
               echo "MARKER = \"ci-localgit\"" > apps/ci_localgit/ci_localgit/marker.py
               bench --site src.localhost install-app ci_nogit
@@ -78,6 +93,40 @@ jobs:
               bench --site src.localhost mariadb -e \
               "INSERT INTO \`tabToDo\` (name, description, status, owner, creation, modified, modified_by, docstatus, idx) \
                VALUES (\"ffm-ci-marker\", \"FFM-ROUNDTRIP-MARKER\", \"Open\", \"Administrator\", NOW(), NOW(), \"Administrator\", 0, 1);"'
+
+      # A rollback must undo a row AND a table added after the snapshot:
+      # bench restore drops and recreates the database.
+      - name: Snapshot, change, roll back
+        run: |
+          sql() { docker compose -p ffm-src -f "$FFM_BENCHES_DIR/src/docker-compose.yml" \
+            exec -T frappe bash -c 'cd /workspace/frappe-bench && bench --site src.localhost mariadb -N' <<< "$1" | tr -d '[:space:]'; }
+          "$RUNNER_TEMP/ffm" snapshot create src --name ci
+          sql "INSERT INTO \`tabToDo\` (name, description, status, creation, modified) VALUES ('ffm-ci-snap', 'AFTER-SNAPSHOT', 'Open', NOW(), NOW()); CREATE TABLE ffm_ci_after (x int);"
+          test "$(sql "SELECT COUNT(*) FROM \`tabToDo\` WHERE description = 'AFTER-SNAPSHOT';")" = 1
+          "$RUNNER_TEMP/ffm" snapshot restore src --name ci --yes
+          ROWS=$(sql "SELECT COUNT(*) FROM \`tabToDo\` WHERE description = 'AFTER-SNAPSHOT';")
+          TABLES=$(sql "SHOW TABLES LIKE 'ffm_ci_after';")
+          MARKER=$(sql "SELECT COUNT(*) FROM \`tabToDo\` WHERE description = 'FFM-ROUNDTRIP-MARKER';")
+          echo "after rollback: rows=$ROWS table=[$TABLES] marker=$MARKER"
+          if [ "$ROWS" != "0" ] || [ -n "$TABLES" ] || [ "$MARKER" != "1" ]; then
+            echo "::error::the snapshot rollback did not restore the database as it was"
+            exit 1
+          fi
+
+      # The first create saved a seed; a clone (backup + restore under a new
+      # name) must use it and carry the data.
+      - name: Clone it
+        run: |
+          "$RUNNER_TEMP/ffm" clone src cln --no-files | tee clone.log
+          grep -q "Copying the bench from a seed" clone.log || { echo "::error::the clone did not use the seed"; exit 1; }
+          COUNT=$(docker compose -p ffm-cln -f "$FFM_BENCHES_DIR/cln/docker-compose.yml" \
+            exec -T frappe bash -c 'cd /workspace/frappe-bench && bench --site cln.localhost mariadb -N -e \
+              "SELECT COUNT(*) FROM \`tabToDo\` WHERE description = \"FFM-ROUNDTRIP-MARKER\";"' | tr -d '[:space:]')
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::the clone lacks the marker (found $COUNT rows)"
+            exit 1
+          fi
+          "$RUNNER_TEMP/ffm" delete cln --force --no-backup
 
       - name: Back it up
         run: |
@@ -236,7 +285,7 @@ jobs:
       - name: Teardown
         if: always()
         run: |
-          for b in src dst; do
+          for b in src dst cln; do
             if [ -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" ]; then
               docker compose -p "ffm-$b" -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" down -v || true
             fi

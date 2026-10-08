@@ -649,6 +649,6 @@ way `checkArchive`, `verifyMembers`, `planRestoreApps` and `parseDirtyPaths` are
 whole backup/restore gate matrix is testable without a container.
 
 For anything that genuinely needs Docker, `.github/workflows/backup-roundtrip.yml` is the
-model: workflow_dispatch, `FFM_BENCHES_DIR`/`FFM_CONFIG_DIR` pointed at `$RUNNER_TEMP`,
+model: weekly schedule plus workflow_dispatch, `FFM_BENCHES_DIR`/`FFM_CONFIG_DIR` pointed at `$RUNNER_TEMP`,
 `--match-host-user` (runners are uid 1001), and an assertion on **data** rather than on an
 exit code.
