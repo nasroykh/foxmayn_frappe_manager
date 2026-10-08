@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/go-resty/resty/v2"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/relsig"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -116,15 +117,20 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	if downloadURL == "" {
 		return fmt.Errorf("no asset found for %s/%s (expected %q)", runtime.GOOS, runtime.GOARCH, target)
 	}
-	var checksumsURL string
+	var checksumsURL, sigURL string
 	for _, a := range release.Assets {
-		if a.Name == checksumsAsset {
+		switch a.Name {
+		case checksumsAsset:
 			checksumsURL = a.BrowserDownloadURL
-			break
+		case relsig.SignatureName:
+			sigURL = a.BrowserDownloadURL
 		}
 	}
 	if checksumsURL == "" {
 		return fmt.Errorf("release %s has no %s; refusing to install an unverifiable binary", latest, checksumsAsset)
+	}
+	if sigURL == "" {
+		return fmt.Errorf("release %s has no %s; refusing to install an unsigned release", latest, relsig.SignatureName)
 	}
 
 	// Confirm before downloading.
@@ -149,7 +155,7 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// Download archive and replace binary.
 	var installErr error
 	withSpinner(fmt.Sprintf("Downloading ffm %s…", latest), func() {
-		installErr = downloadAndInstall(downloadURL, checksumsURL, target)
+		installErr = downloadAndInstall(downloadURL, checksumsURL, sigURL, target)
 	})
 	if installErr != nil {
 		return installErr
@@ -172,9 +178,10 @@ const checksumsAsset = "checksums.txt"
 // instead of hanging the update forever.
 const downloadTimeout = 5 * time.Minute
 
-// downloadAndInstall fetches the release archive, verifies it against the
-// release's checksums.txt, and replaces the running binary.
-func downloadAndInstall(downloadURL, checksumsURL, assetName string) error {
+// downloadAndInstall fetches the release archive, checks that checksums.txt
+// carries a valid signature from an embedded release key and that the archive
+// matches it, and replaces the running binary.
+func downloadAndInstall(downloadURL, checksumsURL, sigURL, assetName string) error {
 	client := resty.New().SetTimeout(downloadTimeout)
 
 	sums, err := client.R().Get(checksumsURL)
@@ -183,6 +190,18 @@ func downloadAndInstall(downloadURL, checksumsURL, assetName string) error {
 	}
 	if sums.StatusCode() != 200 {
 		return fmt.Errorf("downloading %s: HTTP %d", checksumsAsset, sums.StatusCode())
+	}
+	sig, err := client.R().Get(sigURL)
+	if err != nil {
+		return fmt.Errorf("downloading %s: %w", relsig.SignatureName, err)
+	}
+	if sig.StatusCode() != 200 || len(sig.Body()) > relsig.MaxSignatureBytes {
+		return fmt.Errorf("downloading %s: HTTP %d, %d bytes", relsig.SignatureName, sig.StatusCode(), len(sig.Body()))
+	}
+	// Without this, whoever can replace the release assets could replace
+	// checksums.txt along with the archive.
+	if err := relsig.Verify(relsig.ReleaseKeys, sums.Body(), sig.Body()); err != nil {
+		return fmt.Errorf("release signature check failed, refusing to install: %w", err)
 	}
 
 	resp, err := client.R().Get(downloadURL)

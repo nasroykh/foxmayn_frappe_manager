@@ -537,7 +537,16 @@ syntax.
 
 ## Release
 
-Releases are created by pushing a `v*` tag. The GitHub Actions workflow (`.github/workflows/release.yml`) triggers GoReleaser, which cross-compiles for linux/darwin/windows on amd64/arm64, packages archives, and publishes the GitHub release with a `checksums.txt`.
+Releases are created by pushing a `v*` tag. The GitHub Actions workflow (`.github/workflows/release.yml`) triggers GoReleaser, which cross-compiles for linux/darwin/windows on amd64/arm64, packages archives, and publishes the GitHub release with a `checksums.txt` and `checksums.txt.sig`.
+
+**Signed releases.** `checksums.txt` is signed with Ed25519 (`internal/relsig`, `tools/relsign`,
+GoReleaser `signs:`), using the `FFM_RELEASE_SIGNING_KEY` secret. `ffm update` refuses a release
+without a valid signature from one of `relsig.ReleaseKeys`; `install.sh` checks it with OpenSSL 3
+(`install.ps1` checks SHA-256 only). `ReleaseKeys` holds the signing key and an offline backup key
+whose private half never touches a build machine. To rotate: sign with the backup (set it as the
+secret), ship a release that adds a new backup key, keep old keys while their releases must verify.
+`relsign sign` refuses a secret that the binaries being released cannot verify, and
+`TestInstallScriptInSync` keeps `install.sh`'s `RELEASE_KEYS` equal to `ReleaseKeys`.
 
 **Tag-to-release flow:**
 ```bash
@@ -549,7 +558,7 @@ git push origin v0.1.0
 **Key files:**
 - `.goreleaser.yaml` — build config: binary `ffm`, cmd `./cmd/ffm`, ldflags for version injection, archives named `ffm_<version>_<os>_<arch>`
 - `.github/workflows/release.yml` — triggered on `v*` tags; uses `goreleaser-action@v6` with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`
-- `install.sh` — `curl | sh` installer for Linux/macOS; detects OS/arch, downloads + verifies SHA256, installs to `/usr/local/bin` or `~/.local/bin`
+- `install.sh` — `curl | sh` installer for Linux/macOS; detects OS/arch, downloads, verifies the signature (OpenSSL 3) and SHA256, installs to `/usr/local/bin` or `~/.local/bin`
 - `install.ps1` — `irm | iex` installer for Windows; installs to `%LOCALAPPDATA%\Programs\ffm`, adds to user PATH, no admin rights required
 
 ## Runtime layout (on user's machine)

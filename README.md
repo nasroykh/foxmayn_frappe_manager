@@ -19,7 +19,7 @@ A Go CLI that wraps Docker Compose to create, manage, and destroy Frappe benches
 curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_manager/main/install.sh | sh
 ```
 
-Detects OS and architecture, downloads the latest release binary, verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if the former is not writable).
+Detects OS and architecture, downloads the latest release binary, verifies the release signature (with OpenSSL 3; SHA-256 only without it) and the SHA-256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if the former is not writable).
 
 ### Windows — PowerShell one-liner
 
@@ -582,7 +582,7 @@ Flags:  --force       Skip confirmation prompt (the bench name is then required)
 
 ### `ffm update`
 
-Checks GitHub for the latest release and replaces the running binary in place.
+Checks GitHub for the latest release and replaces the running binary in place. It refuses a release whose `checksums.txt` lacks a valid signature from an ffm release key, or whose archive does not match it.
 
 ```bash
 ffm update           # check and update
