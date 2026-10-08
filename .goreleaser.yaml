@@ -35,6 +35,25 @@ archives:
       - README.md
       - LICENSE
 
+# Linux packages, attached to the release next to the archives. They do not
+# depend on a Docker package because its name differs between distributions
+# (docker-ce, docker.io, moby-engine); ffm checks for Docker at run time.
+nfpms:
+  - id: ffm
+    package_name: ffm
+    file_name_template: "ffm_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: Foxmayn
+    homepage: https://github.com/nasroykh/foxmayn_frappe_manager
+    maintainer: nasroykh <nascodes@protonmail.com>
+    description: Create and manage Frappe benches with Docker Compose, for development and production.
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+
+# A software bill of materials (SPDX, by syft) for every archive.
+sboms:
+  - artifacts: archive
+
 checksum:
   name_template: "checksums.txt"
 

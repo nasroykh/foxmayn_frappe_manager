@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write     # OIDC token for the build-provenance attestation
+  attestations: write # publish the attestation
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -32,6 +34,10 @@ jobs:
           go test -race ./...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+      # syft, which GoReleaser's sboms: step runs.
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -41,3 +47,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FFM_RELEASE_SIGNING_KEY: ${{ secrets.FFM_RELEASE_SIGNING_KEY }}
+
+      # Signed, verifiable provenance for every published file:
+      # gh attestation verify <file> -R nasroykh/foxmayn_frappe_manager
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/checksums.txt
+            dist/checksums.txt.sig

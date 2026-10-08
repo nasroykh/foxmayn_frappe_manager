@@ -104,6 +104,11 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	if upCheckOnly {
 		return nil
 	}
+	if exe, err := os.Executable(); err == nil && packageManaged(exe) {
+		return fmt.Errorf("ffm at %s was installed by a system package; upgrade it with your package manager "+
+			"(e.g. sudo apt install ./ffm_%s_linux_%s.deb, or dnf/rpm), or install ffm with install.sh instead",
+			exe, strings.TrimPrefix(latest, "v"), runtime.GOARCH)
+	}
 
 	// Find the matching release asset for this OS/arch.
 	target := releaseAssetName(latest)
@@ -408,4 +413,17 @@ func parseSemver(s string) []int {
 		out[i], _ = strconv.Atoi(p)
 	}
 	return out
+}
+
+// packageManaged reports whether exe is the copy a deb or rpm installed
+// (/usr/bin/ffm). Replacing it in place would need root and would leave the
+// package database describing a binary that is no longer there.
+func packageManaged(exe string) bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Dir(exe) == "/usr/bin"
 }
