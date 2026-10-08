@@ -2,6 +2,7 @@ package bench
 
 import (
 	"fmt"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"io"
 	"net/http"
 	"os"
@@ -72,7 +73,7 @@ func (r *Runner) baseArgs() []string {
 // compose builds a docker compose command with project and file scoping.
 func (r *Runner) compose(args ...string) *exec.Cmd {
 	full := append(r.baseArgs(), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
@@ -85,7 +86,7 @@ func (r *Runner) compose(args ...string) *exec.Cmd {
 // terminal — used for interactive or streaming commands (exec, logs).
 func (r *Runner) composeWithIO(args ...string) *exec.Cmd {
 	full := append(r.baseArgs(), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -110,7 +111,7 @@ func (r *Runner) withOutput(cmd *exec.Cmd) *exec.Cmd {
 // extra is passed to `docker compose build`, e.g. "--pull", "--no-cache".
 func (r *Runner) Build(extra ...string) error {
 	args := append(append(r.baseArgs(), "build"), extra...)
-	cmd := exec.Command("docker", args...)
+	cmd := execx.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
@@ -129,7 +130,7 @@ func (r *Runner) Build(extra ...string) error {
 // only printed to stderr on failure. The container is removed after exit.
 func (r *Runner) Run(service string, args ...string) error {
 	full := append(append(r.baseArgs(), "run", "--rm", service), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	if r.Verbose {
 		cmd.Stdout = os.Stdout
@@ -207,7 +208,7 @@ func (r *Runner) ExecInDir(service, workdir string, shellArgs ...string) error {
 func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) error {
 	args := append([]string{"exec", "-T", "-w", workdir, service}, shellArgs...)
 	full := append(r.baseArgs(), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -218,7 +219,7 @@ func (r *Runner) ExecOutputInDir(service, workdir string, shellArgs ...string) e
 func (r *Runner) ExecSilent(service string, shellArgs ...string) (string, error) {
 	args := append([]string{"exec", "-T", service}, shellArgs...)
 	full := append(r.baseArgs(), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
 	return r.scrub(strings.TrimSpace(string(out))), err
@@ -246,7 +247,7 @@ func (r *Runner) Logs(follow bool, service string) error {
 // LogsString captures and returns logs for a service without streaming to stdout.
 func (r *Runner) LogsString(service string) string {
 	args := append(append(r.baseArgs(), "logs"), service)
-	cmd := exec.Command("docker", args...)
+	cmd := execx.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	out, _ := cmd.CombinedOutput()
 	return r.scrub(strings.TrimSpace(string(out)))
@@ -259,7 +260,7 @@ func (r *Runner) PS(format string) (string, error) {
 		args = append(args, "--format", format)
 	}
 	full := append(r.baseArgs(), args...)
-	cmd := exec.Command("docker", full...)
+	cmd := execx.Command("docker", full...)
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
@@ -462,7 +463,7 @@ func WaitForHTTP(url string, timeout time.Duration) error {
 // bytes. Here stderr is captured separately and surfaces only in the error.
 func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) error {
 	args := append(append(r.baseArgs(), "exec", "-T", service), shellArgs...)
-	cmd := exec.Command("docker", args...)
+	cmd := execx.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	cmd.Stdout = w
 	var stderr strings.Builder
@@ -484,7 +485,7 @@ func (r *Runner) ExecStream(service string, w io.Writer, shellArgs ...string) er
 // litter if the restore were interrupted.
 func (r *Runner) CopyTo(service, src, dest string) error {
 	args := append(r.baseArgs(), "cp", src, service+":"+dest)
-	cmd := exec.Command("docker", args...)
+	cmd := execx.Command("docker", args...)
 	cmd.Dir = r.ComposeDir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w\n%s", err, r.scrub(strings.TrimSpace(string(out))))

@@ -42,6 +42,14 @@ database-probe classifier (`internal/bench/waithttp_test.go`,
 (`internal/manager/lifecycle_test.go`). All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 
+**Testing without Docker.** Every external command goes through `execx.Command` (never
+`exec.Command` directly). Tests replace it with `internal/execx/fakeexec`: `fakeexec.Install(t,
+Rule{Match: " ps ", Stdout: …})` scripts answers by argv substring and records every call
+(`Calls`, `Called`); a package using it needs `func TestHelperProcess(t *testing.T) {
+fakeexec.HelperMain() }`. `internal/manager/reconcile_pipeline_test.go` is the model for pipeline
+tests. `internal/cli/testdata/help.golden` pins every command's usage and flags: after an intended
+CLI change run `go test ./internal/cli -run TestHelpGolden -update` and review the diff.
+
 `.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
 existed, neither ran anywhere. `.github/workflows/backup-roundtrip.yml` is a
 workflow_dispatch end-to-end proof: create → plant a marker row → backup → delete → restore

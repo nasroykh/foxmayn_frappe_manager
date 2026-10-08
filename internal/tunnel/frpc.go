@@ -3,10 +3,10 @@ package tunnel
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -98,7 +98,7 @@ func WriteFrpcToml(benchDir string, b state.Bench, srv Server, subdomain string)
 
 // containerStatus returns the Docker status of the frpc container, or "" if absent.
 func containerStatus(benchName string) string {
-	out, err := exec.Command(
+	out, err := execx.Command(
 		"docker", "inspect", ContainerName(benchName), "--format", "{{.State.Status}}",
 	).CombinedOutput()
 	if err != nil {
@@ -139,7 +139,7 @@ func Start(benchDir, benchName string) error {
 	case "running", "restarting":
 		return nil // already up or coming up — no-op
 	case "exited", "created":
-		out, err := exec.Command("docker", "start", ContainerName(benchName)).CombinedOutput()
+		out, err := execx.Command("docker", "start", ContainerName(benchName)).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("start frpc container: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
@@ -158,7 +158,7 @@ func Stop(benchName string) error {
 	if containerStatus(benchName) == "" {
 		return nil
 	}
-	out, err := exec.Command("docker", "rm", "-f", ContainerName(benchName)).CombinedOutput()
+	out, err := execx.Command("docker", "rm", "-f", ContainerName(benchName)).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("remove frpc container: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
@@ -184,7 +184,7 @@ func create(benchDir, benchName string) error {
 		frpcImage,
 		"-c", "/etc/frp/frpc.toml",
 	}
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	out, err := execx.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("create frpc container: %w\n%s", err, strings.TrimSpace(string(out)))
 	}

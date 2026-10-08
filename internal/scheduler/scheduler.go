@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 )
 
 // Tag marks ffm's crontab line.
@@ -170,7 +171,7 @@ func ReadCrontab() (string, error) {
 		return "", err
 	}
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command("crontab", "-l")
+	cmd := execx.Command("crontab", "-l")
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		// "no crontab for <user>" exits 1 on every cron implementation.
@@ -184,7 +185,7 @@ func ReadCrontab() (string, error) {
 
 func writeCrontab(content string) error {
 	var stderr bytes.Buffer
-	cmd := exec.Command("crontab", "-")
+	cmd := execx.Command("crontab", "-")
 	cmd.Stdin = strings.NewReader(content)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

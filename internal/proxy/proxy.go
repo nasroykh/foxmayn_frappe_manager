@@ -16,7 +16,7 @@ package proxy
 
 import (
 	"fmt"
-	"os/exec"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"strings"
 )
 
@@ -54,7 +54,7 @@ func DashboardURL() string {
 
 // IsNetworkPresent reports whether the ffm-proxy Docker network exists.
 func IsNetworkPresent() bool {
-	out, err := exec.Command(
+	out, err := execx.Command(
 		"docker", "network", "inspect", NetworkName, "--format", "{{.Name}}",
 	).CombinedOutput()
 	return err == nil && strings.TrimSpace(string(out)) == NetworkName
@@ -66,7 +66,7 @@ func EnsureNetwork() error {
 	if IsNetworkPresent() {
 		return nil
 	}
-	out, err := exec.Command("docker", "network", "create", NetworkName).CombinedOutput()
+	out, err := execx.Command("docker", "network", "create", NetworkName).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("create docker network %q: %w\n%s", NetworkName, err, strings.TrimSpace(string(out)))
 	}
@@ -77,7 +77,7 @@ func EnsureNetwork() error {
 // ("running", "exited", "created", …) or an empty string if the container
 // does not exist.
 func containerStatus() string {
-	out, err := exec.Command(
+	out, err := execx.Command(
 		"docker", "inspect", ContainerName, "--format", "{{.State.Status}}",
 	).CombinedOutput()
 	if err != nil {
@@ -122,7 +122,7 @@ func Start() error {
 
 	case "exited", "created":
 		// Container exists but is stopped; restart it.
-		out, err := exec.Command("docker", "start", ContainerName).CombinedOutput()
+		out, err := execx.Command("docker", "start", ContainerName).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("restart proxy container: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
@@ -156,7 +156,7 @@ func Stop() error {
 		return fmt.Errorf("proxy container in unexpected state %q", s)
 	}
 
-	out, err := exec.Command("docker", "stop", ContainerName).CombinedOutput()
+	out, err := execx.Command("docker", "stop", ContainerName).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("stop proxy container: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
@@ -166,7 +166,7 @@ func Stop() error {
 // SupportsHTTPS reports whether the running Traefik container has port 443
 // bound, indicating it was started with Let's Encrypt support.
 func SupportsHTTPS() bool {
-	out, err := exec.Command(
+	out, err := execx.Command(
 		"docker", "inspect", ContainerName,
 		"--format", `{{range $p, $conf := .HostConfig.PortBindings}}{{$p}} {{end}}`,
 	).CombinedOutput()
@@ -195,17 +195,17 @@ func EnsureHTTPS(acmeEmail string) error {
 		}
 		// Running but HTTP-only: stop, remove, recreate with HTTPS.
 		fmt.Println("  Upgrading proxy to HTTPS (brief routing interruption)...")
-		if out, err := exec.Command("docker", "stop", ContainerName).CombinedOutput(); err != nil {
+		if out, err := execx.Command("docker", "stop", ContainerName).CombinedOutput(); err != nil {
 			return fmt.Errorf("stop proxy for HTTPS upgrade: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
-		if out, err := exec.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
+		if out, err := execx.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
 			return fmt.Errorf("remove proxy for HTTPS upgrade: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
 		return createContainerHTTPS(acmeEmail)
 
 	case "exited", "created":
 		// Stopped container exists: remove and recreate with HTTPS.
-		if out, err := exec.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
+		if out, err := execx.Command("docker", "rm", ContainerName).CombinedOutput(); err != nil {
 			return fmt.Errorf("remove stopped proxy: %w\n%s", err, strings.TrimSpace(string(out)))
 		}
 		return createContainerHTTPS(acmeEmail)
@@ -253,7 +253,7 @@ func createContainer() error {
 		"--log.level=INFO",
 	}
 
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	out, err := execx.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		// Provide an actionable hint for the most common failure: port 80 in use.
@@ -305,7 +305,7 @@ func createContainerHTTPS(acmeEmail string) error {
 		"--log.level=INFO",
 	}
 
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	out, err := execx.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "address already in use") || strings.Contains(msg, "bind:") {
