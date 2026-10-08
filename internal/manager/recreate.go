@@ -97,6 +97,14 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		mariadbBufferPool = "1G"
 	}
 
+	// Recreate deletes the volumes and the workspace before it builds again, so
+	// if the build fails there is nothing left. A backup first makes that
+	// recoverable.
+	archivePath, err := s.backupBeforeDestroy(b, "recreate", in.NoBackup, pw)
+	if err != nil {
+		return err
+	}
+
 	pw.Printf("Recreating bench %q...\n", in.Name)
 	s.TeardownBenchFiles(b)
 	if err := s.RemoveBench(in.Name); err != nil {
@@ -104,11 +112,30 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 	}
 
 	// Create writes a fresh bench record; carry the backup schedule over, or
-	// a recreate would silently stop the bench's scheduled backups.
+	// a recreate would silently stop the bench's scheduled backups. The tunnel
+	// is re-enabled rather than copied: its frpc.toml lived in the bench
+	// directory that was just removed.
 	schedule := b.BackupSchedule
+	tun := b.Tunnel
 	defer func() {
-		if recreateErr == nil && schedule != nil {
+		if recreateErr != nil {
+			if archivePath != "" {
+				recreateErr = fmt.Errorf("%w\n\nThe bench's data was backed up first; get it back with:\n  ffm restore %s %s",
+					recreateErr, archivePath, b.Name)
+			}
+			return
+		}
+		if schedule != nil {
 			recreateErr = s.UpdateBench(b.Name, func(rec *state.Bench) { rec.BackupSchedule = schedule })
+		}
+		if recreateErr == nil && tun != nil && tun.Enabled {
+			if err := s.TunnelEnable(TunnelEnableInput{
+				BenchName: b.Name, ServerName: tun.Server, Subdomain: tun.Subdomain,
+				// It was already published before the recreate.
+				AllowDefaultPassword: true,
+			}, pw); err != nil {
+				fmt.Fprintf(pw.Stderr(), "warning: could not re-enable the tunnel: %v\n", err)
+			}
 		}
 	}()
 

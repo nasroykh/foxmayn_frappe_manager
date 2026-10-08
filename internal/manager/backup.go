@@ -338,6 +338,9 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 		pw.Printf("  Note:      the bench was started for this backup and has been stopped again.\n")
 	}
 	pw.Printf("\nRestore it with:\n  ffm restore %s <newname>\n", dest)
+	if in.writtenTo != nil {
+		*in.writtenTo = dest
+	}
 	return nil
 }
 

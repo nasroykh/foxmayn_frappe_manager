@@ -522,11 +522,12 @@ ffm reconcile mybench --ssh-agent   # keep forwarding the SSH agent (dev)
 
 ### `ffm recreate [name]`
 
-Tears the bench down (containers, **volumes** and directory) and creates it again from its saved settings. All site data is lost: take an `ffm backup` first, or use `ffm reconcile` when you only want this version's templates.
+Backs the bench up, tears it down (containers, **volumes** and directory) and creates it again from its saved settings. The site comes back empty: restore the backup (`ffm restore <archive> <name>`) to get the data back, or use `ffm reconcile` when you only want this version's templates. If the new bench fails to build, the error names the backup to restore. The tunnel, if enabled, is re-enabled.
 
 ```
 Flags:
   --force              Skip confirmation prompt
+  --no-backup          Do not back the bench up first
   --reallocate-ports   Take a new port pair instead of reusing the stored one
   --github-token       Token for private app repos (not stored)
   --proxy-port / --proxy-host   Override the derived reverse-proxy settings (dev)
@@ -568,11 +569,12 @@ ffm tunnel server list|set|use|remove [--yes]
 
 ### `ffm delete [name]`
 
-Stops and removes all containers, volumes, the images built for the bench, and the bench directory.
+Backs the bench up, then removes all containers, volumes, the images built for the bench, and the bench directory. If the backup fails, nothing is deleted. The archive is a manual one (never pruned), labelled "before delete".
 
 ```
 Aliases: rm, remove
-Flags:  --force   Skip confirmation prompt (the bench name is then required)
+Flags:  --force       Skip confirmation prompt (the bench name is then required)
+        --no-backup   Do not back the bench up first
 ```
 
 ### `ffm update`

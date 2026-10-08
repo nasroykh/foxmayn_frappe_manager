@@ -69,7 +69,7 @@ func (h *Handler) BenchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.Delete(name, &manager.BufferProgress{})
+	err := h.Svc.Delete(manager.DeleteInput{Name: name, NoBackup: r.FormValue("no_backup") == "1"}, &manager.BufferProgress{})
 	if err != nil {
 		redirectWithFlash(w, r, benchPath(name), "", err.Error())
 		return

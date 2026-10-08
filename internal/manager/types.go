@@ -71,6 +71,15 @@ type RecreateInput struct {
 	GithubToken       string
 	ProxyPortOverride *int
 	ProxyHostOverride *string
+	// NoBackup skips the automatic backup taken before the bench is torn down.
+	NoBackup bool
+}
+
+// DeleteInput removes a bench.
+type DeleteInput struct {
+	Name string
+	// NoBackup skips the automatic backup taken before the bench is deleted.
+	NoBackup bool
 }
 
 // DomainInput adds or removes a domain alias on a bench.
@@ -195,6 +204,9 @@ type BackupInput struct {
 	// be cloned back — typically to keep uncommitted changes. "all" selects
 	// every app. Apps that cannot be cloned are archived regardless.
 	VendorApps []string
+	// writtenTo, when set, receives the path of the archive once it is
+	// complete. Used by the operations that back up before destroying data.
+	writtenTo *string
 }
 
 // RestoreInput holds parameters for restoring an archive into a NEW bench.

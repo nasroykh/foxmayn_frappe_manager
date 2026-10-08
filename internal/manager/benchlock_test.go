@@ -68,7 +68,7 @@ func TestBackupRefusesBusyBench(t *testing.T) {
 	if !errors.Is(err, ErrBenchBusy) {
 		t.Fatalf("Backup of a locked bench = %v, want ErrBenchBusy", err)
 	}
-	err = s.Delete("alpha", DiscardProgress{})
+	err = s.Delete(DeleteInput{Name: "alpha"}, DiscardProgress{})
 	if !errors.Is(err, ErrBenchBusy) {
 		t.Fatalf("Delete of a locked bench = %v, want ErrBenchBusy", err)
 	}
