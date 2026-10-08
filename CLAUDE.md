@@ -52,7 +52,8 @@ CLI change run `go test ./internal/cli -run TestHelpGolden -update` and review t
 
 `.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
 existed, neither ran anywhere. `.github/workflows/backup-roundtrip.yml` is a
-workflow_dispatch end-to-end proof: create → plant a marker row → backup → delete → restore
+weekly (Monday 03:17 UTC) and on-demand end-to-end proof: create → plant a marker row →
+snapshot rollback → clone through the seed → backup → delete → restore
 under a different name → assert the marker came back. It asserts on data, not exit codes,
 because every interesting failure in this area exits 0.
 
