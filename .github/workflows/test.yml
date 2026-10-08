@@ -38,6 +38,13 @@ jobs:
           GOOS=windows GOARCH=amd64 go build ./...
           GOOS=darwin GOARCH=arm64 go build ./...
 
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
       # Fails on any vulnerability reachable from ffm's code, standard library
       # included: the go directive in go.mod is the toolchain releases use.
       - name: govulncheck

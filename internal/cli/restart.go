@@ -7,7 +7,7 @@ import (
 )
 
 func newRestartCmd() *cobra.Command {
-	var rebuild bool
+	var rebuild, fresh bool
 
 	cmd := &cobra.Command{
 		Use:   "restart [name]",
@@ -20,11 +20,13 @@ func newRestartCmd() *cobra.Command {
 			}
 			return manager.New(verbose).Restart(manager.RestartInput{
 				Name:    name,
-				Rebuild: rebuild,
+				Rebuild: rebuild || fresh,
+				Fresh:   fresh,
 			}, manager.CLIProgress{})
 		},
 	}
 
 	cmd.Flags().BoolVar(&rebuild, "rebuild", false, "Rebuild the Docker image before starting")
+	cmd.Flags().BoolVar(&fresh, "fresh", false, "With --rebuild: ignore the build cache and re-pull the base image, updating ffc, Claude Code and the other tools (implies --rebuild)")
 	return cmd
 }

@@ -392,7 +392,7 @@ The proxy is a standalone `docker run` container (not compose). Key constants:
 ```go
 NetworkName      = "ffm-proxy"         // shared Docker bridge network
 ContainerName    = "ffm-proxy"         // Traefik container name
-Image            = "traefik:3"
+Image            = "traefik:v3.7"
 WebPort          = 80
 HTTPSPort        = 443
 DashboardPort    = 8080                // bound to 127.0.0.1 only

@@ -47,7 +47,14 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 		}
 		runner := s.runnerFor(b)
 		pw.Printf("Rebuilding image for bench %q...\n", in.Name)
-		if err := runner.Build(); err != nil {
+		var extra []string
+		if in.Fresh {
+			// The layer cache otherwise keeps every tool installed by a RUN
+			// line (ffc, Claude Code, starship) at the version of the first
+			// build, and the base image at whatever was pulled then.
+			extra = []string{"--pull", "--no-cache"}
+		}
+		if err := runner.Build(extra...); err != nil {
 			return fmt.Errorf("docker compose build: %w", err)
 		}
 	}

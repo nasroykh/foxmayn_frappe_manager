@@ -29,8 +29,9 @@ const (
 	// project name for the Traefik instance.
 	ContainerName = "ffm-proxy"
 
-	// Image is the Traefik Docker image used.
-	Image = "traefik:3"
+	// Image is the Traefik image, pinned to a supported minor: only the newest Traefik minor gets
+	// security fixes, and a bare "traefik:3" was pulled once and never updated.
+	Image = "traefik:v3.7"
 
 	// WebPort is the host port Traefik binds for HTTP traffic.
 	WebPort = 80

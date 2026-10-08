@@ -511,6 +511,12 @@ internal/
   archive credentials, so whatever create accepts also restores. A prod `--domain` becomes the
   site name, so `Create` runs it through `bench.NormalizeDomain` too (restore always did).
   `ffm exec` is the one deliberate exception: it runs the user's own command.
+- **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
+  image), `FrappeSkillsCommit` (skill pack) and `FfcSkillsRef` (ffc skills); Redis is
+  `redis:8-alpine` in the templates and Traefik `traefik:v3.7` in `proxy.Image`. Do not pin Redis
+  below the minor a host already runs: its RDB files may not load in an older Redis.
+  `TestTemplatesPinTheirInputs` fails on floating tags. `restart --fresh` builds with
+  `--pull --no-cache`.
 - `make skills-init*` symlinks `.agents/skills/*` into `.claude/`, `.cursor/`, `.agent/` — this
   repo is itself skill-managed.
 - `skills/ffm-dev/` and `skills/foxmayn-frappe-manager/` are copies of the same two skills under

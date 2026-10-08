@@ -27,7 +27,7 @@ func TestDockerfileRemapRendering(t *testing.T) {
 		if strings.Contains(off, "usermod") {
 			t.Errorf("%s: remap rendered when HostUID is zero:\n%s", mode, off)
 		}
-		if !strings.Contains(off, "FROM docker.io/frappe/bench:latest") {
+		if !strings.Contains(off, "FROM docker.io/frappe/bench:"+BenchImageTag) {
 			t.Errorf("%s: base image line missing", mode)
 		}
 

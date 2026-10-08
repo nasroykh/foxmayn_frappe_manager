@@ -60,13 +60,13 @@ services:
 {{- end}}
 
   redis-cache:
-    image: docker.io/redis:alpine
+    image: docker.io/redis:8-alpine
     command: ["redis-server", "--maxmemory", "{{.RedisCacheMaxmem}}", "--maxmemory-policy", "allkeys-lru"]
     restart: unless-stopped
     logging: *default-logging
 
   redis-queue:
-    image: docker.io/redis:alpine
+    image: docker.io/redis:8-alpine
     command: ["redis-server", "--maxmemory", "{{.RedisQueueMaxmem}}", "--maxmemory-policy", "noeviction"]
     restart: unless-stopped
     logging: *default-logging
