@@ -598,7 +598,38 @@ age authenticates the data, so a modified or truncated archive fails to decrypt 
 restoring something else. The header sidecar (bench, date, trigger, contents; no secrets) lets
 `backup list` and pruning work without the key. **ffm never stores the identity**: keep it in a
 password manager or offline. Without it, no encrypted backup can be restored. Local archives
-stay unencrypted unless you ask (`--encrypt`).
+stay unencrypted unless you ask (`--encrypt`); uploads to targets are always encrypted.
+
+#### Off-host copies: backup targets
+
+A dead disk or a lost host takes local archives with it. Targets keep copies elsewhere:
+
+```bash
+echo "$SECRET" | ffm backup target add r2 --type s3 --endpoint <account>.r2.cloudflarestorage.com \
+    --bucket backups --access-key-id <id> --secret-access-key-stdin     # AWS, R2, B2, Wasabi, MinIO
+ffm backup target add box --type sftp --host backup.example.com --user ffm \
+    --key-file ~/.ssh/ffm_backup --path /backups --accept-host-key       # pins the host key it shows
+ffm backup target add nas --type local --path /mnt/nas/ffm             # a mounted directory
+ffm backup target add drive --type rclone --remote gdrive:ffm          # anything rclone reaches
+ffm backup target list [--json] | test <name> | remove <name>
+
+ffm backup mybench --to r2                       # encrypted, uploaded, confirmed by size
+ffm backup schedule mybench --every 6h --to r2,box   # every scheduled archive, retention on each target
+ffm backup list mybench --target r2
+ffm backup pull r2 mybench [--archive <file>]    # newest by default, into the local backups dir
+ffm restore ~/frappe/_backups/mybench/<file>.age copy --identity ~/ffm-backup.key
+```
+
+- Every target is tested (write, list, read back, delete) before it is saved.
+- An upload is part of the backup: if it fails, the backup fails, the archive stays local, and a
+  scheduled run prunes nothing.
+- On each target, a schedule's retention applies like it does locally: scheduled archives of that
+  bench only, never fewer than 3.
+- Credentials live in `~/.config/ffm/backup-targets.json` (0600), never in argv or in archives. An
+  S3 secret comes from stdin or `--secret-access-key-file`. SFTP uses a key file without a
+  passphrase (make a dedicated one) and a pinned host key; there is no unpinned mode.
+- Make the off-host copy survive a compromised host: S3 Object Lock or a lifecycle rule on the
+  bucket, an append-only account on the SFTP server.
 
 ### Scheduled backups
 
@@ -905,6 +936,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm open [bench] --json`, `ffm mail [bench] --json` | `ffm.url/v1` |
 | `ffm clean --json [--dry-run] [--seeds]` | `ffm.clean/v1` |
 | `ffm snapshot list [bench] --json` | `ffm.snapshots/v1` |
+| `ffm backup target list --json` | `ffm.targets/v1` (no secrets) |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
 

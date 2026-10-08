@@ -226,6 +226,9 @@ type BackupInput struct {
 	// Encrypt encrypts the finished archive with age to the recipients in
 	// config.BackupRecipientsFile and deletes the plaintext.
 	Encrypt bool
+	// To uploads the archive to these backup targets. It implies Encrypt:
+	// nothing leaves the host in clear. A failed upload fails the backup.
+	To []string
 	// writtenTo, when set, receives the path of the archive once it is
 	// complete. Used by the operations that back up before destroying data.
 	writtenTo *string

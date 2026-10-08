@@ -90,14 +90,17 @@ Examples:
   ffm backup mybench --no-files --label "before the v16 upgrade"
   ffm backup mybench --vendor-apps my_app
   ffm backup mybench --encrypt
+  ffm backup mybench --to r2
 
 Available Commands:
   key         Manage the age keys backups are encrypted to (init / add / list)
   list        List backup archives, newest first
   prune       Apply a bench's retention policy to its scheduled archives now
+  pull        Download a bench's archive from a target (the newest unless --archive)
   run-due     Back up every bench whose schedule is due (run by the hourly system job)
   schedule    Back a bench up automatically, keeping a bounded set of archives
   scheduler   Manage the hourly system job that runs scheduled backups
+  target      Manage off-host backup targets: S3, SFTP, a mounted directory or rclone
 
 Flags:
       --encrypt               Encrypt the archive with age to the keys from 'ffm backup key init'
@@ -105,6 +108,7 @@ Flags:
       --no-files              Skip file attachments and archive the database only
       --out string            Directory to write the archive into, or an explicit path ending in .tar (default: ~/frappe/_backups/<bench>/, overridable with $FFM_BACKUPS_DIR)
       --skip-space-check      Write the archive without checking free disk space first
+      --to strings            Also upload the archive to these backup targets (implies --encrypt; a failed upload fails the backup)
       --vendor-apps strings   Also archive the source of these apps (comma-separated, or 'all'), uncommitted changes included. Apps that cannot be cloned back are archived regardless
 
 Global Flags:
@@ -166,7 +170,8 @@ Examples:
   ffm backup list mybench
 
 Flags:
-      --json   Print machine-readable JSON (schema ffm.backups/v1)
+      --json            Print machine-readable JSON (schema ffm.backups/v1)
+      --target string   List the bench's archives on this backup target instead
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -182,6 +187,17 @@ Examples:
 
 Flags:
       --dry-run   Show what would be removed without removing it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup pull
+Usage:
+  ffm backup pull <target> <bench> [flags]
+
+Flags:
+      --archive string   File name of the archive (default: the newest)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -221,6 +237,7 @@ Flags:
       --keep-weekly int   Keep the newest archive of each of the last N weeks
       --no-install        Save the schedule without installing or removing the hourly system job
       --off               Stop scheduled backups for the bench (archives are kept)
+      --to strings        Upload every scheduled archive to these targets (encrypted; retention applies there too); --to '' stops uploading
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -275,6 +292,87 @@ Usage:
 
 Flags:
       --force   Remove the job even when another ffm configuration installed it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup target
+Usage:
+  ffm backup target [flags]
+  ffm backup target [command]
+
+Available Commands:
+  add         Add a target; it is tested (write, list, read, delete) before it is saved
+  list        List backup targets (no secrets)
+  remove      Forget a target (archives stored on it are left alone)
+  test        Write, list, read back and delete a small object on a target
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm backup target [command] --help" for more information about a command.
+
+=== ffm backup target add
+Usage:
+  ffm backup target add <name> [flags]
+
+Examples:
+  echo "$SECRET" | ffm backup target add r2 --type s3 --endpoint <account>.r2.cloudflarestorage.com \
+      --bucket backups --access-key-id <id> --secret-access-key-stdin
+  ffm backup target add box --type sftp --host backup.example.com --user ffm \
+      --key-file ~/.ssh/ffm_backup --path /backups --accept-host-key
+  ffm backup target add nas --type local --path /mnt/nas/ffm
+  ffm backup target add drive --type rclone --remote gdrive:ffm-backups
+
+Flags:
+      --accept-host-key                 sftp: fetch the server's host key now and pin it
+      --access-key-id string            s3: access key id
+      --bucket string                   s3: bucket (must exist)
+      --endpoint string                 s3: endpoint host, e.g. s3.eu-west-1.amazonaws.com
+      --host string                     sftp: server
+      --host-key string                 sftp: the server's host key, as one line of ssh-keyscan output without the host
+      --insecure                        s3: plain HTTP (a MinIO on a private network)
+      --key-file string                 sftp: private key file (no passphrase; use a dedicated key)
+      --no-test                         Save without testing the target
+      --path string                     sftp: directory on the server; local: absolute directory
+      --port int                        sftp: port (default 22)
+      --prefix string                   Folder inside the target for ffm's archives
+      --region string                   s3: region, when the provider needs one
+      --remote string                   rclone: remote and path, e.g. gdrive:ffm (configured with rclone config)
+      --replace                         Replace a target with the same name
+      --secret-access-key-file string   s3: read the secret access key from this file at each use
+      --secret-access-key-stdin         s3: read the secret access key from stdin
+      --type string                     s3, sftp, local or rclone
+      --user string                     sftp: user
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup target list
+Usage:
+  ffm backup target list [flags]
+
+Flags:
+      --json   Print as JSON (schema ffm.targets/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup target remove
+Usage:
+  ffm backup target remove <name> [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm backup target test
+Usage:
+  ffm backup target test <name> [flags]
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

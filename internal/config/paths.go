@@ -150,3 +150,9 @@ func SeedsDir() string {
 func BackupRecipientsFile() string {
 	return filepath.Join(ConfigDir(), "backup-recipients.txt")
 }
+
+// BackupTargetsFile holds the remote backup targets, credentials included
+// (0600).
+func BackupTargetsFile() string {
+	return filepath.Join(ConfigDir(), "backup-targets.json")
+}

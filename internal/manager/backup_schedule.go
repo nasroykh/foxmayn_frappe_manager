@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -234,6 +235,7 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 		Trigger:       TriggerScheduled,
 		SkipIfStopped: true,
 		Encrypt:       b.BackupSchedule != nil && b.BackupSchedule.Encrypt,
+		To:            scheduleTargets(b),
 	}, logProgress{w: log})
 	switch {
 	case errors.Is(err, ErrBenchStopped):
@@ -244,7 +246,7 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 		res.Result = RunOK
 		if after, serr := scheduleStatus(b); serr == nil && !after.LastSuccess.IsZero() {
 			res.Archive = archiveFileName(b.Name, TriggerScheduled, after.LastSuccess)
-			if b.BackupSchedule != nil && b.BackupSchedule.Encrypt {
+			if b.BackupSchedule != nil && (b.BackupSchedule.Encrypt || len(b.BackupSchedule.Targets) > 0) {
 				res.Archive += agecrypt.Ext
 			}
 		}
@@ -254,6 +256,17 @@ func (s *Service) runOne(b state.Bench, dryRun bool, log io.Writer) RunDueResult
 			// The backup itself succeeded; a prune failure is reported but
 			// does not turn the run into a failed backup.
 			fmt.Fprintf(log, "warning: %s: prune failed: %v\n", b.Name, perr)
+		}
+		// The upload succeeded (it is part of the backup), so the remote copy
+		// is confirmed before anything is pruned there.
+		for _, name := range scheduleTargets(b) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			n, rerr := pruneRemote(ctx, name, b.Name, *b.BackupSchedule, time.Local)
+			cancel()
+			res.Pruned += n
+			if rerr != nil {
+				fmt.Fprintf(log, "warning: %s: prune on %s failed: %v\n", b.Name, name, rerr)
+			}
 		}
 	}
 	rs := RunState{LastAttempt: now, Result: res.Result}
@@ -273,3 +286,10 @@ func (logProgress) Step(string)           {}
 func (logProgress) Printf(string, ...any) {}
 func (logProgress) Println(...any)        {}
 func (p logProgress) Stderr() io.Writer   { return p.w }
+
+func scheduleTargets(b state.Bench) []string {
+	if b.BackupSchedule == nil {
+		return nil
+	}
+	return b.BackupSchedule.Targets
+}

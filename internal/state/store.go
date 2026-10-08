@@ -49,6 +49,9 @@ type BackupPolicy struct {
 	Files string `json:"files,omitempty"`
 	// Encrypt encrypts scheduled archives with age (ffm backup key init).
 	Encrypt bool `json:"encrypt,omitempty"`
+	// Targets are backup targets every scheduled archive is uploaded to
+	// (always encrypted); retention applies on them as well.
+	Targets []string `json:"targets,omitempty"`
 }
 
 // Bench holds the persisted state for a single managed bench.

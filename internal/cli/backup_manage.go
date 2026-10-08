@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 func newBackupListCmd() *cobra.Command {
 	var asJSON bool
+	var target string
 	cmd := &cobra.Command{
 		Use:   "list [bench]",
 		Short: "List backup archives, newest first",
@@ -30,6 +32,12 @@ elsewhere with --out are not tracked.`,
   ffm backup list mybench`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if target != "" {
+				if len(args) == 0 {
+					return usageError{fmt.Errorf("--target needs the bench: ffm backup list <bench> --target %s", target)}
+				}
+				return printRemoteArchives(target, args[0], asJSON)
+			}
 			var benches []string
 			if len(args) == 1 {
 				benches = args
@@ -52,7 +60,49 @@ elsewhere with --out are not tracked.`,
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.backups/v1)")
+	cmd.Flags().StringVar(&target, "target", "", "List the bench's archives on this backup target instead")
 	return cmd
+}
+
+func printRemoteArchives(target, bench string, asJSON bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	remote, err := manager.ListRemoteArchives(ctx, target, bench)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		out := jsonArchives{Schema: "ffm.backups/v1", Archives: []jsonArchive{}}
+		for _, r := range remote {
+			j := jsonArchive{Bench: bench, Path: target + ":" + r.Key, Size: r.Size, Encrypted: true}
+			if r.Err != nil {
+				j.Unreadable = r.Err.Error()
+			} else {
+				j.TakenAt, j.Trigger, j.Label, j.FfmVer = jsonTime(r.Header.CreatedAt), r.Header.Trigger, r.Header.Label, r.Header.FfmVersion
+				j.Contents = append([]string{}, r.Header.Tiers...)
+			}
+			out.Archives = append(out.Archives, j)
+		}
+		return writeJSON(out)
+	}
+	if len(remote) == 0 {
+		fmt.Printf("No archives of %q on %s.\n", bench, target)
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TAKEN\tTRIGGER\tSIZE\tARCHIVE")
+	for _, r := range remote {
+		if r.Err != nil {
+			fmt.Fprintf(tw, "?\tunreadable\t%s\t%s (%v)\n", humanSize(r.Size), r.Key, r.Err)
+			continue
+		}
+		trigger := r.Header.Trigger
+		if trigger == "" {
+			trigger = manager.TriggerManual
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Header.CreatedAt.Local().Format("2006-01-02 15:04"), trigger, humanSize(r.Size), r.Key)
+	}
+	return tw.Flush()
 }
 
 func printArchivesJSON(benches []string) error {
