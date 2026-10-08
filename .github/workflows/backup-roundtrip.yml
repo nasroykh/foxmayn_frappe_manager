@@ -77,8 +77,10 @@ jobs:
             exec -T frappe bash -c '
               set -e
               cd /workspace/frappe-bench
-              printf "CI No Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app --no-git ci_nogit
-              printf "CI Local Git\nci\nCI\nci@example.com\nmit\nN\n" | bench new-app ci_localgit
+              # Answers: title, description, publisher, email, license, CI
+              # workflow, and (v16+) the branch name, left at its default.
+              printf "CI No Git\nci\nCI\nci@example.com\nmit\nN\n\n" | bench new-app --no-git ci_nogit
+              printf "CI Local Git\nci\nCI\nci@example.com\nmit\nN\n\n" | bench new-app ci_localgit
               echo "MARKER = \"ci-nogit\"" > apps/ci_nogit/ci_nogit/marker.py
               echo "MARKER = \"ci-localgit\"" > apps/ci_localgit/ci_localgit/marker.py
               bench --site src.localhost install-app ci_nogit
