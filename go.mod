@@ -1,6 +1,6 @@
 module github.com/nasroykh/foxmayn_frappe_manager
 
-go 1.26.6
+go 1.26.9
 
 require (
 	charm.land/lipgloss/v2 v2.0.3
@@ -60,7 +60,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
