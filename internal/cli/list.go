@@ -39,6 +39,15 @@ func benchJSON(v manager.BenchView) jsonBench {
 	}
 }
 
+// listDoc builds the ffm.list/v1 document (shared with ffm mcp).
+func listDoc(views []manager.BenchView) jsonList {
+	out := jsonList{Schema: "ffm.list/v1", Benches: []jsonBench{}}
+	for _, v := range views {
+		out.Benches = append(out.Benches, benchJSON(v))
+	}
+	return out
+}
+
 func runList(asJSON bool) error {
 	svc := manager.New(verbose)
 	views, err := svc.ListBenchViews()
@@ -46,11 +55,7 @@ func runList(asJSON bool) error {
 		return err
 	}
 	if asJSON {
-		out := jsonList{Schema: "ffm.list/v1", Benches: []jsonBench{}}
-		for _, v := range views {
-			out.Benches = append(out.Benches, benchJSON(v))
-		}
-		return writeJSON(out)
+		return writeJSON(listDoc(views))
 	}
 
 	if len(views) == 0 {

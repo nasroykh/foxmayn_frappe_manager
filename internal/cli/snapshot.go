@@ -76,12 +76,7 @@ for a copy that survives the bench.
 				return err
 			}
 			if asJSON {
-				out := jsonSnapshots{Schema: "ffm.snapshots/v1", Bench: name, Snapshots: []jsonSnapshot{}}
-				for _, s := range snaps {
-					out.Snapshots = append(out.Snapshots, jsonSnapshot{Name: s.Name, CreatedAt: jsonTime(s.CreatedAt),
-						Files: s.Files, Size: s.Size, Commits: s.Commits})
-				}
-				return writeJSON(out)
+				return writeJSON(snapshotsDoc(name, snaps))
 			}
 			if len(snaps) == 0 {
 				fmt.Printf("Bench %q has no snapshots.\n", name)
@@ -171,4 +166,14 @@ for a copy that survives the bench.
 
 	cmd.AddCommand(createCmd, listCmd, restoreCmd, deleteCmd)
 	return cmd
+}
+
+// snapshotsDoc builds the ffm.snapshots/v1 document (shared with ffm mcp).
+func snapshotsDoc(name string, snaps []manager.Snapshot) jsonSnapshots {
+	out := jsonSnapshots{Schema: "ffm.snapshots/v1", Bench: name, Snapshots: []jsonSnapshot{}}
+	for _, s := range snaps {
+		out.Snapshots = append(out.Snapshots, jsonSnapshot{Name: s.Name, CreatedAt: jsonTime(s.CreatedAt),
+			Files: s.Files, Size: s.Size, Commits: s.Commits})
+	}
+	return out
 }

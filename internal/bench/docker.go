@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -251,6 +252,23 @@ func (r *Runner) LogsString(service string) string {
 	cmd.Dir = r.ComposeDir
 	out, _ := cmd.CombinedOutput()
 	return r.scrub(strings.TrimSpace(string(out)))
+}
+
+// LogsTail returns the last tail lines of the bench's logs (one service or
+// all), without colours, with secrets scrubbed. since, when set, is passed to
+// --since (e.g. "10m" or an RFC 3339 time).
+func (r *Runner) LogsTail(service string, tail int, since string) (string, error) {
+	args := append(r.baseArgs(), "logs", "--no-color", "--tail", strconv.Itoa(tail))
+	if since != "" {
+		args = append(args, "--since", since)
+	}
+	if service != "" {
+		args = append(args, service)
+	}
+	cmd := execx.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	out, err := cmd.CombinedOutput()
+	return r.scrub(strings.TrimRight(string(out), "\n")), err
 }
 
 // PS returns the raw output of docker compose ps.

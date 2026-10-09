@@ -22,6 +22,7 @@ Available Commands:
   login       Open a dev bench's desk already logged in (Administrator by default)
   logs        Stream logs from a bench (all services or one)
   mail        Open the Mailpit inbox that catches a dev bench's outgoing mail
+  mcp         Serve ffm's bench tools to an MCP client (stdio)
   notify      Where ffm reports failed scheduled backups, verifies and checks (add / list / remove / test)
   open        Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
   poweroff    Stop every running bench and the shared proxy
@@ -819,6 +820,18 @@ Usage:
 Flags:
       --json    Print the URL as JSON (schema ffm.url/v1)
       --print   Print the URL instead of opening it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm mcp
+Usage:
+  ffm mcp [flags]
+
+Flags:
+      --allow-prod    Let the write tools act on production benches (needs --allow-write)
+      --allow-write   Also offer the tools that create, change, start, stop and delete benches
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
