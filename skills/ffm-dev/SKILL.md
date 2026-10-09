@@ -405,14 +405,14 @@ The proxy is a standalone `docker run` container (not compose). Key constants:
 ```go
 NetworkName      = "ffm-proxy"         // shared Docker bridge network
 ContainerName    = "ffm-proxy"         // Traefik container name
-Image            = "traefik:v3.7"
+Image            = "traefik:v3.7.14"
 WebPort          = 80
 HTTPSPort        = 443
 DashboardPort    = 8080                // bound to 127.0.0.1 only
 LetsEncryptVolume = "ffm-letsencrypt"  // named volume for ACME state
 ```
 
-All Traefik configuration is CLI flags — no config file on disk.
+All Traefik configuration is CLI flags, built by `proxy.runArgs` from `proxy.json` (no Traefik config file).
 
 ### Key functions
 

@@ -370,6 +370,9 @@ internal/
                             Install/Uninstall refuse a line whose --log (LogOf) is another
                             configuration's (ForeignJobError) unless forced: a run with another
                             FFM_CONFIG_DIR used to replace the real one's job
+  proxy/config.go         → Config (proxy.json: HTTPS, ACME email/staging, DNS-01 via Cloudflare
+                            token FILE mounted ro, Cloudflare trusted IPs) and runArgs, the one
+                            place the `docker run` flags are built; Recreate / Upgrade use it
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
                             IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
   tunnel/
@@ -649,7 +652,7 @@ internal/
   `bench.DefaultFrappeBranch` (`version-16`).
 - **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
   image), `FrappeSkillsCommit` (skill pack) and `FfcSkillsRef` (ffc skills); Redis is
-  `redis:8-alpine` in the templates and Traefik `traefik:v3.7` in `proxy.Image`. Do not pin Redis
+  `redis:8-alpine` in the templates and Traefik `traefik:v3.7.14` in `proxy.Image` (`ffm proxy upgrade` moves a running proxy to it). Do not pin Redis
   below the minor a host already runs: its RDB files may not load in an older Redis.
   `TestTemplatesPinTheirInputs` fails on floating tags. `restart --fresh` builds with
   `--pull --no-cache`.

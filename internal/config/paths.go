@@ -40,6 +40,12 @@ func AcmeEmailFile() string {
 	return filepath.Join(ConfigDir(), ".acme_email")
 }
 
+// ProxyConfigFile holds the shared Traefik proxy's settings (HTTPS, ACME,
+// trusted proxies), so an upgrade or a reconfiguration recreates it as it was.
+func ProxyConfigFile() string {
+	return filepath.Join(ConfigDir(), "proxy.json")
+}
+
 // TunnelConfigFile returns the path to tunnel.json, which stores VPS tunnel
 // server profiles (host, port, auth token, base domain). Mode 0o600 — contains tokens.
 func TunnelConfigFile() string {

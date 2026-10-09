@@ -540,13 +540,27 @@ Flags:
 Manages the shared [Traefik](https://traefik.io/) container.
 
 ```bash
-ffm proxy start    # start Traefik
-ffm proxy stop     # stop Traefik
-ffm proxy status   # show status + dashboard URL
+ffm proxy start      # start Traefik
+ffm proxy stop       # stop Traefik
+ffm proxy status     # status, dashboard URL, image, configuration
+ffm proxy upgrade    # move to the Traefik release this ffm pins, same configuration
+ffm proxy configure --acme-staging                      # try a setup without hitting rate limits
+ffm proxy configure --dns-cloudflare-token-file /root/cf-token   # DNS-01 (port 80 closed / behind Cloudflare)
+ffm proxy configure --http-challenge                    # back to HTTP-01
+ffm proxy configure --cloudflare                        # trust Cloudflare's X-Forwarded-For
 ```
 
 - **Dev benches**: routes `<name>.localhost` on port 80
 - **Prod benches with SSL**: also routes on port 443 with Let's Encrypt (added on first prod bench creation)
+- The image is pinned to an exact patch (`traefik:v3.7.14`). After updating ffm, `ffm proxy
+  upgrade` moves the proxy to it; only the newest Traefik minor gets security fixes.
+- The configuration lives in `~/.config/ffm/proxy.json`, so an upgrade or a `configure` recreates
+  the proxy as it was. Certificates stay in the `ffm-letsencrypt` volume; the staging CA has its
+  own storage file. Recreating interrupts every bench's routing for a few seconds.
+- The proxy writes an access log and keeps the read timeout at 600 s, so large uploads finish.
+  Its logs (and those of tunnel containers) rotate at 20 MB × 5.
+- A Cloudflare API token for DNS-01 needs only Zone → DNS → Edit on the zone. Its file is mounted
+  read-only and never passed as an argument.
 
 Prod benches (template version 4) add these on their site routers:
 
@@ -1042,9 +1056,9 @@ A single Traefik container (`ffm-proxy`) is shared across all benches:
 
 | Container | Image | Ports |
 |--|--|--|
-| `ffm-proxy` | `traefik:v3.7` | `0.0.0.0:80` (HTTP), `0.0.0.0:443` (HTTPS, when a prod bench uses SSL), `127.0.0.1:8080` (dashboard) |
+| `ffm-proxy` | `traefik:v3.7.14` | `0.0.0.0:80` (HTTP), `0.0.0.0:443` (HTTPS, when a prod bench uses SSL), `127.0.0.1:8080` (dashboard) |
 
-Configured entirely via CLI flags — no config file on disk. Uses `--restart=unless-stopped`.
+Configured via CLI flags built from `~/.config/ffm/proxy.json` (no Traefik config file). Uses `--restart=unless-stopped`.
 
 ## Scripting: JSON output and exit codes
 

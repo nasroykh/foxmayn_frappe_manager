@@ -179,6 +179,8 @@ func create(benchDir, benchName string) error {
 		"run", "-d",
 		"--name", ContainerName(benchName),
 		"--restart=unless-stopped",
+		// json-file grows without bound otherwise.
+		"--log-opt", "max-size=10m", "--log-opt", "max-file=3",
 		"--network", BenchNetworkName(benchName),
 		"-v", tomlPath + ":/etc/frp/frpc.toml:ro",
 		frpcImage,
