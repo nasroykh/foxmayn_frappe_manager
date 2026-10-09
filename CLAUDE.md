@@ -70,7 +70,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 38 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 39 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -125,6 +125,13 @@ internal/
     agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
                             --agent-read-only
     doctor.go             → ffm doctor [bench] (--json ffm.doctor/v1, --notify)
+    mcp.go                → ffm mcp [--allow-write] [--allow-prod]: stdio MCP server (mark3labs/mcp-go) for
+                            a host-side agent. Tools call manager.Service and return the --json
+                            documents (listDoc/statusDoc/snapshotsDoc, shared with list/status/snapshot);
+                            os.Stdout is pointed at stderr so ffm output never reaches the protocol;
+                            write tools refuse prod benches without --allow-prod; one write tool at a time
+    mcp_confirm.go        → delete's elicitation confirmation (HMAC-bound, single-use, 10 min request
+                            state; same design as ffc's)
     site.go               → ffm site [bench] / migrate / maintenance on|off / scheduler on|off|pause|resume
     app.go                → ffm app list|add|remove|update (update ≠ `ffm update`, which is ffm's
                             self-update; --to-branch, --dry-run, --no-rollback, --yes)

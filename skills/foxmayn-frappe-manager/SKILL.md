@@ -269,6 +269,11 @@ ffm agent on mybench [--read-only]    # apply to an existing dev bench; 'ffm age
 Inside every dev bench, `AGENTS.md` at `/workspace/frappe-bench` tells the agent its URLs, identity,
 test commands and Mailpit. ffc config and Claude Code login persist in `<bench>/home/`.
 
+An agent on the **host** manages benches through `ffm mcp` (stdio MCP server): read-only by
+default (list, status, doctor, logs, snapshots); `--allow-write` adds create (dev), clone, snapshot,
+snapshot_restore, test, start, stop and delete (delete asks the user via elicitation). Production
+benches stay off-limits to write tools unless `--allow-prod`.
+
 ### Apps, updates and site operations
 
 ```bash

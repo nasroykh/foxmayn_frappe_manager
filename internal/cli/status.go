@@ -38,14 +38,22 @@ func newStatusCmd() *cobra.Command {
 }
 
 func runStatusJSON(name string, showSecrets bool) error {
-	svc := manager.New(verbose)
-	b, err := svc.GetBench(name)
+	out, err := statusDoc(manager.New(verbose), name, showSecrets)
 	if err != nil {
 		return err
 	}
+	return writeJSON(out)
+}
+
+// statusDoc builds the ffm.status/v1 document (shared with ffm mcp).
+func statusDoc(svc *manager.Service, name string, showSecrets bool) (jsonStatus, error) {
+	b, err := svc.GetBench(name)
+	if err != nil {
+		return jsonStatus{}, err
+	}
 	views, err := svc.ListBenchViews()
 	if err != nil {
-		return err
+		return jsonStatus{}, err
 	}
 	var view manager.BenchView
 	for _, v := range views {
@@ -79,10 +87,10 @@ func runStatusJSON(name string, showSecrets bool) error {
 	}
 	raw, err := bench.NewRunner(b.Name, b.Dir, false).PS("json")
 	if err != nil {
-		return fmt.Errorf("docker compose ps: %w", err)
+		return out, fmt.Errorf("docker compose ps: %w", err)
 	}
 	out.Containers = parseComposePS(raw)
-	return writeJSON(out)
+	return out, nil
 }
 
 // parseComposePS reads `docker compose ps --format json`, which prints one

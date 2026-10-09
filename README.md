@@ -623,6 +623,31 @@ ffm agent on mybench [--read-only]          # an existing bench; 'ffm agent off'
   the file.
 - Not included yet: an egress firewall for agents run with permission prompts off.
 
+### `ffm mcp` — manage benches from an agent on the host
+
+`ffm mcp` is an MCP server on stdin/stdout for an agent running on the host (the agent inside a
+bench uses ffc's MCP server instead, which manages one site's data):
+
+```bash
+claude mcp add ffm -- ffm mcp                  # read-only
+claude mcp add ffm -- ffm mcp --allow-write    # also create, change, start, stop and delete
+```
+
+| Tools | Offered |
+|--|--|
+| `list`, `status`, `doctor`, `logs`, `snapshots` | always (read-only) |
+| `create` (dev benches only), `clone`, `snapshot`, `snapshot_restore`, `test`, `start`, `stop` | with `--allow-write` |
+| `delete` | with `--allow-write`; the client asks the user every time |
+
+- Results are the same JSON documents as `--json` (`ffm.list/v1`, `ffm.status/v1`, …); passwords
+  are left out and logs have them scrubbed. `logs` returns at most 2000 lines.
+- `delete` asks through MCP elicitation, bound to that call and usable once. A client that cannot
+  ask gets a refusal naming the `ffm delete` command to run in a terminal.
+- Write tools refuse production benches unless the server runs with `--allow-prod`; clone never
+  copies one (it needs a domain).
+- `create` and `clone` take minutes and send progress notifications when the client asks for
+  them; a client with a short tool timeout may give up first while the work goes on.
+
 ### `ffm backup [name]`
 
 Writes the bench's database, file attachments and configuration into one portable archive.
