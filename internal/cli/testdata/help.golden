@@ -923,15 +923,32 @@ Usage:
   ffm proxy [command]
 
 Available Commands:
+  configure   Change the proxy's ACME and trusted-proxy settings (recreates it)
   start       Start the Traefik proxy (enables sitename.localhost routing)
   status      Show the current proxy status
   stop        Stop the Traefik proxy (benches remain accessible on their direct ports)
+  upgrade     Move the proxy to the Traefik version this ffm pins (traefik:v3.7.14), keeping its configuration
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
 Use "ffm proxy [command] --help" for more information about a command.
+
+=== ffm proxy configure
+Usage:
+  ffm proxy configure [flags]
+
+Flags:
+      --acme-email string                  ACME account email
+      --acme-staging                       Use Let's Encrypt's staging CA (--acme-staging=false to go back)
+      --cloudflare                         Trust X-Forwarded-For from Cloudflare (--cloudflare=false to stop)
+      --dns-cloudflare-token-file string   Solve ACME with DNS-01 via Cloudflare using the token in this file (absolute path)
+      --http-challenge                     Solve ACME with HTTP-01 again
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
 
 === ffm proxy start
 Usage:
@@ -952,6 +969,14 @@ Global Flags:
 === ffm proxy stop
 Usage:
   ffm proxy stop [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm proxy upgrade
+Usage:
+  ffm proxy upgrade [flags]
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
