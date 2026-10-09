@@ -629,9 +629,15 @@ ffm agent on mybench [--read-only]          # an existing bench; 'ffm agent off'
 bench uses ffc's MCP server instead, which manages one site's data):
 
 ```bash
-claude mcp add ffm -- ffm mcp                  # read-only
-claude mcp add ffm -- ffm mcp --allow-write    # also create, change, start, stop and delete
+ffm mcp install --client claude-code                  # read-only; or claude-desktop, cursor, vscode, codex
+ffm mcp install --client cursor --allow-write --print # show the change, write nothing
+ffm mcp uninstall --client cursor
 ```
+
+`install` writes the client's user-level config (Claude Code through `claude mcp add-json`), keeps
+comments and other servers, shows a diff and asks first, and backs the old file up as
+`<file>.ffm-<time>.bak`. The entry runs this ffm binary by its absolute path; `FFM_*` variables
+of your shell are not copied into it.
 
 | Tools | Offered |
 |--|--|

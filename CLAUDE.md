@@ -130,6 +130,7 @@ internal/
                             documents (listDoc/statusDoc/snapshotsDoc, shared with list/status/snapshot);
                             os.Stdout is pointed at stderr so ffm output never reaches the protocol;
                             write tools refuse prod benches without --allow-prod; one write tool at a time
+    mcp_install.go        → ffm mcp install|uninstall --client … [--allow-write --allow-prod --print --yes]
     mcp_confirm.go        → delete's elicitation confirmation (HMAC-bound, single-use, 10 min request
                             state; same design as ffc's)
     site.go               → ffm site [bench] / migrate / maintenance on|off / scheduler on|off|pause|resume
@@ -377,6 +378,10 @@ internal/
                             Install/Uninstall refuse a line whose --log (LogOf) is another
                             configuration's (ForeignJobError) unless forced: a run with another
                             FFM_CONFIG_DIR used to replace the real one's job
+  mcpinstall/             → client config writer for ffm mcp install (Claude Code via the claude CLI,
+                            Claude Desktop, Cursor, VS Code JSONC via hujson, Codex TOML line edits;
+                            diff, backup, atomic write). COPIED from ffc's internal/mcpinstall
+                            (v1.13.0): port fixes both ways
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
                             IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
   tunnel/
