@@ -17,11 +17,13 @@ func ValidateName(name string) error {
 	return nil
 }
 
-// reservedNames are subcommands of `ffm backup`. A bench with one of these
-// names could not be addressed as `ffm backup <name>`, because Cobra resolves
+// reservedNames are subcommands of `ffm backup` and `ffm site`, which both
+// take a bench as their argument. A bench with one of these names could not be
+// addressed as `ffm backup <name>` or `ffm site <name>`, because Cobra resolves
 // the subcommand first.
 var reservedNames = map[string]bool{
 	"list": true, "schedule": true, "prune": true, "run-due": true, "scheduler": true, "key": true, "target": true, "pull": true, "verify": true,
+	"migrate": true, "maintenance": true,
 }
 
 // ValidateNewName is ValidateName plus the names reserved for new benches.
@@ -38,7 +40,7 @@ func ValidateNewName(name string) error {
 		return fmt.Errorf("bench name %q is invalid: use lowercase letters, digits and hyphens", name)
 	}
 	if reservedNames[strings.ToLower(name)] {
-		return fmt.Errorf("bench name %q is reserved (it is an 'ffm backup' subcommand) — choose another", name)
+		return fmt.Errorf("bench name %q is reserved (it is an 'ffm backup' or 'ffm site' subcommand) — choose another", name)
 	}
 	return nil
 }
