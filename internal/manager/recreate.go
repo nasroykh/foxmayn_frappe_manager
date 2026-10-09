@@ -163,6 +163,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		GunicornWorkers:   b.GunicornWorkers,
 		WorkerLongCount:   b.WorkerLongCount,
 		MariaDBFastCommit: b.MariaDBFastCommit,
+		ProjectFile:       b.ProjectFile,
 		WorkerShortCount:  b.WorkerShortCount,
 		RedisCacheMaxmem:  b.RedisCacheMaxmem,
 		RedisQueueMaxmem:  b.RedisQueueMaxmem,

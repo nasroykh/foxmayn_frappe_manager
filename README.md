@@ -310,6 +310,42 @@ ffm create mybench --ssh-agent --frappe-repo "git@github.com:your-org/frappe.git
 
 Both `--frappe-repo` and `--github-token` are also available in the interactive `ffm create` form (the token field is masked).
 
+### `ffm up` — the bench a project describes (`ffm.yaml`)
+
+Commit an `ffm.yaml` in an app's repository and anyone can bring up the same development bench:
+
+```yaml
+version: 1
+name: shop                       # bench name; default: the directory's name
+frappe:
+  branch: version-16             # default version-16
+  repo: https://github.com/frappe/frappe   # optional fork
+python: "3.14"                   # optional; default per branch
+db: mariadb                      # or postgres
+apps: [erpnext, hrms@version-16]
+hooks:                           # inside the bench, from /workspace/frappe-bench
+  post_create: ["bench --site $SITE set-config developer_mode 1"]
+  post_update: ["bench --site $SITE clear-cache"]
+tooling:                         # ffm run <name> [args...]
+  lint: ruff check apps/shop
+  tests: { cmd: "bench --site $SITE run-tests --app shop", description: App tests }
+```
+
+```bash
+ffm up                # create the bench (or start it); post_create hooks run after a create
+ffm run               # list the tooling; ffm run lint --fix runs one with extra arguments
+ffm trust             # review and allow the file's commands; --revoke forgets it
+```
+
+- `ffm up` looks for `ffm.yaml` in the current directory and its parents up to the repository root.
+  Unknown fields are errors. An existing bench is started, not changed: apps the file lists and
+  the bench lacks are reported for `ffm app add`.
+- **Hooks and tooling run only from a file you trusted in its exact current form**, like direnv.
+  Any edit, including one pulled from git, asks again (`ffm up` asks interactively; scripts use
+  `ffm trust --yes` after review, or `ffm up --no-hooks`). The record is `~/.config/ffm/trust.json`.
+- `post_update` hooks run after a successful `ffm app update` of the bench.
+- `$SITE` and `$BENCH` are set for hooks and tooling.
+
 ### `ffm list` / `ffm ls`
 
 Lists all managed benches with their live status, mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.

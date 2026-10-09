@@ -113,6 +113,9 @@ type Bench struct {
 	// MariaDBFastCommit keeps innodb_flush_log_at_trx_commit=2 (prod). Records
 	// without it get the durable 1 from template version 4 on.
 	MariaDBFastCommit bool `json:"mariadb_fast_commit,omitempty"`
+	// ProjectFile is the absolute path of the ffm.yaml this bench was
+	// created from by ffm up; its post_update hooks run after app updates.
+	ProjectFile string `json:"project_file,omitempty"`
 	// MatchHostUser records that the image was built with the in-container
 	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
 	// Absent in records written before this option existed, which is correct —

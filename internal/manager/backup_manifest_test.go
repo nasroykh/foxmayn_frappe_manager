@@ -28,6 +28,7 @@ func fullBench() state.Bench {
 		FrappeRepo:        "https://github.com/acme/frappe",
 		Agent:             true,
 		MariaDBFastCommit: true,
+		ProjectFile:       "/home/nas/src/shop/ffm.yaml",
 		AgentReadOnly:     true,
 		Python:            "3.12",
 		Node:              "22",

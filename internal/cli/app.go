@@ -176,7 +176,11 @@ This is not 'ffm update', which updates ffm itself.`,
 					return err
 				}
 			}
-			return manager.New(verbose).Update(up, manager.CLIProgress{})
+			svc := manager.New(verbose)
+			if err := svc.Update(up, manager.CLIProgress{}); err != nil || up.DryRun {
+				return err
+			}
+			return runPostUpdateHooks(svc, name)
 		},
 	}
 	updateCmd.Flags().StringSliceVar(&up.Apps, "apps", nil, "Only pull these apps (default: all)")
