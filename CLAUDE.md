@@ -70,7 +70,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 39 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 42 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -130,6 +130,8 @@ internal/
                             documents (listDoc/statusDoc/snapshotsDoc, shared with list/status/snapshot);
                             os.Stdout is pointed at stderr so ffm output never reaches the protocol;
                             write tools refuse prod benches without --allow-prod; one write tool at a time
+    project.go            → ffm up / trust / run (ffm.yaml): loadProject, ensureTrusted (trust prompt per
+                            file hash), runPostUpdateHooks after ffm app update
     mcp_install.go        → ffm mcp install|uninstall --client … [--allow-write --allow-prod --print --yes]
     mcp_confirm.go        → delete's elicitation confirmation (HMAC-bound, single-use, 10 min request
                             state; same design as ffc's)
@@ -378,6 +380,9 @@ internal/
                             Install/Uninstall refuse a line whose --log (LogOf) is another
                             configuration's (ForeignJobError) unless forced: a run with another
                             FFM_CONFIG_DIR used to replace the real one's job
+  project/                → ffm.yaml: File (version 1, strict YAML via go.yaml.in/yaml/v3 KnownFields),
+                            Find (cwd up to the .git root), Load/Parse/validate, Commands, Hash;
+                            trust.go = trust.json {path: sha256} (0600), Trusted/Trust/Revoke
   mcpinstall/             → client config writer for ffm mcp install (Claude Code via the claude CLI,
                             Claude Desktop, Cursor, VS Code JSONC via hujson, Codex TOML line edits;
                             diff, backup, atomic write). COPIED from ffc's internal/mcpinstall

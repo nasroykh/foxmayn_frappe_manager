@@ -5,6 +5,8 @@ type CreateInput struct {
 	// recreating is set by Recreate, which rebuilds an EXISTING bench and so
 	// must not be refused a name that has since become reserved.
 	recreating bool
+	// ProjectFile records the ffm.yaml the bench comes from (ffm up).
+	ProjectFile string
 
 	Name         string
 	FrappeBranch string

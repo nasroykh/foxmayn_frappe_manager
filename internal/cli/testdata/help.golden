@@ -31,6 +31,7 @@ Available Commands:
   recreate    Delete a bench and provision it again from saved settings
   restart     Restart a bench (stop then start)
   restore     Rebuild a bench from a backup archive
+  run         Run a tooling command from this project's ffm.yaml in its bench
   set-proxy   Configure a bench to run behind a reverse proxy
   shell       Open an interactive shell inside a bench container
   site        Site operations: migrate, maintenance mode, Frappe's scheduler (bare: show state)
@@ -39,7 +40,9 @@ Available Commands:
   status      Show per-container status for a bench
   stop        Stop a running bench (containers remain, data preserved)
   test        Run an app's tests on a dev bench
+  trust       Allow this project's ffm.yaml hooks and tooling to run
   tunnel      Expose a bench over a secure public URL via a VPS tunnel
+  up          Create or start the development bench this project's ffm.yaml describes
   update      Update ffm to the latest version
   version     Print the ffm version
 
@@ -1096,6 +1099,22 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm run
+Usage:
+  ffm run [tool] [args...] [flags]
+
+Examples:
+  ffm run
+  ffm run lint
+  ffm run tests --failfast
+
+Flags:
+  -f, --file string   Path of the project file (default: find ffm.yaml)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm set-proxy
 Usage:
   ffm set-proxy [name] [flags]
@@ -1284,6 +1303,19 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm trust
+Usage:
+  ffm trust [flags]
+
+Flags:
+  -f, --file string   Path of the project file (default: find ffm.yaml)
+      --revoke        Forget the file
+      --yes           Trust without asking (the commands are still printed)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm tunnel
 Usage:
   ffm tunnel [name] [flags]
@@ -1373,6 +1405,19 @@ Global Flags:
 === ffm tunnel server use
 Usage:
   ffm tunnel server use <name> [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm up
+Usage:
+  ffm up [flags]
+
+Flags:
+  -f, --file string   Path of the project file (default: find ffm.yaml)
+      --no-hooks      Do not run the file's hooks
+      --trust         Trust the file's commands without asking
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

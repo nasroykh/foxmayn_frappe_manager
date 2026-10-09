@@ -776,6 +776,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 	// Save state
 	rec := state.Bench{
+		ProjectFile:   in.ProjectFile,
 		Name:          name,
 		Dir:           benchDir,
 		WebPort:       webPort,

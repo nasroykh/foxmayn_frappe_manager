@@ -275,6 +275,13 @@ snapshot_restore, test, start, stop and delete (delete asks the user via elicita
 benches stay off-limits to write tools unless `--allow-prod`. Register it with
 `ffm mcp install --client claude-code|claude-desktop|cursor|vscode|codex [--allow-write]`.
 
+### Project files (`ffm.yaml`)
+
+A repository with an `ffm.yaml` (version: 1; name, frappe.branch/repo, python, node, db, apps,
+hooks.post_create/post_update, tooling) brings up its bench with `ffm up`. Hooks and `ffm run <tool>`
+run only after `ffm trust` approved the file's exact content; any edit needs trust again. Never
+trust a file on the user's behalf without showing them its commands.
+
 ### Apps, updates and site operations
 
 ```bash
