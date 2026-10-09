@@ -13,8 +13,9 @@ var templatesAtVersion = map[int]string{
 	// 3: dev compose: yarn cache inside pip-cache, yarn-cache volume dropped.
 	3: "be5eb6ecd3118ca9c28b5b499f4ae7614dfbb39605677d8da012660954ad8db9",
 	// 4: prod hardening (healthchecks, no-new-privileges, redis-queue volume,
-	// gunicorn flags, durable MariaDB commits, yarn cache in pip-cache).
-	4: "f36af4b14ecc80f21ada303ff9537aaebdc8e3d69a8973aeb4541d1640b371ce",
+	// gunicorn flags, durable MariaDB commits, yarn cache in pip-cache);
+	// Traefik headers/compress labels, socketio Origin no longer pinned.
+	4: "9a4b3c9dcca5c054216d23cb1b1327485c70b33664f7b7c3924f3aef9208b7e1",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

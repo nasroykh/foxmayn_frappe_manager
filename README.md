@@ -548,6 +548,16 @@ ffm proxy status   # show status + dashboard URL
 - **Dev benches**: routes `<name>.localhost` on port 80
 - **Prod benches with SSL**: also routes on port 443 with Let's Encrypt (added on first prod bench creation)
 
+Prod benches (template version 4) add these on their site routers:
+
+- HSTS (one year, without `includeSubDomains`, so plain-HTTP aliases keep working);
+- `nosniff`, `X-Frame-Options: SAMEORIGIN` and a referrer policy;
+- compression (not on socket.io).
+
+Socket.IO now receives the browser's own `Origin`, which Frappe checks against the host. Before
+v0.13.0 ffm pinned it on the primary router and stripped it on aliases, which let any web page
+open a socket with a logged-in user's cookies.
+
 **WSL2 note**: Add `.localhost` entries to `C:\Windows\System32\drivers\etc\hosts`:
 ```
 127.0.0.1  mybench.localhost

@@ -353,7 +353,9 @@ internal/
         docker-compose.yml.tmpl  → (v4: healthchecks on frappe/socketio/redis/DB, no-new-privileges
                                    on all, redis-queue volume + AOF, workers depend on frappe healthy,
                                    bench's gunicorn flags, flush_log_at_trx_commit 1 unless
-                                   MariaDBFastCommit) 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
+                                   MariaDBFastCommit; site routers get <name>-headers (HSTS on TLS,
+                                   nosniff, SAMEORIGIN, referrer policy) and <name>-compress; socket.io
+                                   keeps the browser's Origin) 8 services (DB, redis-cache, redis-queue, frappe/gunicorn,
                                    socketio, worker-long, worker-short, scheduler) + an x-logging
                                    anchor (json-file 10m×3); Traefik labels + per-bench
                                    HTTP→HTTPS redirect; optional ./mysql-logs bind
