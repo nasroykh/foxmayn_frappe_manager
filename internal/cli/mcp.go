@@ -45,8 +45,8 @@ start, stop and delete. delete always asks the user through the MCP client
 (elicitation) and is refused by clients that cannot ask.
 Write tools leave production benches alone unless --allow-prod is given.
 
-Register it with a client, e.g. Claude Code:
-  claude mcp add ffm -- ffm mcp --allow-write`,
+Register it with a client: ffm mcp install --client claude-code (or
+claude-desktop, cursor, vscode, codex).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMCP(opts)
@@ -54,6 +54,7 @@ Register it with a client, e.g. Claude Code:
 	}
 	cmd.Flags().BoolVar(&opts.AllowWrite, "allow-write", false, "Also offer the tools that create, change, start, stop and delete benches")
 	cmd.Flags().BoolVar(&opts.AllowProd, "allow-prod", false, "Let the write tools act on production benches (needs --allow-write)")
+	cmd.AddCommand(newMCPInstallCmd(), newMCPUninstallCmd())
 	return cmd
 }
 

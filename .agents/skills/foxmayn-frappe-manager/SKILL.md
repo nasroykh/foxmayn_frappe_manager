@@ -272,7 +272,8 @@ test commands and Mailpit. ffc config and Claude Code login persist in `<bench>/
 An agent on the **host** manages benches through `ffm mcp` (stdio MCP server): read-only by
 default (list, status, doctor, logs, snapshots); `--allow-write` adds create (dev), clone, snapshot,
 snapshot_restore, test, start, stop and delete (delete asks the user via elicitation). Production
-benches stay off-limits to write tools unless `--allow-prod`.
+benches stay off-limits to write tools unless `--allow-prod`. Register it with
+`ffm mcp install --client claude-code|claude-desktop|cursor|vscode|codex [--allow-write]`.
 
 ### Apps, updates and site operations
 

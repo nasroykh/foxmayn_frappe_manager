@@ -828,10 +828,56 @@ Global Flags:
 === ffm mcp
 Usage:
   ffm mcp [flags]
+  ffm mcp [command]
+
+Available Commands:
+  install     Add ffm mcp to Claude Code, Claude Desktop, Cursor, VS Code or Codex
+  uninstall   Remove the ffm MCP server entry from an AI client's config
 
 Flags:
       --allow-prod    Let the write tools act on production benches (needs --allow-write)
       --allow-write   Also offer the tools that create, change, start, stop and delete benches
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm mcp [command] --help" for more information about a command.
+
+=== ffm mcp install
+Usage:
+  ffm mcp install [flags]
+
+Examples:
+  ffm mcp install --client claude-code
+  ffm mcp install --client cursor --allow-write
+  ffm mcp install --client codex --print
+
+Flags:
+      --allow-prod      Install the server with --allow-prod (write tools may touch production benches)
+      --allow-write     Install the server with --allow-write (create, change, start, stop, delete)
+      --client string   AI client: claude-code, claude-desktop, cursor, vscode, codex (required)
+      --name string     Name of the server entry (default "ffm")
+      --print           Print the diff (or the claude command) and change nothing
+  -y, --yes             Write without asking
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm mcp uninstall
+Usage:
+  ffm mcp uninstall [flags]
+
+Examples:
+  ffm mcp uninstall --client claude-desktop
+  ffm mcp uninstall --client codex --print
+
+Flags:
+      --client string   AI client: claude-code, claude-desktop, cursor, vscode, codex (required)
+      --name string     Name of the server entry (default "ffm")
+      --print           Print the diff (or the claude command) and change nothing
+  -y, --yes             Write without asking
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
