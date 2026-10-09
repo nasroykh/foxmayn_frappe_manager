@@ -148,7 +148,6 @@ func TestComposeRendersProdAlias(t *testing.T) {
 		"routers.erp-alias-socketio.rule=(Host(`erp.internal`)) && PathPrefix(`/socket.io`)",
 		"routers.erp-alias-socketio.entrypoints=web",
 		"routers.erp-alias-socketio.service=erp-socketio",
-		"middlewares.erp-alias-socketio-headers.headers.customRequestHeaders.Origin=\"",
 		"middlewares.erp-alias-socketio-headers.headers.customRequestHeaders.X-Frappe-Site-Name=erp.example.com",
 	} {
 		if !strings.Contains(http, want) {
@@ -159,7 +158,12 @@ func TestComposeRendersProdAlias(t *testing.T) {
 	if strings.Contains(http, "erp-alias.tls.certresolver") {
 		t.Errorf("prod alias must not request a certificate by default:\n%s", http)
 	}
-	// The primary router keeps its own rule and its own Origin middleware.
+	// The browser's Origin reaches socket.io on both routers (v0.13.0: it
+	// used to be pinned on the primary and stripped on aliases, which defeated
+	// the cross-site check).
+	if strings.Contains(http, "customRequestHeaders.Origin") {
+		t.Errorf("prod compose rewrites Origin:\n%s", http)
+	}
 	if !strings.Contains(http, "routers.erp.rule=Host(`erp.example.com`)") {
 		t.Errorf("prod primary router rule changed:\n%s", http)
 	}
