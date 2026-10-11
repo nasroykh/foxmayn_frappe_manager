@@ -36,6 +36,7 @@ type appState struct {
 type updatePlan struct {
 	Apps      []appState // every app, in apps.txt order
 	Pull      []string   // the apps pulled
+	Mounted   string     // the mounted project checkout: git left alone, still migrated and built
 	Local     []string   // apps without an upstream remote, not pulled
 	Switch    []string   // the apps moved to ToBranch
 	Toolchain bench.Toolchain
@@ -169,8 +170,20 @@ func (s *Service) planUpdate(b state.Bench, in UpdateInput) (updatePlan, error) 
 			return plan, fmt.Errorf("bench %q has no app %q", b.Name, want)
 		}
 	}
+	mounted, mountPath, hasMount := projectMountOf(b)
+	if hasMount && slices.Contains(in.Apps, mounted) {
+		return plan, fmt.Errorf("%s is the project checkout mounted from %s: ffm never pulls, resets or switches it. "+
+			"Update it with git in the checkout", mounted, mountPath)
+	}
 	var dirty, ahead []string
 	for _, app := range apps {
+		if hasMount && app == mounted {
+			// The user's own working tree: no git reads that could refuse it,
+			// no pull, no switch, no checkout in a rollback, no prune. It is
+			// still in apps.txt, so requirements, migrate and build cover it.
+			plan.Mounted = app
+			continue
+		}
 		// branch, HEAD, upstream/<branch> (or "none"), then changed files.
 		o, err := runner.ExecSilent("frappe", "bash", "-c", fmt.Sprintf(
 			`cd /workspace/frappe-bench/apps/%s && if ! git rev-parse --git-dir >/dev/null 2>&1; then printf 'nogit\n\nnone\n'; exit 0; fi && `+
@@ -249,6 +262,9 @@ func printPlan(pw ProgressWriter, b state.Bench, in UpdateInput, plan updatePlan
 	for _, a := range plan.Apps {
 		pw.Printf("  %-20s %s @ %s\n", a.Name, a.Branch, shortCommit(a.Commit))
 	}
+	if plan.Mounted != "" {
+		pw.Printf("  %-20s the mounted checkout: left as it is (git is yours), but migrated and built\n", plan.Mounted)
+	}
 }
 
 func describeCommits(apps []appState) string {
@@ -314,7 +330,7 @@ func (s *Service) applyUpdate(b state.Bench, in UpdateInput, plan updatePlan, ou
 			return err
 		}
 	}
-	if err := exec("Installing requirements", "bench setup requirements"); err != nil {
+	if err := exec("Installing requirements", setupRequirementsCmd(b)); err != nil {
 		return err
 	}
 	if err := exec("Clearing the cache", clearCacheCmd(b)); err != nil {
@@ -485,7 +501,7 @@ func (s *Service) rollbackUpdate(b state.Bench, plan updatePlan, snap string, ou
 		}
 	}
 	pw.Step("Reinstalling the previous requirements")
-	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", "bench setup requirements"); err != nil {
+	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", setupRequirementsCmd(b)); err != nil {
 		return fmt.Errorf("bench setup requirements: %w", err)
 	}
 	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", clearCacheCmd(b)); err != nil {
@@ -502,4 +518,15 @@ func (s *Service) rollbackUpdate(b state.Bench, plan updatePlan, snap string, ou
 		return err
 	}
 	return s.restartAndWait(b, true)
+}
+
+// setupRequirementsCmd installs every app's requirements. Bare `bench setup
+// requirements` opens each app as a git repository and crashes on one that is
+// not; a mounted checkout is the user's and need not be one (yet), so a bench
+// with a project mount runs the --python and --node halves, as restore does.
+func setupRequirementsCmd(b state.Bench) string {
+	if _, _, ok := projectMountOf(b); ok {
+		return "bench setup requirements --python && bench setup requirements --node"
+	}
+	return "bench setup requirements"
 }

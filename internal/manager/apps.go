@@ -21,6 +21,8 @@ type BenchApp struct {
 	Branch    string `json:"branch,omitempty"`
 	Commit    string `json:"commit,omitempty"`
 	Installed bool   `json:"installed"` // on the site, not only in apps/
+	// Mounted marks the app whose code is the host checkout ffm up mounted.
+	Mounted bool `json:"mounted"`
 }
 
 // listAppsScript prints, for every app in apps.txt, its version, branch and
@@ -61,6 +63,11 @@ func (s *Service) ListApps(name string) ([]BenchApp, error) {
 			var apps []BenchApp
 			if err := json.Unmarshal([]byte(v), &apps); err != nil {
 				return nil, err
+			}
+			if mounted, _, ok := projectMountOf(b); ok {
+				for i := range apps {
+					apps[i].Mounted = apps[i].Name == mounted
+				}
 			}
 			return apps, nil
 		}
@@ -107,6 +114,9 @@ func (s *Service) AppAdd(in AppAddInput, pw ProgressWriter) (string, error) {
 	}
 	if st := s.LiveStatus(b); st != StatusRunning {
 		return "", fmt.Errorf("%w: start it first (ffm start %s)", ErrBenchStopped, b.Name)
+	}
+	if app, path, ok := projectMountOf(b); ok && (bench.AppSpecName(in.Spec) == app || bench.ParseAppSpec(in.Spec, "").DisplayName() == app) {
+		return "", fmt.Errorf("%s is the project checkout mounted from %s; it is already on the bench", app, path)
 	}
 	spec := bench.ParseAppSpec(in.Spec, b.FrappeBranch)
 	runner := s.runnerFor(b)
@@ -177,6 +187,11 @@ func (s *Service) AppRemove(in AppRemoveInput, pw ProgressWriter) (string, error
 	b, err := s.GetBench(in.Name)
 	if err != nil {
 		return "", err
+	}
+	if app, path, ok := projectMountOf(b); ok && in.App == app {
+		return "", fmt.Errorf("%s is the project checkout mounted from %s: removing it would delete your checkout "+
+			"(bench remove-app deletes apps/%s, through the mount). Delete the bench to drop the mount",
+			app, path, app)
 	}
 	if !slices.Contains(readAppsTxt(b), in.App) {
 		return "", fmt.Errorf("bench %q has no app %q (see: ffm app list %s)", b.Name, in.App, b.Name)

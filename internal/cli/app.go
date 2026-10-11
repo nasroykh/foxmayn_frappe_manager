@@ -44,7 +44,11 @@ func newAppCmd() *cobra.Command {
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "APP\tVERSION\tBRANCH\tCOMMIT\tINSTALLED")
 			for _, a := range apps {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%v\n", a.Name, a.Version, a.Branch, a.Commit, onOffYes(a.Installed))
+				name := a.Name
+				if a.Mounted {
+					name += " (mounted)"
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%v\n", name, a.Version, a.Branch, a.Commit, onOffYes(a.Installed))
 			}
 			return tw.Flush()
 		},

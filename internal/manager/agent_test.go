@@ -117,3 +117,15 @@ func TestAgentsMDLeavesUserFilesAlone(t *testing.T) {
 		t.Error("user's CLAUDE.md overwritten")
 	}
 }
+
+func TestAgentsMDWarnsAboutTheMountedCheckout(t *testing.T) {
+	b := state.Bench{Name: "p", Mode: "dev", SiteName: "p.localhost", ProjectApp: "toyapp", ProjectAppPath: "/home/u/src/toyapp"}
+	md := agentsMD(b)
+	if !strings.Contains(md, "`apps/toyapp` is the user's own checkout, mounted from `/home/u/src/toyapp`") || !strings.Contains(md, "bench remove-app toyapp") {
+		t.Errorf("AGENTS.md does not warn about the mount:\n%s", md)
+	}
+	b.ProjectApp, b.ProjectAppPath = "", ""
+	if strings.Contains(agentsMD(b), "own checkout") {
+		t.Error("AGENTS.md mentions a mount on a bench without one")
+	}
+}

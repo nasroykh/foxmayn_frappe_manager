@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
@@ -28,6 +31,9 @@ type UpResult struct {
 	Action string
 	// MissingApps are apps the file lists that the bench does not have.
 	MissingApps []string
+	// Mounted is the app a created bench mounts from the checkout, and
+	// MountedPath the checkout ("" when there is none).
+	Mounted, MountedPath string
 }
 
 // Up creates the bench an ffm.yaml describes, or starts it when it exists
@@ -54,6 +60,23 @@ func (s *Service) Up(in UpInput, pw ProgressWriter) (UpResult, error) {
 		}
 		if ci.DBType == "" {
 			ci.DBType = "mariadb"
+		}
+		app, path, err := projectCheckout(f)
+		if err != nil {
+			return res, err
+		}
+		if app != "" {
+			ci.ProjectApp, ci.ProjectAppPath = app, path
+			res.Mounted, res.MountedPath = app, path
+			if w := wslMountWarning(path); w != "" {
+				fmt.Fprintf(pw.Stderr(), "warning: %s\n", w)
+			}
+			// The checkout is written from inside the container (egg-info,
+			// DocType exports, git's dubious-ownership check): the container
+			// user must be the host user, as with --match-host-user.
+			if runtime.GOOS == "linux" && os.Getuid() > 0 && os.Getuid() != 1000 {
+				ci.MatchHostUser = true
+			}
 		}
 		if err := s.Create(ci, pw); err != nil {
 			return res, err
@@ -83,6 +106,12 @@ func (s *Service) Up(in UpInput, pw ProgressWriter) (UpResult, error) {
 	if b.IsProd() {
 		return res, fmt.Errorf("%q is a production bench; ffm up manages development benches only", b.Name)
 	}
+	if b.ProjectApp == "" {
+		if app, _, err := projectCheckout(f); err == nil && app != "" {
+			fmt.Fprintf(pw.Stderr(), "note: this bench was created without mounting the checkout, so edits here do not reach it: "+
+				"delete it and run ffm up again to mount %s\n", app)
+		}
+	}
 	if st := s.LiveStatus(b); st == StatusRunning {
 		res.Action = "running"
 	} else {
@@ -93,6 +122,32 @@ func (s *Service) Up(in UpInput, pw ProgressWriter) (UpResult, error) {
 	}
 	res.MissingApps = missingApps(f.Apps, b.Apps)
 	return res, nil
+}
+
+// projectCheckout returns the app the checkout holding ffm.yaml provides and
+// the checkout's canonical absolute path, or "" for a configuration-only file.
+func projectCheckout(f project.File) (app, path string, err error) {
+	dir := filepath.Dir(f.Path)
+	if app, err = project.DetectApp(dir, f.Apps); err != nil || app == "" {
+		return "", "", err
+	}
+	if path, err = canonicalDir(dir); err != nil {
+		return "", "", fmt.Errorf("resolve %s: %w", dir, err)
+	}
+	if err := bench.ValidateProjectMount(app, path); err != nil {
+		return "", "", err
+	}
+	if err := checkMountOutsideFFM(path); err != nil {
+		return "", "", err
+	}
+	// The container user is uid 1000 (or the host user with MatchHostUser,
+	// which cannot remap to root): it could not write a root-owned checkout,
+	// and Create would fail only after building the image and the bench.
+	if runtime.GOOS == "linux" && os.Getuid() == 0 {
+		return "", "", fmt.Errorf("ffm up mounts %s into the bench, and the container user cannot write a checkout "+
+			"owned by root: run ffm as a regular user", path)
+	}
+	return app, path, nil
 }
 
 // missingApps returns the specs in want whose app the bench does not have,
@@ -111,15 +166,8 @@ func missingApps(want, have []string) []string {
 	return out
 }
 
-// appSpecName is the app a spec names: the last path element of its source,
-// without @branch or .git, lowercase, hyphens as underscores.
-func appSpecName(spec string) string {
-	name := strings.TrimSuffix(strings.TrimRight(bench.ParseAppSpec(spec, "").Source, "/"), ".git")
-	if i := strings.LastIndexAny(name, "/:"); i >= 0 {
-		name = name[i+1:]
-	}
-	return strings.ToLower(strings.ReplaceAll(name, "-", "_"))
-}
+// appSpecName is the app a spec names; see bench.AppSpecName.
+func appSpecName(spec string) string { return bench.AppSpecName(spec) }
 
 // RunHooks runs each command in the bench's frappe container from
 // /workspace/frappe-bench, stopping at the first failure. SITE and BENCH are

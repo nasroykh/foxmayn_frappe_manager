@@ -47,7 +47,9 @@ pipeline and most of the CLI are still untested.
 Rule{Match: " ps ", Stdout: …})` scripts answers by argv substring and records every call
 (`Calls`, `Called`); a package using it needs `func TestHelperProcess(t *testing.T) {
 fakeexec.HelperMain() }`. `internal/manager/reconcile_pipeline_test.go` is the model for pipeline
-tests. `internal/cli/testdata/help.golden` pins every command's usage and flags: after an intended
+tests; `internal/manager/projectmount_test.go` runs the whole create pipeline on it (a `Rule` can also
+`Mkdir`, `Write` a file and `Copy` one, e.g. to snapshot docker-compose.yml at a given call).
+`internal/cli/testdata/help.golden` pins every command's usage and flags: after an intended
 CLI change run `go test ./internal/cli -run TestHelpGolden -update` and review the diff.
 
 `.github/workflows/test.yml` runs `go vet` + `go test` on every push and PR — before it
@@ -131,7 +133,7 @@ internal/
                             os.Stdout is pointed at stderr so ffm output never reaches the protocol;
                             write tools refuse prod benches without --allow-prod; one write tool at a time
     project.go            → ffm up / trust / run (ffm.yaml): loadProject, ensureTrusted (trust prompt per
-                            file hash), runPostUpdateHooks after ffm app update
+                            file hash), runPostUpdateHooks after ffm app update; ffm up prints the mount
     mcp_install.go        → ffm mcp install|uninstall --client … [--allow-write --allow-prod --print --yes]
     mcp_confirm.go        → delete's elicitation confirmation (HMAC-bound, single-use, 10 min request
                             state; same design as ffc's)
@@ -311,6 +313,11 @@ internal/
                             AGENTS.md is rewritten only while it starts with agentsMDMarker
     clean.go              → CleanPlan / Clean: orphans are ffm-<name> compose projects (volume
                             labels, image labels) with no record, no bench dir, no container (ps -a) and a free lock
+    project.go            → Up: create (or start) the dev bench ffm.yaml describes; detects the app the
+                            checkout holds and sets the project mount (projectCheckout); RunHooks / RunTool
+    projectmount.go       → project mount helpers: projectMountOf, checkProjectMount (preflight for Start,
+                            Recreate, applyDomainChange), wslMountWarning (readOSRelease is injectable),
+                            registerProjectApp. See "Project mount" under Key patterns
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
@@ -356,7 +363,9 @@ internal/
                                    bind-mounts ./workspace, one pip-cache volume that also holds
                                    uv's and yarn's caches (UV_CACHE_DIR, YARN_CACHE_FOLDER; a new
                                    volume over a path the image lacks is root-owned), Traefik labels
-                                   for <name>.localhost, conditional SSH agent socket
+                                   for <name>.localhost, conditional SSH agent socket, and (v5)
+                                   a conditional long-syntax bind of a project checkout over
+                                   apps/<app> (create_host_path: false)
         Dockerfile.tmpl          → full dev image: zsh/zinit/starship/ffc/pnpm/Claude Code +
                                    pre-fetched Frappe skills; optional HostUID/HostGID remap layer
       prod/
@@ -382,7 +391,8 @@ internal/
                             FFM_CONFIG_DIR used to replace the real one's job
   project/                → ffm.yaml: File (version 1, strict YAML via go.yaml.in/yaml/v3 KnownFields),
                             Find (cwd up to the .git root), Load/Parse/validate, Commands, Hash;
-                            trust.go = trust.json {path: sha256} (0600), Trusted/Trust/Revoke
+                            trust.go = trust.json {path: sha256} (0600), Trusted/Trust/Revoke;
+                            detect.go = DetectApp (the <pkg>/hooks.py with app_name = "<pkg>")
   mcpinstall/             → client config writer for ffm mcp install (Claude Code via the claude CLI,
                             Claude Desktop, Cursor, VS Code JSONC via hujson, Codex TOML line edits;
                             diff, backup, atomic write). COPIED from ffc's internal/mcpinstall
@@ -456,6 +466,49 @@ internal/
   `Service.Start` re-applies the two realtime patches in **both** modes (prod needs them too),
   and `restart --rebuild` re-applies them as well. If you are wondering why a bench's
   `realtime/utils.js` differs from upstream, this is why.
+- **Project mount** (`ffm up` in an app repository; dev only; template v5). When the directory
+  holding ffm.yaml is a Frappe app, the bench bind-mounts that checkout over `apps/<app>` so host
+  edits are live. The app is *detected*, not configured: `project.DetectApp` wants exactly one
+  top-level `<pkg>/hooks.py` containing `app_name = "<pkg>"` (cross-checked with pyproject's
+  `[project] name`, hyphens as underscores; not `frappe`, not among ffm.yaml `apps`); none means a
+  config-only file and nothing is mounted. Persisted as `state.Bench.ProjectApp` / `ProjectAppPath`
+  (canonical path; NOT in `Apps`, or recreate would `get-app` it) and `CreateInput` fields of the
+  same names; `composeDataFor` carries them (dev only), so reconcile, domain, set-proxy and tunnel
+  keep the mount. `bench.ValidateProjectMount` refuses `$ " \` and control characters in the path
+  (compose interpolation / YAML), and `RenderCompose` enforces it. The checkout must survive
+  every ffm operation, which is why:
+  - **Two-pass render.** `Create` writes the compose file WITHOUT the mount, runs bench init and the
+    seed copy (`compose run` uses the same service definition, and bench init ends in
+    `rm -rf /workspace/frappe-bench` — through a mount, that wipes the checkout), and only then
+    `MkdirAll`s `apps/<app>` as the host user (Docker would create a missing mountpoint root-owned),
+    re-renders with the mount and runs the first `up`. The bind has `create_host_path: false`, so a
+    moved checkout fails the start instead of Docker creating a root dir at the source.
+  - Registration reuses restore's route: `syncAppsTxt`, `bench setup requirements --python` and
+    `--node` (bare form opens the app as a git repo), `install-app`; a seeded create also runs
+    `bench build --app` (a seed skips the whole-bench build). No seed is ever captured from it.
+  - **`bench remove-app` deletes `apps/<app>`** — through a mount, the checkout. `AppRemove` refuses
+    the app (even with `--keep-code`), `AppAdd` refuses its name. `Update` leaves the app's git
+    alone (no dirty/ahead check, pull, switch, rollback checkout or prune; `plan.Mounted`) but
+    requirements (the `--python`/`--node` halves, `setupRequirementsCmd`), migrate and build still
+    cover it; `--apps <it>` is refused. `ffm app list --json`
+    gets an additive `mounted` boolean.
+  - `Start`, `Recreate` (before it tears anything down) and `applyDomainChange` check the path and
+    `<app>/hooks.py` first and name the path if the checkout moved. Delete/rollback only see an empty
+    mountpoint host-side — which holds only because `checkMountOutsideFFM` refuses a checkout that
+    overlaps the benches, backups or seeds directory in either direction (a checkout cloned to
+    `~/frappe/<name>` would otherwise BE the bench directory, and the first rollback would delete it). Backup archives the mounted app's working tree when it has uncommitted
+    changes (`dirty-mounted`, via `planAppSources`' `mounted` argument); restore never sets the
+    fields (`restoreCreateInput`, and `Create` refuses a mount with `SkipAppInstall`).
+  - `Up` refuses to mount as root on Linux (the container user cannot write a root-owned
+    checkout, and the failure came after the whole build), notes when an existing bench of the file
+    has no mount, and sets `MatchHostUser` on Linux when the uid is not 1000 (git dubious ownership, egg-info and
+    DocType exports written from the container) and warns on WSL2 when the checkout is under
+    `/mnt/<drive>/` (9p is slow, Windows-side edits may not reload, modes are ignored).
+  - The bench's AGENTS.md names the mounted checkout and tells an in-bench agent never to run
+    `bench remove-app`, `bench update` or `bench get-app` on it, nor discard work in it with git.
+    It is not added to `sites/excluded_apps.txt`: that would also drop it from bare
+    `bench setup requirements --dev`, which `ffm test` relies on.
+  An existing bench is not changed by `ffm up`: delete it and run `ffm up` again to get a mount.
 - **Domain aliases** (`ffm domain add`, `ffm create --domain-alias`) route extra hostnames — LAN
   names like `erp.internal` — to a bench alongside its primary host. ffm only configures Traefik;
   pointing DNS at the host is the user's job and `domain add` prints the records to create.

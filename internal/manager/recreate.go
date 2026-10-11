@@ -68,6 +68,14 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		mode = "dev"
 	}
 	apps := append([]string(nil), b.Apps...)
+	// Everything below tears the bench down; find out first that the
+	// checkout it mounts is still there to be mounted again.
+	projectApp, projectPath, _ := projectMountOf(b)
+	if projectApp != "" {
+		if err := checkProjectMount(projectApp, projectPath); err != nil {
+			return err
+		}
+	}
 
 	proxyPortInt := 0
 	proxyHostStr := ""
@@ -164,6 +172,8 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 		WorkerLongCount:   b.WorkerLongCount,
 		MariaDBFastCommit: b.MariaDBFastCommit,
 		ProjectFile:       b.ProjectFile,
+		ProjectApp:        projectApp,
+		ProjectAppPath:    projectPath,
 		WorkerShortCount:  b.WorkerShortCount,
 		RedisCacheMaxmem:  b.RedisCacheMaxmem,
 		RedisQueueMaxmem:  b.RedisQueueMaxmem,

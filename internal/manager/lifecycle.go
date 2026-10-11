@@ -25,6 +25,11 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 	}
 	runner := s.runnerFor(b)
 
+	if app, path, ok := projectMountOf(b); ok {
+		if err := checkProjectMount(app, path); err != nil {
+			return err
+		}
+	}
 	pw.Printf("Starting bench %q...\n", name)
 	if hasMailpit(b) {
 		// Same template version as the ./home bind mounts; Docker would

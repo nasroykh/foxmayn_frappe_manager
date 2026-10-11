@@ -216,7 +216,7 @@ func TestPlanAppSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	vendored := planAppSources(apps, vendorCandidates([]string{"frappe", "nogit", "localgit"}, []string{"pushed"}, forced),
-		forced, "/tmp/stage")
+		forced, "", "/tmp/stage")
 
 	var got []string
 	for _, v := range vendored {

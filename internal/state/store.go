@@ -116,6 +116,12 @@ type Bench struct {
 	// ProjectFile is the absolute path of the ffm.yaml this bench was
 	// created from by ffm up; its post_update hooks run after app updates.
 	ProjectFile string `json:"project_file,omitempty"`
+	// ProjectApp is the app whose host checkout (ProjectAppPath, canonical and
+	// absolute) is bind-mounted over apps/<ProjectApp> (dev only; ffm up in an
+	// app repository). It is not in Apps: recreate would get-app it. Empty on
+	// every other bench, and ignored in a restored archive's record.
+	ProjectApp     string `json:"project_app,omitempty"`
+	ProjectAppPath string `json:"project_app_path,omitempty"`
 	// MatchHostUser records that the image was built with the in-container
 	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
 	// Absent in records written before this option existed, which is correct —

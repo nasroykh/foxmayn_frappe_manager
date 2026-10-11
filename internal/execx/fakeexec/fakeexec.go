@@ -31,6 +31,16 @@ type Rule struct {
 	// reach the helper as JSON, which would mangle bytes that are not UTF-8.
 	StdoutBytes []byte
 	Exit        int
+	// Mkdir is made (MkdirAll) when the rule matches, for a command that
+	// would leave a directory behind, such as bench init.
+	Mkdir []string
+	// Copy maps a source path to a destination: the source is copied when the
+	// rule matches, relative to the command's working directory. It snapshots
+	// a file as it was at that call, such as docker-compose.yml.
+	Copy map[string]string
+	// Write maps a path to the content written there when the rule matches,
+	// for a file a real command would create.
+	Write map[string]string
 }
 
 // Fake is an installed fake.
@@ -115,6 +125,18 @@ func HelperMain() {
 	_ = json.Unmarshal([]byte(os.Getenv("FAKEEXEC_RULES")), &rules)
 	for _, r := range rules {
 		if strings.Contains(line, r.Match) {
+			for _, d := range r.Mkdir {
+				_ = os.MkdirAll(d, 0o755)
+			}
+			for path, content := range r.Write {
+				_ = os.MkdirAll(filepath.Dir(path), 0o755)
+				_ = os.WriteFile(path, []byte(content), 0o644)
+			}
+			for src, dst := range r.Copy {
+				if raw, err := os.ReadFile(src); err == nil {
+					_ = os.WriteFile(dst, raw, 0o600)
+				}
+			}
 			fmt.Print(r.Stdout)
 			os.Stdout.Write(r.StdoutBytes)
 			os.Exit(r.Exit)

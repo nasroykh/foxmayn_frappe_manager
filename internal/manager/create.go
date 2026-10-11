@@ -15,6 +15,9 @@ import (
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
+// createWebWait is how long Create waits for the new bench's web server.
+var createWebWait = 60 * time.Second
+
 // createOpts carries optional behavior for Create. When fixedWebPort and
 // fixedSocketIOPort are both non-zero, that host port pair is used instead of
 // AllocatePorts (used by recreate to keep stable URLs).
@@ -190,6 +193,26 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
+	// A project mount (ffm up in an app repository): dev only, never restored,
+	// and the checkout must be where it is said to be before anything is built.
+	projectApp, projectPath := in.ProjectApp, in.ProjectAppPath
+	if projectApp != "" || projectPath != "" {
+		switch {
+		case mode != "dev":
+			return fmt.Errorf("a project checkout can be mounted into dev benches only")
+		case in.SkipAppInstall:
+			return fmt.Errorf("a restore never mounts a project checkout")
+		}
+		if err := checkProjectMount(projectApp, projectPath); err != nil {
+			return err
+		}
+		for _, a := range apps {
+			if bench.AppSpecName(a) == projectApp {
+				return fmt.Errorf("--apps lists %q, which is the app in the mounted checkout", a)
+			}
+		}
+	}
+
 	// Domain aliases. Normalised up front so a bad hostname fails before any
 	// container is built, and so the values written into Traefik labels are
 	// always the validated form.
@@ -342,6 +365,8 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 				fmt.Fprintf(os.Stderr, "  cleanup: docker compose down: %v\n", downErr)
 			}
 		}
+		// A mounted project checkout is safe here: the mount lives only in the
+		// container's mount namespace, so this sees an empty mountpoint.
 		if rmErr := os.RemoveAll(benchDir); rmErr != nil && s.Verbose {
 			fmt.Fprintf(os.Stderr, "  cleanup: remove bench dir: %v\n", rmErr)
 		}
@@ -490,6 +515,21 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 	if err := s.afterBenchInit(benchDir, workspaceDir, name, siteName, mode); err != nil {
 		return err
+	}
+	if projectApp != "" {
+		// Only now: bench init and the seed copy ran through `compose run`,
+		// which uses this same service definition, and bench init ends in
+		// rm -rf /workspace/frappe-bench — through a mount, into the checkout.
+		// The mountpoint is made here as the host user; Docker would create
+		// it root-owned.
+		step(fmt.Sprintf("Mounting %s as apps/%s", projectPath, projectApp))
+		if err := os.MkdirAll(filepath.Join(frappeBench, "apps", projectApp), 0o755); err != nil {
+			return fmt.Errorf("create the mountpoint for %s: %w", projectApp, err)
+		}
+		data.ProjectApp, data.ProjectAppPath = projectApp, projectPath
+		if err := bench.WriteCompose(benchDir, data); err != nil {
+			return fmt.Errorf("render compose with the project mount: %w", err)
+		}
 	}
 	// Start containers.
 	// Prod uses a two-phase start: bring up only the DB + redis + frappe tier
@@ -697,6 +737,21 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 	}
 
+	if projectApp != "" {
+		if err := registerProjectApp(runner, benchDir, siteName, projectApp, pw); err != nil {
+			return err
+		}
+		if seedInfo != nil {
+			// A seed's assets predate the app; the whole-bench build below
+			// is skipped for seeds.
+			step(fmt.Sprintf("Building the assets of %q", projectApp))
+			if out, err := runner.ExecSilent("frappe", "bash", "-c",
+				"cd /workspace/frappe-bench && bench build --app "+bench.ShellQuote(projectApp)); err != nil {
+				return fmt.Errorf("bench build --app %s: %w\n%s", projectApp, err, lastLines(out, 10))
+			}
+		}
+	}
+
 	// Compile JS/CSS bundles. Prod has always needed this; dev needs it too after
 	// bind-mounted runtime bench init (commit that moved bench init out of the image):
 	// without it, Desk can load as unstyled / effectively raw HTML until bench build.
@@ -730,7 +785,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 		step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
-		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
+		if err := bench.WaitForHTTP(url, createWebWait); err != nil {
 			// Not fatal: the bench itself is built and the rollback defer would
 			// destroy it over a web server that may still be coming up. Say why
 			// rather than leaving the user to go looking.
@@ -759,7 +814,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 		step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
-		if err := bench.WaitForHTTP(url, 60*time.Second); err != nil {
+		if err := bench.WaitForHTTP(url, createWebWait); err != nil {
 			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", webServerUnreachable(runner, true, err))
 		}
 
@@ -767,7 +822,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		ffcConfigured = true
 		access := state.Bench{Name: name, Dir: benchDir, Mode: mode, SiteName: siteName, WebPort: webPort,
 			FrappeBranch: frappeBranch, Python: toolchain.Python, Node: toolchain.Node,
-			Agent: agent, AgentReadOnly: agentReadOnly}
+			Agent: agent, AgentReadOnly: agentReadOnly, ProjectApp: projectApp, ProjectAppPath: projectPath}
 		if _, err := setupBenchAccess(runner, access); err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffm ffc %s' once the bench is up)\n", err, name)
 			ffcConfigured = false
@@ -816,11 +871,14 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		SlowQueryLog:      data.SlowQueryLog,
 		MariaDBFastCommit: data.MariaDBFastCommit,
 	}
+	rec.ProjectApp, rec.ProjectAppPath = projectApp, projectPath
 	if err := s.AddBench(rec); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 
-	if seeds && seedInfo == nil && !in.SkipAppInstall {
+	// Never from a bench with a mounted checkout: the tree would carry the
+	// app's links into the user's source.
+	if seeds && seedInfo == nil && !in.SkipAppInstall && projectApp == "" {
 		step("Saving this bench's tree as a seed for the next bench with the same inputs")
 		if err := captureSeed(key, frappeBench, name, s.clock()); err != nil {
 			fmt.Fprintf(pw.Stderr(), "warning: could not save a seed: %v\n", err)
@@ -850,6 +908,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	pw.Printf("  DB (%s): root / %s\n", dbType, dbPassword)
 	if len(apps) > 0 {
 		pw.Printf("  Apps:          %v\n", apps)
+	}
+	if projectApp != "" {
+		pw.Printf("  Mounted:       %s as apps/%s\n", projectPath, projectApp)
 	}
 	if mode == "dev" {
 		if ffcConfigured {

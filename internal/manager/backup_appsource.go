@@ -215,6 +215,8 @@ func describeVendorReason(reason string) string {
 		return "no remote branch or tag this clone knows of contains its commit"
 	case VendorRequested:
 		return "requested with --vendor-apps"
+	case VendorDirtyMounted:
+		return "the mounted project checkout has uncommitted changes"
 	}
 	return reason
 }
