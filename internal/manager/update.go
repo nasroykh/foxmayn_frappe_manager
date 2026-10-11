@@ -36,6 +36,7 @@ type appState struct {
 type updatePlan struct {
 	Apps      []appState // every app, in apps.txt order
 	Pull      []string   // the apps pulled
+	Mounted   string     // the mounted project checkout: git left alone, still migrated and built
 	Local     []string   // apps without an upstream remote, not pulled
 	Switch    []string   // the apps moved to ToBranch
 	Toolchain bench.Toolchain
@@ -169,8 +170,20 @@ func (s *Service) planUpdate(b state.Bench, in UpdateInput) (updatePlan, error) 
 			return plan, fmt.Errorf("bench %q has no app %q", b.Name, want)
 		}
 	}
+	mounted, mountPath, hasMount := projectMountOf(b)
+	if hasMount && slices.Contains(in.Apps, mounted) {
+		return plan, fmt.Errorf("%s is the project checkout mounted from %s: ffm never pulls, resets or switches it. "+
+			"Update it with git in the checkout", mounted, mountPath)
+	}
 	var dirty, ahead []string
 	for _, app := range apps {
+		if hasMount && app == mounted {
+			// The user's own working tree: no git reads that could refuse it,
+			// no pull, no switch, no checkout in a rollback, no prune. It is
+			// still in apps.txt, so requirements, migrate and build cover it.
+			plan.Mounted = app
+			continue
+		}
 		// branch, HEAD, upstream/<branch> (or "none"), then changed files.
 		o, err := runner.ExecSilent("frappe", "bash", "-c", fmt.Sprintf(
 			`cd /workspace/frappe-bench/apps/%s && if ! git rev-parse --git-dir >/dev/null 2>&1; then printf 'nogit\n\nnone\n'; exit 0; fi && `+
@@ -248,6 +261,9 @@ func printPlan(pw ProgressWriter, b state.Bench, in UpdateInput, plan updatePlan
 	}
 	for _, a := range plan.Apps {
 		pw.Printf("  %-20s %s @ %s\n", a.Name, a.Branch, shortCommit(a.Commit))
+	}
+	if plan.Mounted != "" {
+		pw.Printf("  %-20s the mounted checkout: left as it is (git is yours), but migrated and built\n", plan.Mounted)
 	}
 }
 

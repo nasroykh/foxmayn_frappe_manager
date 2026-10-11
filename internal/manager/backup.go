@@ -152,7 +152,12 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 	apps := collectAppInfo(runner, names, pw)
 	installed, installedSource := collectInstalledApps(runner, frappeBench, b.SiteName, siteCfg)
 	frappeVersion := readFrappeVersion(frappeBench)
-	vendored := planAppSources(apps, vendorCandidates(installed, b.Apps, forced), forced, staging)
+	candidates := vendorCandidates(installed, b.Apps, forced)
+	mounted, _, _ := projectMountOf(b)
+	if mounted != "" {
+		candidates[mounted] = true
+	}
+	vendored := planAppSources(apps, candidates, forced, mounted, staging)
 
 	withFiles := !in.NoFiles
 	tiers := []string{TierCore}
@@ -641,13 +646,21 @@ type vendoredApp struct {
 }
 
 // planAppSources marks each app's Source and returns the ones to archive.
-func planAppSources(apps []AppInfo, candidates, forced map[string]bool, staging string) []vendoredApp {
+//
+// mounted names the project checkout bind-mounted over its apps/ directory,
+// or is empty. A clone restores its commit, so a mounted app with uncommitted
+// changes is archived as it is on disk; that is the only rule that differs
+// from the other apps.
+func planAppSources(apps []AppInfo, candidates, forced map[string]bool, mounted, staging string) []vendoredApp {
 	var out []vendoredApp
 	for i := range apps {
 		a := &apps[i]
 		reason := ""
 		if candidates[a.Name] {
 			reason = vendorReason(*a, forced[a.Name])
+			if reason == "" && a.Name == mounted && a.Dirty {
+				reason = VendorDirtyMounted
+			}
 		}
 		if reason == "" {
 			if !a.NoGit && a.Remote != "" {

@@ -109,6 +109,11 @@ type ComposeData struct {
 	// Node major (Toolchain.Node). Empty keeps the image default, which is
 	// what benches recorded before toolchains existed were built with.
 	NodeMajor string
+	// ProjectApp and ProjectAppPath bind-mount a host checkout over
+	// apps/<ProjectApp> (ffm up inside an app repository). Dev only: the
+	// prod template never renders them. See ValidateProjectMount.
+	ProjectApp     string
+	ProjectAppPath string
 }
 
 // FfcSkillsRef is the ffc release whose agent skills the dev image bundles.
@@ -296,6 +301,10 @@ func RenderCompose(data ComposeData) ([]byte, error) {
 	tmplStr := devComposeTmpl
 	if data.Mode == "prod" {
 		tmplStr = prodComposeTmpl
+	} else if data.ProjectApp != "" || data.ProjectAppPath != "" {
+		if err := ValidateProjectMount(data.ProjectApp, data.ProjectAppPath); err != nil {
+			return nil, err
+		}
 	}
 	tmpl, err := template.New("compose").Parse(tmplStr)
 	if err != nil {
@@ -343,7 +352,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 4
+const TemplateVersion = 5
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {
@@ -353,6 +362,32 @@ func templatesFingerprint() string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+var projectAppRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// ValidProjectAppName reports whether name is an app name ffm will mount a
+// checkout as: a Python package name, lowercase.
+func ValidProjectAppName(name string) bool { return projectAppRe.MatchString(name) }
+
+// ValidateProjectMount checks the two values of a project mount before they
+// reach the compose file. The path lands between double quotes in YAML, and
+// Compose interpolates $ in values, so those characters (and anything that
+// could end the line) are refused rather than escaped.
+func ValidateProjectMount(app, path string) error {
+	if !ValidProjectAppName(app) || app == "frappe" {
+		return fmt.Errorf("%q is not a valid app name to mount (lowercase letters, digits and underscores, starting with a letter)", app)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("the checkout path %q is not absolute", path)
+	}
+	for _, r := range path {
+		if r == '$' || r == '"' || r == '\\' || r < 0x20 || r == 0x7f {
+			return fmt.Errorf("the checkout path %q contains %q, which cannot go into docker-compose.yml: "+
+				"move the checkout to a path without $, quotes, backslashes or control characters", path, r)
+		}
+	}
+	return nil
 }
 
 // WriteWsgiWrapper writes wsgi.py into the bench workspace at

@@ -7,6 +7,11 @@ type CreateInput struct {
 	recreating bool
 	// ProjectFile records the ffm.yaml the bench comes from (ffm up).
 	ProjectFile string
+	// ProjectApp and ProjectAppPath mount a host checkout over apps/<app> of a
+	// dev bench (ffm up). The path must be canonical and absolute. Never set
+	// by restore.
+	ProjectApp     string
+	ProjectAppPath string
 
 	Name         string
 	FrappeBranch string

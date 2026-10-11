@@ -127,6 +127,9 @@ func (s *Service) composeDataFor(b state.Bench) (bench.ComposeData, error) {
 		DomainAliases:     b.DomainAliases,
 		AliasTLS:          b.AliasTLS,
 	}
+	if app, path, ok := projectMountOf(b); ok && mode == "dev" {
+		data.ProjectApp, data.ProjectAppPath = app, path
+	}
 	if data.MariaDBBufferPool == "" {
 		data.MariaDBBufferPool = "1G"
 	}
@@ -289,6 +292,11 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 		return nil
 	}
 
+	if app, path, ok := projectMountOf(b); ok {
+		if err := checkProjectMount(app, path); err != nil {
+			return err
+		}
+	}
 	runner := s.runnerFor(b)
 	if err := runner.Up(); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)

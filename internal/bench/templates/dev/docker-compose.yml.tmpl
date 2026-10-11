@@ -71,6 +71,18 @@ services:
 {{- end}}
     volumes:
       - ./workspace:/workspace
+{{- if and .ProjectApp .ProjectAppPath}}
+      # ffm up in an app repository: the checkout is the app, so host edits are
+      # live. Long syntax so a checkout that moved fails the start instead of
+      # Docker creating a root-owned directory at the source path. This line is
+      # rendered only after bench init: that step runs `rm -rf` on
+      # /workspace/frappe-bench through this same service definition.
+      - type: bind
+        source: "{{.ProjectAppPath}}"
+        target: /workspace/frappe-bench/apps/{{.ProjectApp}}
+        bind:
+          create_host_path: false
+{{- end}}
       # Bind mounts, not named volumes: ffm creates these directories as the
       # host user (the uid the frappe user has, or is remapped to), while Docker
       # would create a new volume's root as root wherever the image lacks it.

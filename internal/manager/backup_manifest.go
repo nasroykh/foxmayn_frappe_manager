@@ -140,6 +140,9 @@ const (
 	VendorNoCommit  = "no-commit"
 	VendorUnpushed  = "unpushed"
 	VendorRequested = "requested"
+	// VendorDirtyMounted is the mounted project checkout with uncommitted
+	// changes: a clone would restore the commit, not what was on disk.
+	VendorDirtyMounted = "dirty-mounted"
 )
 
 // Archived reports whether the app's source travels inside the archive.

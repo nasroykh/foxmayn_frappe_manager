@@ -69,6 +69,12 @@ create the development bench it describes, or start it when it exists and is
 stopped. An existing bench is not changed to match the file; apps the file
 lists and the bench lacks are reported.
 
+When the directory holding ffm.yaml is a Frappe app (<pkg>/hooks.py declares
+app_name = "<pkg>"), the new bench mounts that checkout as apps/<pkg>, so host
+edits are live. ffm update leaves its git alone, ffm app remove refuses it and
+ffm delete keeps it. A file in a directory that is not an app creates a plain
+bench.
+
 ffm.yaml:
   version: 1
   name: myproject            # bench name; default: the directory's name
@@ -111,6 +117,9 @@ Hooks and tooling run only from a file you trusted in its current form
 			switch res.Action {
 			case "created":
 				fmt.Printf("Created %q from %s.\n", res.Bench, f.Path)
+				if res.Mounted != "" {
+					fmt.Printf("Mounted %s as apps/%s.\n", res.MountedPath, res.Mounted)
+				}
 			case "started":
 				fmt.Printf("Started %q.\n", res.Bench)
 			default:

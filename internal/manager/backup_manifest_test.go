@@ -29,6 +29,8 @@ func fullBench() state.Bench {
 		Agent:             true,
 		MariaDBFastCommit: true,
 		ProjectFile:       "/home/nas/src/shop/ffm.yaml",
+		ProjectApp:        "shop",
+		ProjectAppPath:    "/home/nas/src/shop",
 		AgentReadOnly:     true,
 		Python:            "3.12",
 		Node:              "22",

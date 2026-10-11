@@ -16,6 +16,9 @@ var templatesAtVersion = map[int]string{
 	// gunicorn flags, durable MariaDB commits, yarn cache in pip-cache);
 	// Traefik headers/compress labels, socketio Origin no longer pinned.
 	4: "9a4b3c9dcca5c054216d23cb1b1327485c70b33664f7b7c3924f3aef9208b7e1",
+	// 5: dev compose: optional bind mount of a project checkout over
+	// apps/<app> (ffm up in an app repository).
+	5: "c09db983a04ca5383a2e18b49165998de5274944d6b0b6035bee0e65deeaec16",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

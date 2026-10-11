@@ -91,3 +91,13 @@ func (a AppSpec) DisplayName() string {
 	}
 	return s
 }
+
+// AppSpecName is the app a spec names: the last path element of its source,
+// without @branch or .git, lowercase, hyphens as underscores.
+func AppSpecName(spec string) string {
+	name := strings.TrimSuffix(strings.TrimRight(ParseAppSpec(spec, "").Source, "/"), ".git")
+	if i := strings.LastIndexAny(name, "/:"); i >= 0 {
+		name = name[i+1:]
+	}
+	return strings.ToLower(strings.ReplaceAll(name, "-", "_"))
+}
