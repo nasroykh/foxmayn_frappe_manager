@@ -106,6 +106,12 @@ func (s *Service) Up(in UpInput, pw ProgressWriter) (UpResult, error) {
 	if b.IsProd() {
 		return res, fmt.Errorf("%q is a production bench; ffm up manages development benches only", b.Name)
 	}
+	if b.ProjectApp == "" {
+		if app, _, err := projectCheckout(f); err == nil && app != "" {
+			fmt.Fprintf(pw.Stderr(), "note: this bench was created without mounting the checkout, so edits here do not reach it: "+
+				"delete it and run ffm up again to mount %s\n", app)
+		}
+	}
 	if st := s.LiveStatus(b); st == StatusRunning {
 		res.Action = "running"
 	} else {
@@ -130,6 +136,16 @@ func projectCheckout(f project.File) (app, path string, err error) {
 	}
 	if err := bench.ValidateProjectMount(app, path); err != nil {
 		return "", "", err
+	}
+	if err := checkMountOutsideFFM(path); err != nil {
+		return "", "", err
+	}
+	// The container user is uid 1000 (or the host user with MatchHostUser,
+	// which cannot remap to root): it could not write a root-owned checkout,
+	// and Create would fail only after building the image and the bench.
+	if runtime.GOOS == "linux" && os.Getuid() == 0 {
+		return "", "", fmt.Errorf("ffm up mounts %s into the bench, and the container user cannot write a checkout "+
+			"owned by root: run ffm as a regular user", path)
 	}
 	return app, path, nil
 }

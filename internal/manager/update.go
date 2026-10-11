@@ -330,7 +330,7 @@ func (s *Service) applyUpdate(b state.Bench, in UpdateInput, plan updatePlan, ou
 			return err
 		}
 	}
-	if err := exec("Installing requirements", "bench setup requirements"); err != nil {
+	if err := exec("Installing requirements", setupRequirementsCmd(b)); err != nil {
 		return err
 	}
 	if err := exec("Clearing the cache", clearCacheCmd(b)); err != nil {
@@ -501,7 +501,7 @@ func (s *Service) rollbackUpdate(b state.Bench, plan updatePlan, snap string, ou
 		}
 	}
 	pw.Step("Reinstalling the previous requirements")
-	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", "bench setup requirements"); err != nil {
+	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", setupRequirementsCmd(b)); err != nil {
 		return fmt.Errorf("bench setup requirements: %w", err)
 	}
 	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", clearCacheCmd(b)); err != nil {
@@ -518,4 +518,15 @@ func (s *Service) rollbackUpdate(b state.Bench, plan updatePlan, snap string, ou
 		return err
 	}
 	return s.restartAndWait(b, true)
+}
+
+// setupRequirementsCmd installs every app's requirements. Bare `bench setup
+// requirements` opens each app as a git repository and crashes on one that is
+// not; a mounted checkout is the user's and need not be one (yet), so a bench
+// with a project mount runs the --python and --node halves, as restore does.
+func setupRequirementsCmd(b state.Bench) string {
+	if _, _, ok := projectMountOf(b); ok {
+		return "bench setup requirements --python && bench setup requirements --node"
+	}
+	return "bench setup requirements"
 }

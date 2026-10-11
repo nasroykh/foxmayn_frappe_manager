@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
@@ -17,7 +18,9 @@ import (
 // operation; the rules that keep it safe:
 //
 //   - The mount exists only in the container. Host-side RemoveAll of the bench
-//     directory sees an empty mountpoint, never the checkout.
+//     directory sees an empty mountpoint, never the checkout — provided the
+//     checkout is not itself inside, or around, a directory ffm deletes from
+//     (checkMountOutsideFFM).
 //   - It is NOT in the compose file while bench init and the seed copy run
 //     (`compose run` uses the same service definition, and bench init does
 //     rm -rf /workspace/frappe-bench). Create renders it afterwards.
@@ -42,6 +45,9 @@ func checkProjectMount(app, path string) error {
 	if err := bench.ValidateProjectMount(app, path); err != nil {
 		return err
 	}
+	if err := checkMountOutsideFFM(path); err != nil {
+		return err
+	}
 	hooks := filepath.Join(path, app, "hooks.py")
 	if _, err := os.Stat(hooks); err != nil {
 		return fmt.Errorf("the app %s is a checkout mounted from %s, which is missing or no longer holds %s "+
@@ -49,6 +55,39 @@ func checkProjectMount(app, path string) error {
 			app, path, filepath.Join(app, "hooks.py"))
 	}
 	return nil
+}
+
+// checkMountOutsideFFM refuses a checkout that overlaps, in either direction,
+// a directory ffm removes trees from: the benches (create's rollback and
+// delete run RemoveAll on a bench directory), the backups and the seeds. A
+// checkout cloned to ~/frappe/<app> would otherwise become the bench
+// directory of `ffm up` with the default name, and the first rollback would
+// delete it.
+func checkMountOutsideFFM(path string) error {
+	for _, d := range []struct{ what, dir string }{
+		{"the benches directory", config.BenchesDir()},
+		{"the backups directory", config.BackupsDir()},
+		{"the seeds directory", config.SeedsDir()},
+	} {
+		dir, err := canonicalDir(d.dir)
+		if err != nil {
+			// Not created yet: compare the absolute path.
+			if dir, err = filepath.Abs(d.dir); err != nil {
+				continue
+			}
+		}
+		if pathWithin(path, dir) || pathWithin(dir, path) {
+			return fmt.Errorf("the checkout %s overlaps %s (%s), where ffm deletes bench files: "+
+				"move the checkout elsewhere (for example ~/src/<app>) and run ffm up there", path, d.what, dir)
+		}
+	}
+	return nil
+}
+
+// pathWithin reports whether path is dir or below it.
+func pathWithin(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // canonicalDir returns dir as an absolute path with symlinks resolved.

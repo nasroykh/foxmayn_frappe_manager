@@ -489,14 +489,19 @@ internal/
   - **`bench remove-app` deletes `apps/<app>`** — through a mount, the checkout. `AppRemove` refuses
     the app (even with `--keep-code`), `AppAdd` refuses its name. `Update` leaves the app's git
     alone (no dirty/ahead check, pull, switch, rollback checkout or prune; `plan.Mounted`) but
-    requirements, migrate and build still cover it; `--apps <it>` is refused. `ffm app list --json`
+    requirements (the `--python`/`--node` halves, `setupRequirementsCmd`), migrate and build still
+    cover it; `--apps <it>` is refused. `ffm app list --json`
     gets an additive `mounted` boolean.
   - `Start`, `Recreate` (before it tears anything down) and `applyDomainChange` check the path and
     `<app>/hooks.py` first and name the path if the checkout moved. Delete/rollback only see an empty
-    mountpoint host-side. Backup archives the mounted app's working tree when it has uncommitted
+    mountpoint host-side — which holds only because `checkMountOutsideFFM` refuses a checkout that
+    overlaps the benches, backups or seeds directory in either direction (a checkout cloned to
+    `~/frappe/<name>` would otherwise BE the bench directory, and the first rollback would delete it). Backup archives the mounted app's working tree when it has uncommitted
     changes (`dirty-mounted`, via `planAppSources`' `mounted` argument); restore never sets the
     fields (`restoreCreateInput`, and `Create` refuses a mount with `SkipAppInstall`).
-  - `Up` sets `MatchHostUser` on Linux when the uid is not 1000 (git dubious ownership, egg-info and
+  - `Up` refuses to mount as root on Linux (the container user cannot write a root-owned
+    checkout, and the failure came after the whole build), notes when an existing bench of the file
+    has no mount, and sets `MatchHostUser` on Linux when the uid is not 1000 (git dubious ownership, egg-info and
     DocType exports written from the container) and warns on WSL2 when the checkout is under
     `/mnt/<drive>/` (9p is slow, Windows-side edits may not reload, modes are ignored).
   - The bench's AGENTS.md names the mounted checkout and tells an in-bench agent never to run

@@ -319,6 +319,42 @@ func TestProjectCheckoutResolvesSymlinks(t *testing.T) {
 	}
 }
 
+func TestProjectCheckoutRefusesOverlapWithFFMDirectories(t *testing.T) {
+	r := newMountRig(t, "ovl")
+	write := func(dir string) project.File {
+		t.Helper()
+		hooks := filepath.Join(dir, "my_app", "hooks.py")
+		os.MkdirAll(filepath.Dir(hooks), 0o755)
+		os.WriteFile(hooks, []byte("app_name = \"my_app\"\n"), 0o644)
+		ff := filepath.Join(dir, "ffm.yaml")
+		os.WriteFile(ff, []byte("version: 1\nname: myapp\n"), 0o644)
+		f, err := project.Load(ff)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	for _, dir := range []string{
+		r.benchDir("myapp"), // cloned to ~/frappe/<name>: it would be the bench dir
+		filepath.Join(r.root, "benches", "other", "workspace", "x"),
+		filepath.Join(r.root, "backups", "x"),
+		filepath.Join(r.root, "seeds", "x"),
+	} {
+		if _, _, err := projectCheckout(write(dir)); err == nil || !strings.Contains(err.Error(), "overlaps") {
+			t.Errorf("%s: %v", dir, err)
+		}
+	}
+	// A checkout around the benches directory would mount the bench into itself.
+	t.Setenv("FFM_BENCHES_DIR", filepath.Join(r.checkout, "benches"))
+	if err := checkProjectMount("my_app", r.checkout); err == nil || !strings.Contains(err.Error(), "overlaps") {
+		t.Errorf("benches dir inside the checkout: %v", err)
+	}
+	t.Setenv("FFM_BENCHES_DIR", filepath.Join(r.root, "benches"))
+	if err := checkProjectMount("my_app", r.checkout); err != nil {
+		t.Errorf("a checkout outside every ffm directory: %v", err)
+	}
+}
+
 func TestWSLMountWarning(t *testing.T) {
 	defer func(old func() (string, error)) { readOSRelease = old }(readOSRelease)
 	for _, tt := range []struct {
@@ -576,7 +612,7 @@ func TestUpdateLeavesTheMountedAppAlone(t *testing.T) {
 		t.Errorf("pull not limited to frappe:\n%s", strings.Join(r.fake.Calls(), "\n"))
 	}
 	// It stays in requirements, migrate and build (bench-wide commands).
-	if !r.fake.Called("bench setup requirements") || !r.fake.Called("migrate") || !r.fake.Called("bench build") {
+	if !r.fake.Called("bench setup requirements --python && bench setup requirements --node") || !r.fake.Called("migrate") || !r.fake.Called("bench build") {
 		t.Error("requirements, migrate and build must still cover the whole bench")
 	}
 }
