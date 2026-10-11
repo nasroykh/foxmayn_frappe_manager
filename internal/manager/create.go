@@ -822,7 +822,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		ffcConfigured = true
 		access := state.Bench{Name: name, Dir: benchDir, Mode: mode, SiteName: siteName, WebPort: webPort,
 			FrappeBranch: frappeBranch, Python: toolchain.Python, Node: toolchain.Node,
-			Agent: agent, AgentReadOnly: agentReadOnly}
+			Agent: agent, AgentReadOnly: agentReadOnly, ProjectApp: projectApp, ProjectAppPath: projectPath}
 		if _, err := setupBenchAccess(runner, access); err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffm ffc %s' once the bench is up)\n", err, name)
 			ffcConfigured = false

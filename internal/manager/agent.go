@@ -248,7 +248,13 @@ func agentsMD(b state.Bench) string {
 	fmt.Fprintf(&w, "- Frappe %s, Python %s, Node %s.\n", b.FrappeBranch, orDefault(b.Python, "image default"), orDefault(b.Node, "image default"))
 	fmt.Fprintf(&w, "- Site `%s`: http://localhost:8000 from inside the container (the host uses http://localhost:%d).\n", b.SiteName, b.WebPort)
 	fmt.Fprintf(&w, "- Mail: everything the site sends goes to Mailpit, http://mailpit:8025 (API: `/api/v1/messages`).\n")
-	fmt.Fprintf(&w, "- Database: `bench --site %s mariadb` (or `postgres`) as the site's own user.\n\n", b.SiteName)
+	fmt.Fprintf(&w, "- Database: `bench --site %s mariadb` (or `postgres`) as the site's own user.\n", b.SiteName)
+	if app, path, ok := projectMountOf(b); ok {
+		// bench remove-app deletes the directory and bench update --reset
+		// discards local work: through the mount, that is the user's checkout.
+		fmt.Fprintf(&w, "- `apps/%s` is the user's own checkout, mounted from `%s` on the host. Never run `bench remove-app %s`, `bench update` or `bench get-app %s` here, and never discard work in it with git (`reset --hard`, `checkout --`, `clean`).\n", app, path, app, app)
+	}
+	fmt.Fprintf(&w, "\n")
 	fmt.Fprintf(&w, "## Talking to the site\n\n")
 	fmt.Fprintf(&w, "- `ffc` is configured for this site (`ffc --site %s …`, e.g. `ffc list-docs DocType`), and the `frappe` MCP server in `.mcp.json` runs `ffc mcp`.\n", b.Name)
 	fmt.Fprintf(&w, "- Both act as %s. Credentials live in `~/.config/ffc/config.yaml`; do not print or copy them.\n", identity)

@@ -499,6 +499,10 @@ internal/
   - `Up` sets `MatchHostUser` on Linux when the uid is not 1000 (git dubious ownership, egg-info and
     DocType exports written from the container) and warns on WSL2 when the checkout is under
     `/mnt/<drive>/` (9p is slow, Windows-side edits may not reload, modes are ignored).
+  - The bench's AGENTS.md names the mounted checkout and tells an in-bench agent never to run
+    `bench remove-app`, `bench update` or `bench get-app` on it, nor discard work in it with git.
+    It is not added to `sites/excluded_apps.txt`: that would also drop it from bare
+    `bench setup requirements --dev`, which `ffm test` relies on.
   An existing bench is not changed by `ffm up`: delete it and run `ffm up` again to get a mount.
 - **Domain aliases** (`ffm domain add`, `ffm create --domain-alias`) route extra hostnames — LAN
   names like `erp.internal` — to a bench alongside its primary host. ffm only configures Traefik;

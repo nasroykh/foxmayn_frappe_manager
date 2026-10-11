@@ -117,9 +117,6 @@ Hooks and tooling run only from a file you trusted in its current form
 			switch res.Action {
 			case "created":
 				fmt.Printf("Created %q from %s.\n", res.Bench, f.Path)
-				if res.Mounted != "" {
-					fmt.Printf("Mounted %s as apps/%s.\n", res.MountedPath, res.Mounted)
-				}
 			case "started":
 				fmt.Printf("Started %q.\n", res.Bench)
 			default:
