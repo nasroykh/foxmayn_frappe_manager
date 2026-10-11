@@ -443,9 +443,9 @@ Flags:
   --fresh     Rebuild ignoring the build cache and re-pulling the base image (implies --rebuild)
 ```
 
-`--rebuild` rewrites the `Dockerfile` from the current template (mode-aware) and runs `docker compose build`. Useful after an ffm upgrade changes the template. Docker's layer cache keeps tools installed during the build (ffc, Claude Code, starship) at the version of the first build; `--fresh` updates them too.
+`--rebuild` rewrites the `Dockerfile` from the current template (mode-aware) and runs `docker compose build`. Useful after an ffm upgrade changes the template. Docker's layer cache keeps unpinned tools installed during the build (Claude Code, starship) at the version of the first build; `--fresh` updates them too. ffc is pinned, so a plain `--rebuild` moves it when ffm's pin changes.
 
-The images a bench is built from are pinned in each ffm release: the `frappe/bench` base image, Redis 8, Traefik 3.7 (used when the shared proxy is created), the ffc skills and the Frappe skill pack. MariaDB (11.8) and PostgreSQL (18) follow their minor or major tag.
+The images a bench is built from are pinned in each ffm release: the `frappe/bench` base image, Redis 8, Traefik 3.7 (used when the shared proxy is created), ffc (binary and skills) and the Frappe skill pack. MariaDB (11.8) and PostgreSQL (18) follow their minor or major tag.
 
 ### `ffm shell [name]`
 
@@ -632,6 +632,17 @@ configures ffc with `ffc site add --api-secret-stdin`, which replaces only the b
 and keeps any others you added. It also rewrites `.mcp.json` and the generated `AGENTS.md`. Dev
 benches only; refused on prod, where ffc is not installed. Run it if ffc setup failed during
 `ffm create`, or to rotate the keys.
+
+`ffm ffc [name] --host` is for AI clients on your machine (Cursor, Claude Desktop, VS Code): it
+adds the bench to the ffc installed on the **host**, reusing the keys the bench already holds
+(nothing is regenerated, so the in-container ffc keeps working). The secret reaches ffc on stdin.
+The bench must be running; `--force` replaces a host site of the same name. Then run
+`ffc mcp --site <bench>` or `ffc mcp install --client claude-code|claude-desktop|cursor|vscode|codex --site <bench>`.
+A plain `ffm ffc` mints new keys, so repeat `ffm ffc <bench> --host --force` after it.
+
+The dev image pins ffc to one release (`bench.FfcRef`) for the binary and its skills;
+`ffm status` shows the version running in the container and flags a mismatch
+(`ffm restart --rebuild` moves it).
 
 ffc's config and Claude Code's login (`CLAUDE_CONFIG_DIR`) live in the bench directory
 (`home/ffc`, `home/claude`, both 0700) and survive the container being replaced. When `ffm start`

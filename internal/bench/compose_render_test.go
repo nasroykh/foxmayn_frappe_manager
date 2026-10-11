@@ -140,8 +140,8 @@ func TestDevDockerfilePinsFfcSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "refs/tags/"+FfcSkillsRef) {
-		t.Fatalf("dev Dockerfile does not fetch ffc skills at %s", FfcSkillsRef)
+	if !strings.Contains(string(out), "refs/tags/"+FfcRef) {
+		t.Fatalf("dev Dockerfile does not fetch ffc skills at %s", FfcRef)
 	}
 	if strings.Contains(string(out), "foxmayn_frappe_cli/main/skills") {
 		t.Fatal("dev Dockerfile still fetches ffc skills from main")
@@ -164,5 +164,33 @@ func TestTemplatesPinTheirInputs(t *testing.T) {
 				t.Errorf("%s: floating input %q", mode, floating)
 			}
 		}
+	}
+}
+
+// The ffc binary is pinned to the same release as the skills: the installer
+// alone installs the latest, so `ffc update --version` must follow it and the
+// build must fail when the pin did not take. `ffc --version` prints the
+// version without the leading v.
+func TestDevDockerfilePinsFfcBinary(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteDockerfile(dir, ComposeData{Mode: "dev", DBType: "mariadb"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(raw)
+	for _, want := range []string{
+		"foxmayn_frappe_cli/" + FfcRef + "/install.sh",
+		"ffc update --version " + FfcRef + " --yes",
+		`grep -qF "ffc version ` + strings.TrimPrefix(FfcRef, "v") + ` "`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dev Dockerfile lacks %q", want)
+		}
+	}
+	if strings.Contains(out, "foxmayn_frappe_cli/main/install.sh") {
+		t.Error("dev Dockerfile still installs ffc from main")
 	}
 }

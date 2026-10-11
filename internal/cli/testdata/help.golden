@@ -775,6 +775,10 @@ Global Flags:
 Usage:
   ffm ffc [name] [flags]
 
+Flags:
+      --force   With --host: replace a host ffc site of the same name
+      --host    Add the bench to the host's ffc (reuses the bench's keys) instead of regenerating them
+
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output

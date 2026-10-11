@@ -440,6 +440,7 @@ Every dev bench has [ffc](https://github.com/nasroykh/foxmayn_frappe_cli) pre-in
 
 ```bash
 ffm ffc mybench
+ffm ffc mybench --host   # add the bench to the HOST's ffc (reuses the bench's keys; --force replaces)
 ```
 
 ---
