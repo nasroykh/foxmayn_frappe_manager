@@ -1,8 +1,15 @@
 package bench
 
+import "strconv"
+
+// DevServerLog is where a dev bench's honcho stack writes inside the frappe
+// container. The container itself runs `sleep infinity`, so `docker compose
+// logs frappe` never shows the web server, workers or scheduler of a dev bench.
+const DevServerLog = "/home/frappe/bench-start.log"
+
 // DevServerStartCmd starts a dev bench's honcho stack (`bench start`) in the
 // background inside the frappe container.
-const DevServerStartCmd = "cd /workspace/frappe-bench && nohup bench start > /home/frappe/bench-start.log 2>&1 &"
+const DevServerStartCmd = "cd /workspace/frappe-bench && nohup bench start > " + DevServerLog + " 2>&1 &"
 
 // devServerStopCmd stops the running honcho stack and waits up to ten seconds
 // for it to exit, so the new one does not race the old for its ports.
@@ -18,3 +25,9 @@ const devServerStopCmd = "pkill -f '[h]oncho start' 2>/dev/null;" +
 
 // DevServerRestartCmd stops a dev bench's honcho stack and starts it again.
 const DevServerRestartCmd = devServerStopCmd + "; " + DevServerStartCmd
+
+// DevServerLogTail returns the last n lines of a dev bench's honcho log,
+// secrets scrubbed.
+func (r *Runner) DevServerLogTail(n int) (string, error) {
+	return r.ExecSilent("frappe", "tail", "-n", strconv.Itoa(n), DevServerLog)
+}
