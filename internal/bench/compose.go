@@ -116,13 +116,18 @@ type ComposeData struct {
 	ProjectAppPath string
 }
 
-// FfcSkillsRef is the ffc release whose agent skills the dev image bundles.
-// Pinned so an ffc reorganisation cannot break image builds; bump it with
-// ffc releases.
-const FfcSkillsRef = "v1.13.0"
+// FfcRef is the ffc release the dev image bundles: the binary (installed
+// then pinned with `ffc update --version`) and the agent skills come from
+// the same tag. Pinned so an ffc reorganisation cannot break image builds
+// and a rebuild moves ffc exactly when this changes; bump it with ffc
+// releases.
+const FfcRef = "v1.19.0"
 
-// FfcSkillsRef exposes the pinned ffc release to the Dockerfile template.
-func (ComposeData) FfcSkillsRef() string { return FfcSkillsRef }
+// FfcRef exposes the pinned ffc release to the Dockerfile template.
+func (ComposeData) FfcRef() string { return FfcRef }
+
+// FfcVersion is FfcRef as `ffc --version` prints it, without the leading v.
+func (ComposeData) FfcVersion() string { return strings.TrimPrefix(FfcRef, "v") }
 
 // Pinned build inputs. Floating tags made benches differ by when their image
 // was first built, and a rebuild could silently swap Python or Node under an
@@ -352,7 +357,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 5
+const TemplateVersion = 6
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {

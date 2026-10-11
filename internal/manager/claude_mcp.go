@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 )
 
-// claudeMcpFile matches Claude Code project config and foxmayn-frappe-mcp's
-// "Manual Configuration" for Claude (.mcp.json).
-// See: https://github.com/nasroykh/foxmayn_frappe_mcp
+// claudeMcpFile is Claude Code's project config (.mcp.json). This file wires
+// Claude Code inside the container to ffc's MCP server (`ffc mcp --site
+// <bench>`); the host's AI clients are set up with `ffm ffc --host`.
 type claudeMcpFile struct {
 	MCPServers map[string]claudeMcpServerEntry `json:"mcpServers"`
 }

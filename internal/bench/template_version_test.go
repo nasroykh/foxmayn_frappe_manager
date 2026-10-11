@@ -19,6 +19,8 @@ var templatesAtVersion = map[int]string{
 	// 5: dev compose: optional bind mount of a project checkout over
 	// apps/<app> (ffm up in an app repository).
 	5: "c09db983a04ca5383a2e18b49165998de5274944d6b0b6035bee0e65deeaec16",
+	// 6: dev Dockerfile: ffc pinned to bench.FfcRef (binary and skills).
+	6: "3471151b74a4fc5e6eacae93627bd83859c000cf282b49d18c8fdc582f89568f",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

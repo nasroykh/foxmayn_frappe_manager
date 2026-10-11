@@ -37,8 +37,14 @@ ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 # Install starship (system-wide)
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 
-# Install ffc (system-wide, to /usr/local/bin)
-RUN curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/main/install.sh | sh
+# Install ffc (system-wide, to /usr/local/bin) at the pinned release. The
+# installer only ever installs the latest release, so `ffc update --version`
+# (signature-checked) pins it afterwards: a rebuild (`ffm restart --rebuild`)
+# then moves ffc exactly when ffm's FfcRef changes. Already at the version,
+# update exits 0; the last line fails the build if the pin did not take.
+RUN curl -fsSL https://raw.githubusercontent.com/nasroykh/foxmayn_frappe_cli/{{.FfcRef}}/install.sh | sh \
+    && ffc update --version {{.FfcRef}} --yes \
+    && ffc --version | grep -qF "ffc version {{.FfcVersion}} "
 
 # Pre-fetch Frappe Claude Skill Package (skills are copied into each bench at create time)
 # Pinned to a commit: the skills steer the coding agent, so a moving third-party
@@ -54,7 +60,7 @@ RUN git init -q /opt/frappe-skills \
 # (v1.13.0 split foxmayn-frappe-cli into focused skills). The ffc-dev* skills
 # are for working on ffc itself and are left out.
 RUN mkdir -p /opt/ffc-skills /tmp/ffc-src \
-    && curl -fsSL https://codeload.github.com/nasroykh/foxmayn_frappe_cli/tar.gz/refs/tags/{{.FfcSkillsRef}} \
+    && curl -fsSL https://codeload.github.com/nasroykh/foxmayn_frappe_cli/tar.gz/refs/tags/{{.FfcRef}} \
        | tar -xz -C /tmp/ffc-src --strip-components=1 \
     && for d in /tmp/ffc-src/skills/*/; do \
          case "$(basename "$d")" in ffc-dev*) ;; *) cp -r "$d" /opt/ffc-skills/ ;; esac; \

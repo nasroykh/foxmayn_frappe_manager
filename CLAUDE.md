@@ -150,7 +150,9 @@ internal/
     clean_logs.go         → ffm clean-logs: --days 30 / --dry-run / --yes
     pick.go               → resolveBenchName() + benchNameFromCWD() + pickBench();
                             benchPickKeyMap() is what makes Esc abort every form in the package
-    ffc.go                → ffm ffc: regenerate Frappe API keys + ffc config
+    ffc.go                → ffm ffc: regenerate Frappe API keys + ffc config; --host [--force] adds the bench to
+                            the HOST's ffc instead, reusing the keys in home/ffc/config.yaml (behaviour in
+                            manager/ffc.go FfcHost; secret on stdin, never argv)
     proxy.go              → ffm proxy start/stop/status (bare 'ffm proxy' shows status)
     setproxy.go           → ffm set-proxy flags (--port default 443, --host, --no-ssl, --reset,
                             --print-caddy, --print-nginx); behaviour in manager/setproxy.go
@@ -269,7 +271,10 @@ internal/
                             Also tlsModeFor / prodNoSSL / hostLANIP / domainNameWarning
     tunnel_ops.go         → TunnelEnable / TunnelDisable
     proxy_ops.go          → ProxyStatus / ProxyStart / ProxyStop
-    ffc.go                → SetupFFC: setupBenchAccess + ffc ping; refuses prod benches (no ffc there)
+    ffc.go                → SetupFFC: setupBenchAccess + ffc ping; refuses prod benches (no ffc there).
+                            FfcHost: host `ffc site add` with the bench's own key (read from
+                            home/ffc/config.yaml; setupBenchAccess first if missing), then host `ffc ping`.
+                            FfcVersion: `ffc --version` in a running dev container, "" on any failure
     claude_mcp.go         → writes workspace/frappe-bench/.mcp.json (ffc MCP server)
     clean_logs.go         → deletes old rows from 7 Frappe log tables
     exec.go               → Exec / ExecOrError: one-shot command in a container
@@ -665,7 +670,7 @@ internal/
   control. `--no-ssl` calls `EnsureNetwork()` instead and publishes ports directly.
 - **Claude/agent skills + ffc** — dev benches only. Skills are pre-fetched into the dev image and
   copied during bench init; `Service.Start` back-fills them idempotently if
-  `.claude/skills/ffc-core/SKILL.md` is missing (ffc skills come from a pinned ffc release, `bench.FfcSkillsRef`), and also rewrites `.mcp.json` (wiring
+  `.claude/skills/ffc-core/SKILL.md` is missing (ffc skills come from a pinned ffc release, `bench.FfcRef`), and also rewrites `.mcp.json` (wiring
   Claude Code to `ffc mcp --site <name>`) and re-applies the three patches above.
 - **Private repos** — `--apps` takes short names, SSH URLs, HTTPS URLs, and `@branch` suffixes.
   SSH agent forwarding is opt-in with `--ssh-agent` (dev only), persisted as `Bench.SSHAgent`; the
@@ -718,7 +723,10 @@ internal/
   archived pair only when the frappe branch is unchanged. The default branch is
   `bench.DefaultFrappeBranch` (`version-16`).
 - **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
-  image), `FrappeSkillsCommit` (skill pack) and `FfcSkillsRef` (ffc skills); Redis is
+  image), `FrappeSkillsCommit` (skill pack) and `FfcRef` (ffc: the binary AND its skills). The dev Dockerfile
+  installs ffc, then `ffc update --version <FfcRef> --yes` and a `ffc --version` grep fail the build if
+  the pin did not take (install.sh alone installs the latest); `ffm status` shows the version in a
+  running container. Redis is
   `redis:8-alpine` in the templates and Traefik `traefik:v3.7` in `proxy.Image`. Do not pin Redis
   below the minor a host already runs: its RDB files may not load in an older Redis.
   `TestTemplatesPinTheirInputs` fails on floating tags. `restart --fresh` builds with

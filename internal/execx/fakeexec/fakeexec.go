@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,9 @@ type Rule struct {
 	// Write maps a path to the content written there when the rule matches,
 	// for a file a real command would create.
 	Write map[string]string
+	// StdinTo is a path the command's stdin is copied to when the rule
+	// matches, so a test can check what reached a command through a pipe.
+	StdinTo string
 }
 
 // Fake is an installed fake.
@@ -131,6 +135,10 @@ func HelperMain() {
 			for path, content := range r.Write {
 				_ = os.MkdirAll(filepath.Dir(path), 0o755)
 				_ = os.WriteFile(path, []byte(content), 0o644)
+			}
+			if r.StdinTo != "" {
+				in, _ := io.ReadAll(os.Stdin)
+				_ = os.WriteFile(r.StdinTo, in, 0o600)
 			}
 			for src, dst := range r.Copy {
 				if raw, err := os.ReadFile(src); err == nil {

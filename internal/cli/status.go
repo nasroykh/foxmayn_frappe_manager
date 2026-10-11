@@ -72,6 +72,7 @@ func statusDoc(svc *manager.Service, name string, showSecrets bool) (jsonStatus,
 		FrappeRepo:    b.FrappeRepo,
 		Python:        b.Python,
 		Node:          b.Node,
+		FfcVersion:    svc.FfcVersion(name),
 		Apps:          append([]string{}, b.Apps...),
 		Bind:          bind,
 		SSHAgent:      b.SSHAgent,
@@ -91,6 +92,15 @@ func statusDoc(svc *manager.Service, name string, showSecrets bool) (jsonStatus,
 	}
 	out.Containers = parseComposePS(raw)
 	return out, nil
+}
+
+// ffcStatusValue is the ffc version, with a note when the image pins another
+// release than the one the container runs.
+func ffcStatusValue(v string) string {
+	if pinned := strings.TrimPrefix(bench.FfcRef, "v"); v != pinned {
+		return fmt.Sprintf("%s (image pins %s: ffm restart --rebuild)", v, bench.FfcRef)
+	}
+	return v
 }
 
 // parseComposePS reads `docker compose ps --format json`, which prints one
@@ -167,6 +177,9 @@ func runStatus(name string) error {
 		label("toolchain", fmt.Sprintf("Python %s, Node %s", b.Python, b.Node))
 	} else {
 		label("toolchain", "image defaults (created before ffm chose one per branch)")
+	}
+	if v := manager.New(verbose).FfcVersion(name); v != "" {
+		label("ffc", ffcStatusValue(v))
 	}
 	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
 	if b.DBPassword != "" {
