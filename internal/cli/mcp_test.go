@@ -149,7 +149,9 @@ func TestMCPListAndStatusHideSecrets(t *testing.T) {
 
 func TestMCPLogs(t *testing.T) {
 	mcpBenches(t)
-	fake := fakeexec.Install(t, fakeexec.Rule{Match: " logs ", Stdout: "frappe-1 | connecting with db-s3cret\nfrappe-1 | ready\n"})
+	fake := fakeexec.Install(t,
+		fakeexec.Rule{Match: " logs ", Stdout: "frappe-1 | connecting with db-s3cret\nfrappe-1 | ready\n"},
+		fakeexec.Rule{Match: "bench-start.log", Stdout: "web.1 | Traceback adm-s3cret\nweb.1 | KeyError\n"})
 	c := mcpClient(t, newMCPServer(manager.New(false), mcpOptions{}), nil)
 	out, isErr := mcpCall(t, c, "logs", map[string]any{"bench": "dev1", "service": "frappe", "lines": 99999, "since": "10m"})
 	if isErr {
@@ -157,6 +159,11 @@ func TestMCPLogs(t *testing.T) {
 	}
 	if strings.Contains(out, "db-s3cret") || !strings.Contains(out, "ready") {
 		t.Errorf("logs not scrubbed or empty: %s", out)
+	}
+	// A dev bench's web server and workers log to bench start's file, not to
+	// the container.
+	if strings.Contains(out, "adm-s3cret") || !strings.Contains(out, `"dev_server":"web.1 | Traceback`) {
+		t.Errorf("dev server log missing or not scrubbed: %s", out)
 	}
 	calls := strings.Join(fake.Calls(), "\n")
 	if !strings.Contains(calls, "logs --no-color --tail 2000 --since 10m frappe") {
@@ -184,6 +191,19 @@ func TestMCPProductionPolicy(t *testing.T) {
 	}
 	if out, isErr := mcpCall(t, c, "clone", map[string]any{"source": "prod1", "target": "copy"}); !isErr || !strings.HasPrefix(out, "policy:") {
 		t.Errorf("clone of a prod bench = %s", out)
+	}
+	// delete is refused before the user is asked to approve it, for a prod
+	// bench and for one that does not exist.
+	a := &mcpAsker{action: mcp.ElicitationResponseActionAccept, confirm: true}
+	cd := mcpClient(t, newMCPServer(manager.New(false), mcpOptions{AllowWrite: true}), a)
+	if out, isErr := mcpCall(t, cd, "delete", map[string]any{"bench": "prod1"}); !isErr || !strings.HasPrefix(out, "policy:") {
+		t.Errorf("delete of a prod bench = %s", out)
+	}
+	if out, isErr := mcpCall(t, cd, "delete", map[string]any{"bench": "nope"}); !isErr {
+		t.Errorf("delete of a missing bench = %s", out)
+	}
+	if len(a.asked) != 0 {
+		t.Errorf("user asked to approve a delete that cannot happen: %q", a.asked)
 	}
 	if calls := fake.Calls(); len(calls) != 0 {
 		t.Errorf("work started on a prod bench:\n%s", strings.Join(calls, "\n"))

@@ -128,7 +128,9 @@ func (m *mcpServer) tools() []mcpTool {
 			mcp.WithString("bench", mcp.Description("Bench name; every bench when omitted")),
 		), m.doctor},
 		{toolRead, mcp.NewTool("logs",
-			mcp.WithDescription(fmt.Sprintf("The last lines of a bench's container logs, secrets scrubbed. Default %d lines, at most %d.", defaultLogLines, maxLogLines)),
+			mcp.WithDescription(fmt.Sprintf("The last lines of a bench's container logs, secrets scrubbed. Default %d lines, at most %d. "+
+				"On a development bench the web server, socket.io, workers and scheduler run under `bench start` inside the frappe container, "+
+				"so their output is in dev_server (for service frappe or all services; since does not filter it).", defaultLogLines, maxLogLines)),
 			mcp.WithTitleAnnotation("Bench logs"), mcp.WithReadOnlyHintAnnotation(true), mcp.WithOpenWorldHintAnnotation(false),
 			benchParam(),
 			mcp.WithString("service", mcp.Description("One compose service (frappe, socketio, mariadb, redis-queue, worker-short, ...); all when omitted")),
@@ -233,6 +235,11 @@ func (m *mcpServer) instructions(tools []mcpTool) string {
 func (m *mcpServer) handler(t mcpTool) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if t.kind == toolDelete {
+			// Refuse before asking: a person must not be asked to approve
+			// a delete that policy, or a missing bench, rules out anyway.
+			if _, err := m.bench(req, "bench", true); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			if r := mcpConfirm.confirm(ctx, req); r != nil {
 				return r, nil
 			}
@@ -335,6 +342,8 @@ type mcpLogs struct {
 	Service string `json:"service,omitempty"`
 	Lines   int    `json:"lines"`
 	Logs    string `json:"logs"`
+	// DevServer is the tail of a dev bench's `bench start` log.
+	DevServer string `json:"dev_server,omitempty"`
 }
 
 func (m *mcpServer) logs(_ context.Context, req mcp.CallToolRequest, _ *mcpProgress) (any, error) {
@@ -360,7 +369,14 @@ func (m *mcpServer) logs(_ context.Context, req mcp.CallToolRequest, _ *mcpProgr
 	if err != nil {
 		return nil, fmt.Errorf("docker compose logs: %w: %s", err, lastLine(text))
 	}
-	return mcpLogs{Bench: b.Name, Service: service, Lines: lines, Logs: text}, nil
+	doc := mcpLogs{Bench: b.Name, Service: service, Lines: lines, Logs: text}
+	if b.IsDev() && (service == "" || service == "frappe") {
+		// A stopped bench has no log to read; the container logs say enough.
+		if out, err := runner.DevServerLogTail(lines); err == nil {
+			doc.DevServer = out
+		}
+	}
+	return doc, nil
 }
 
 func (m *mcpServer) snapshots(_ context.Context, req mcp.CallToolRequest, _ *mcpProgress) (any, error) {

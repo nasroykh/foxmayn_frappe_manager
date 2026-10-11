@@ -129,8 +129,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 func webServerUnreachable(runner *bench.Runner, isDev bool, waitErr error) error {
 	var detail string
 	if isDev {
-		if out, err := runner.ExecSilent("frappe", "tail", "-n", "20",
-			"/home/frappe/bench-start.log"); err == nil {
+		if out, err := runner.DevServerLogTail(20); err == nil {
 			detail = strings.TrimSpace(out)
 		}
 	} else {
