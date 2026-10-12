@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/agecrypt"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/archive"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
@@ -354,4 +355,48 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 		}
 	}
 	return problems
+}
+
+// ArchiveSecrets returns the credentials an archive carries (its manifest's
+// secrets block and the bench record's passwords), so a caller that runs the
+// restore as a job can mask them in the job's output and jobs.json. The
+// manifest is read without unpacking anything.
+//
+// An age-encrypted archive yields nothing: its manifest is inside the
+// ciphertext and decrypting it just to read the secrets would put plaintext on
+// disk outside the restore. Only the target-independent values a caller adds
+// itself can be masked for such an archive. Any read problem also yields
+// nothing, because the restore itself then fails with the real reason.
+func ArchiveSecrets(path string) []string {
+	if agecrypt.IsEncrypted(path) {
+		return nil
+	}
+	raw, err := archive.PeekManifest(path)
+	if err != nil {
+		return nil
+	}
+	m, err := ParseManifest(raw)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, v := range benchSecrets(m.Bench, m.Secrets.AdminPassword, m.Secrets.DBRootPassword,
+		m.Secrets.SiteDBPassword, m.Secrets.EncryptionKey, m.Secrets.BackupEncryptionKey) {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// BenchSecrets returns the passwords of an existing bench, for masking the
+// output of a job that is not keyed by it (a clone's source).
+func BenchSecrets(b state.Bench) []string {
+	var out []string
+	for _, v := range benchSecrets(b) {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

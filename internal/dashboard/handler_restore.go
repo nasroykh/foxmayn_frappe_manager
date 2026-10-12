@@ -81,7 +81,17 @@ func (h *Handler) RestoreRun(w http.ResponseWriter, r *http.Request) {
 		PinApps:         r.FormValue("pin_apps") == "1",
 		LAN:             r.FormValue("lan") == "1",
 	}
-	h.runJob(w, r, manager.JobRestore, target, back, func(pw manager.ProgressWriter) error {
+	// The job is keyed by the new target, which has no record yet, so
+	// StartAction would mask nothing. The archive's own credentials are read
+	// from its manifest instead (none for an age-encrypted archive: its
+	// manifest is inside the ciphertext, and the dashboard does not decrypt it
+	// just to learn them; Restore scrubs its own command output either way).
+	id, err := h.Svc.StartActionSecrets(h.Jobs, manager.JobRestore, target, manager.ArchiveSecrets(a.Path), func(pw manager.ProgressWriter) error {
 		return h.Svc.Restore(in, pw)
 	})
+	if err != nil {
+		redirectWithFlash(w, r, back, "", err.Error())
+		return
+	}
+	http.Redirect(w, r, "/admin/jobs/"+id, http.StatusSeeOther)
 }

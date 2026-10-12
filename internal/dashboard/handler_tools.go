@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
@@ -51,11 +52,12 @@ func (h *Handler) BenchClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	source := r.PathValue("name")
-	if _, err := h.Svc.GetBench(source); err != nil {
+	src, err := h.Svc.GetBench(source)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	target := r.FormValue("target")
+	target := strings.TrimSpace(r.FormValue("target"))
 	if err := bench.ValidateName(target); err != nil {
 		redirectWithFlash(w, r, benchPath(source), "", err.Error())
 		return
@@ -68,10 +70,17 @@ func (h *Handler) BenchClone(w http.ResponseWriter, r *http.Request) {
 		Source:  source,
 		Target:  target,
 		NoFiles: r.FormValue("no_files") == "1",
-		Domain:  r.FormValue("domain"),
+		Domain:  strings.TrimSpace(r.FormValue("domain")),
 		NoSSL:   r.FormValue("no_ssl") == "1",
 	}
-	h.runJob(w, r, manager.JobClone, target, benchPath(source), func(pw manager.ProgressWriter) error {
+	// Keyed by the new name, which has no record, so the source's credentials
+	// (the clone carries them over) are masked explicitly.
+	id, err := h.Svc.StartActionSecrets(h.Jobs, manager.JobClone, target, manager.BenchSecrets(src), func(pw manager.ProgressWriter) error {
 		return h.Svc.Clone(in, pw)
 	})
+	if err != nil {
+		redirectWithFlash(w, r, benchPath(source), "", err.Error())
+		return
+	}
+	http.Redirect(w, r, "/admin/jobs/"+id, http.StatusSeeOther)
 }

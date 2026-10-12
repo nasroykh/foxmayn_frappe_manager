@@ -2,11 +2,13 @@ package dashboard
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -184,11 +186,11 @@ func parityPosts(h *Handler, t *testing.T) []struct {
 		{"doctor", h.BenchDoctor, "/admin/benches/alpha/doctor", url.Values{}, manager.JobDoctor},
 		{"clone", h.BenchClone, "/admin/benches/alpha/clone", url.Values{"target": {"beta"}}, manager.JobClone},
 		{"domain-add", h.DomainAdd, "/admin/benches/alpha/domains", url.Values{"domain": {"erp.internal"}}, manager.JobDomainAdd},
-		{"domain-remove", h.DomainRemove, "/admin/benches/alpha/domains/remove", url.Values{"domain": {"erp.internal"}}, manager.JobDomainRemove},
+		{"domain-remove", h.DomainRemove, "/admin/benches/alpha/domains/remove", url.Values{"domain": {"erp.internal"}, "confirm": {"erp.internal"}}, manager.JobDomainRemove},
 		{"update-preview", h.AppUpdatePreview, "/admin/benches/alpha/update/preview", url.Values{}, manager.JobUpdate},
 		{"update", h.AppUpdateRun, "/admin/benches/alpha/update", url.Values{}, manager.JobUpdate},
 		{"snapshot-create", h.SnapshotCreate, "/admin/benches/alpha/snapshots", url.Values{"name": {"s2"}}, manager.JobSnapshotCreate},
-		{"snapshot-restore", h.SnapshotRestore, "/admin/benches/alpha/snapshots/restore", url.Values{"snapshot": {"snap1"}}, manager.JobSnapshotRestore},
+		{"snapshot-restore", h.SnapshotRestore, "/admin/benches/alpha/snapshots/restore", url.Values{"snapshot": {"snap1"}, "confirm": {"snap1"}}, manager.JobSnapshotRestore},
 		{"restore", h.RestoreRun, "/admin/restore", url.Values{"archive": {"alpha/alpha_1.ffm.tar"}, "target": {"restored"}}, manager.JobRestore},
 	}
 }
@@ -198,6 +200,9 @@ func TestParityActionsRunAsJobs(t *testing.T) {
 	// job of the right type exists and the request did not wait for it.
 	h, _ := newTestHandler(t, fakeexec.Rule{Match: "docker", Exit: 1})
 	b := addBench(t, h, "alpha")
+	if err := h.Svc.UpdateBench("alpha", func(b *state.Bench) { b.DomainAliases = []string{"erp.internal"} }); err != nil {
+		t.Fatal(err)
+	}
 	writeTestArchive(t, "alpha", "alpha_1.ffm.tar", "", time.Now().Add(-time.Hour))
 	writeSnapshot(t, b, "snap1")
 	for _, c := range parityPosts(h, t) {
@@ -221,7 +226,7 @@ func TestParityPostsNeedAuthAndCSRF(t *testing.T) {
 		path    string
 		form    url.Values
 		typ     manager.JobType
-	}{"snapshot-delete", h.SnapshotDelete, "/admin/benches/alpha/snapshots/delete", url.Values{"snapshot": {"snap1"}}, ""})
+	}{"snapshot-delete", h.SnapshotDelete, "/admin/benches/alpha/snapshots/delete", url.Values{"snapshot": {"snap1"}, "confirm": {"snap1"}}, ""})
 	for _, name := range []string{"prune", "schedule"} {
 		handler := h.BackupPrune
 		path := "/admin/benches/alpha/backups/prune"
@@ -311,7 +316,7 @@ func TestRestoreRefusesArchivesOutsideTheListing(t *testing.T) {
 	waitJob(t, h, jobIDFromLocation(t, rr))
 }
 
-func TestPruneNeedsAPreviewAndMatchingCounts(t *testing.T) {
+func TestPruneNeedsAPreviewOfTheSameArchives(t *testing.T) {
 	h, _ := newTestHandler(t)
 	addBench(t, h, "alpha")
 	p := manager.PresetPolicy(24)
@@ -336,15 +341,27 @@ func TestPruneNeedsAPreviewAndMatchingCounts(t *testing.T) {
 		}
 	}
 	res, err := h.Svc.PruneBackups("alpha", true)
-	if err != nil || len(res.Removed) == 0 {
+	if err != nil || len(res.Removed) < 2 {
 		t.Fatalf("setup: %d removable, err %v", len(res.Removed), err)
 	}
+	var names []string
+	for _, a := range res.Removed {
+		names = append(names, filepath.Base(a.Path))
+		if !strings.Contains(prev.Body.String(), `name="expect" value="`+filepath.Base(a.Path)+`"`) {
+			t.Errorf("the preview form does not carry %s", filepath.Base(a.Path))
+		}
+	}
 
-	// No preview counts, or counts that no longer match: nothing is deleted.
+	// Counts (the old form), nothing, a subset, a same-sized but different
+	// set and a superset: none may start a job or delete anything.
+	kept := filepath.Base(res.Kept[0].Path)
 	for _, form := range []url.Values{
 		{},
-		{"expect_removed": {"x"}, "expect_partials": {"0"}},
-		{"expect_removed": {"99"}, "expect_partials": {"0"}},
+		{"expect_removed": {itoa(len(res.Removed))}, "expect_partials": {"0"}},
+		{"expect": names[1:]},
+		{"expect": append(append([]string(nil), names[1:]...), kept)},
+		{"expect": append(append([]string(nil), names...), kept)},
+		{"expect": names, "expect_partial": {"ghost.partial"}},
 	} {
 		rr := postForm(h, h.Audited(h.BackupPrune), "/admin/benches/alpha/backups/prune", "alpha", form, true)
 		loc := rr.Header().Get("Location")
@@ -355,9 +372,16 @@ func TestPruneNeedsAPreviewAndMatchingCounts(t *testing.T) {
 	if len(h.Jobs.ListJobs()) != 0 {
 		t.Fatal("a prune job started without a matching preview")
 	}
+	for _, path := range append(paths, manual) {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("a refused prune deleted %s", path)
+		}
+	}
 
+	// The previewed set, in any order, is accepted.
+	slices.Reverse(names)
 	rr := postForm(h, h.Audited(h.BackupPrune), "/admin/benches/alpha/backups/prune", "alpha",
-		url.Values{"expect_removed": {itoa(len(res.Removed))}, "expect_partials": {"0"}}, true)
+		url.Values{"expect": names}, true)
 	j := waitJob(t, h, jobIDFromLocation(t, rr))
 	if j.Type != manager.JobPrune || j.Status != manager.JobSucceeded {
 		t.Fatalf("prune job: %s %s %s", j.Type, j.Status, j.Error)
@@ -419,19 +443,283 @@ func TestSnapshotRestoreAndDeleteOnlyAcceptListedSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"../../keepme", "nope", "", "snap1/../..", "/etc"} {
-		rr := postForm(h, h.Audited(h.SnapshotRestore), "/admin/benches/alpha/snapshots/restore", "alpha", url.Values{"snapshot": {name}}, true)
+		rr := postForm(h, h.Audited(h.SnapshotRestore), "/admin/benches/alpha/snapshots/restore", "alpha", url.Values{"snapshot": {name}, "confirm": {name}}, true)
 		if strings.Contains(rr.Header().Get("Location"), "/jobs/") {
 			t.Errorf("restore of %q started a job", name)
 		}
-		postForm(h, h.Audited(h.SnapshotDelete), "/admin/benches/alpha/snapshots/delete", "alpha", url.Values{"snapshot": {name}}, true)
+		rr = postForm(h, h.Audited(h.SnapshotDelete), "/admin/benches/alpha/snapshots/delete", "alpha", url.Values{"snapshot": {name}, "confirm": {name}}, true)
+		if strings.Contains(rr.Header().Get("Location"), "/jobs/") {
+			t.Errorf("delete of %q started a job", name)
+		}
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("a snapshot name reached outside the snapshots directory: %v", err)
 	}
-	postForm(h, h.Audited(h.SnapshotDelete), "/admin/benches/alpha/snapshots/delete", "alpha", url.Values{"snapshot": {"snap1"}}, true)
+	rr := postForm(h, h.Audited(h.SnapshotDelete), "/admin/benches/alpha/snapshots/delete", "alpha", url.Values{"snapshot": {"snap1"}, "confirm": {"snap1"}}, true)
+	if j := waitJob(t, h, jobIDFromLocation(t, rr)); j.Type != manager.JobSnapshotDelete || j.Status != manager.JobSucceeded {
+		t.Fatalf("delete job: %s %s %s", j.Type, j.Status, j.Error)
+	}
 	if _, err := os.Stat(filepath.Join(b.Dir, "workspace", ".ffm-snapshots", "snap1")); !os.IsNotExist(err) {
 		t.Errorf("snapshot not deleted: %v", err)
 	}
+}
+
+// flashErrOf reads the error flash a handler redirected with.
+func flashErrOf(rr *httptest.ResponseRecorder) string {
+	loc := rr.Header().Get("Location")
+	_, after, ok := strings.Cut(loc, "?flash=")
+	if !ok {
+		return ""
+	}
+	_, msg := flashes.take(after)
+	return msg
+}
+
+// Restoring or deleting a snapshot and removing an alias need the name typed
+// into the form; a data-confirm dialog is client-side only.
+func TestDestructiveActionsNeedTheNameTyped(t *testing.T) {
+	h, _ := newTestHandler(t, fakeexec.Rule{Match: "docker", Exit: 1})
+	b := addBench(t, h, "alpha")
+	if err := h.Svc.UpdateBench("alpha", func(b *state.Bench) { b.DomainAliases = []string{"erp.internal"} }); err != nil {
+		t.Fatal(err)
+	}
+	writeSnapshot(t, b, "snap1")
+	snapDir := filepath.Join(b.Dir, "workspace", ".ffm-snapshots", "snap1")
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		path    string
+		field   string
+		value   string
+	}{
+		{"snapshot-restore", h.SnapshotRestore, "/admin/benches/alpha/snapshots/restore", "snapshot", "snap1"},
+		{"snapshot-delete", h.SnapshotDelete, "/admin/benches/alpha/snapshots/delete", "snapshot", "snap1"},
+		{"domain-remove", h.DomainRemove, "/admin/benches/alpha/domains/remove", "domain", "erp.internal"},
+	}
+	for _, c := range cases {
+		for _, confirm := range []string{"", "yes", "snap", c.value + " ", strings.ToUpper(c.value)} {
+			form := url.Values{c.field: {c.value}}
+			if confirm != "" {
+				form.Set("confirm", confirm)
+			}
+			rr := postForm(h, h.Audited(c.handler), c.path, "alpha", form, true)
+			if msg := flashErrOf(rr); rr.Code != http.StatusSeeOther || !strings.Contains(msg, "type its name") {
+				t.Errorf("%s with confirm %q: %d flash %q, want a refusal asking for the name", c.name, confirm, rr.Code, msg)
+			}
+		}
+	}
+	if n := len(h.Jobs.ListJobs()); n != 0 {
+		t.Fatalf("%d jobs started without a typed confirmation", n)
+	}
+	if _, err := os.Stat(snapDir); err != nil {
+		t.Fatalf("snapshot deleted without confirmation: %v", err)
+	}
+
+	// An alias the bench does not have, or its primary host, is not removable
+	// even with the right confirmation.
+	for _, d := range []string{"other.internal", "alpha.localhost"} {
+		rr := postForm(h, h.Audited(h.DomainRemove), "/admin/benches/alpha/domains/remove", "alpha", url.Values{"domain": {d}, "confirm": {d}}, true)
+		if msg := flashErrOf(rr); !strings.Contains(msg, "has no alias") {
+			t.Errorf("remove of %q: flash %q, want a refusal naming the missing alias", d, msg)
+		}
+	}
+	if n := len(h.Jobs.ListJobs()); n != 0 {
+		t.Fatalf("%d jobs started for a domain that is not an alias", n)
+	}
+}
+
+// A snapshot delete runs under the bench's job key, so it is refused while a
+// restore, update or backup of that bench is running.
+func TestSnapshotDeleteRefusedWhileTheBenchIsBusy(t *testing.T) {
+	h, _ := newTestHandler(t)
+	b := addBench(t, h, "alpha")
+	writeSnapshot(t, b, "snap1")
+	release := make(chan struct{})
+	if _, err := h.Svc.StartAction(h.Jobs, manager.JobUpdate, "alpha", func(manager.ProgressWriter) error {
+		<-release
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer close(release)
+	rr := postForm(h, h.Audited(h.SnapshotDelete), "/admin/benches/alpha/snapshots/delete", "alpha",
+		url.Values{"snapshot": {"snap1"}, "confirm": {"snap1"}}, true)
+	if loc := rr.Header().Get("Location"); strings.Contains(loc, "/jobs/") {
+		t.Fatalf("delete started beside a running job: %q", loc)
+	}
+	if _, err := os.Stat(filepath.Join(b.Dir, "workspace", ".ffm-snapshots", "snap1")); err != nil {
+		t.Fatalf("snapshot deleted while the bench was busy: %v", err)
+	}
+}
+
+// writeManifestArchive writes an archive with a header and a manifest whose
+// secrets are known, like a real backup but without any members.
+func writeManifestArchive(t *testing.T, benchName, file, label string, sec manager.Secrets, b state.Bench) string {
+	t.Helper()
+	dir := filepath.Join(os.Getenv("FFM_BACKUPS_DIR"), benchName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hdr := manager.Header{
+		Kind: manager.ArchiveKind, SchemaVersion: manager.SchemaVersion, MinReaderVersion: 1,
+		BenchName: benchName, SiteName: benchName + ".localhost", Mode: "dev", DBType: "mariadb",
+		CreatedAt: time.Now().Add(-time.Hour), Tiers: []string{manager.TierCore}, Label: label,
+	}
+	path := filepath.Join(dir, file)
+	w, err := archive.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(hdr)
+	if _, err := w.AddBytes(archive.HeaderName, raw, archive.EncodingNone); err != nil {
+		t.Fatal(err)
+	}
+	m, err := w.AddBytes("ffm-backup/note.txt", []byte("x"), archive.EncodingNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mraw, _ := json.Marshal(manager.Manifest{Header: hdr, Bench: b, Secrets: sec, Members: []archive.Member{m}})
+	if _, err := w.AddBytes(archive.ManifestName, mraw, archive.EncodingNone); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A restore is keyed by its new target, which has no record, so the job would
+// mask nothing; the archive's own credentials are masked instead.
+func TestRestoreJobMasksTheArchivesSecrets(t *testing.T) {
+	h, _ := newTestHandler(t)
+	const adminPW, rootPW, keyVal = "arch-admin-pw-1", "arch-root-pw-22", "arch-enc-key-333"
+	path := writeManifestArchive(t, "alpha", "alpha_1.ffm.tar", "label "+adminPW+" "+keyVal,
+		manager.Secrets{AdminPassword: adminPW, DBRootPassword: rootPW, EncryptionKey: keyVal},
+		state.Bench{Name: "alpha", AdminPassword: adminPW})
+	got := manager.ArchiveSecrets(path)
+	for _, want := range []string{adminPW, rootPW, keyVal} {
+		if !slices.Contains(got, want) {
+			t.Errorf("ArchiveSecrets lacks %q: %q", want, got)
+		}
+	}
+	rr := postForm(h, h.Audited(h.RestoreRun), "/admin/restore", "", url.Values{
+		"archive": {"alpha/alpha_1.ffm.tar"}, "target": {"restored"}, "dry_run": {"1"}, "web_port": {"18310"}, "socketio_port": {"19310"},
+	}, true)
+	j := waitJob(t, h, jobIDFromLocation(t, rr))
+	all := j.Error + "\n" + strings.Join(jobText(j), "\n")
+	if !strings.Contains(all, "label ***") {
+		t.Fatalf("the dry run did not print the label, so the test proves nothing: %q", all)
+	}
+	for _, secret := range []string{adminPW, rootPW, keyVal} {
+		if strings.Contains(all, secret) {
+			t.Errorf("job output contains %q: %q", secret, all)
+		}
+	}
+	// A foreign file is not an archive: nothing to mask, no panic.
+	junk := filepath.Join(t.TempDir(), "x.ffm.tar")
+	os.WriteFile(junk, []byte("not a tar"), 0o600)
+	if got := manager.ArchiveSecrets(junk); len(got) != 0 {
+		t.Errorf("secrets from junk: %q", got)
+	}
+}
+
+func jobText(j *manager.Job) []string { return j.Lines }
+
+// A clone is keyed by its new name, so the source's credentials are masked
+// explicitly, and the target and domain are trimmed.
+func TestCloneJobMasksTheSourcesSecretsAndTrims(t *testing.T) {
+	h, _ := newTestHandler(t, fakeexec.Rule{Match: "docker", Exit: 1})
+	addBench(t, h, "alpha")
+	rr := postForm(h, h.Audited(h.BenchClone), "/admin/benches/alpha/clone", "alpha",
+		url.Values{"target": {"  beta \n"}, "domain": {" "}}, true)
+	j := waitJob(t, h, jobIDFromLocation(t, rr))
+	if j.BenchName != "beta" {
+		t.Errorf("job key %q, want the trimmed target", j.BenchName)
+	}
+	got := manager.BenchSecrets(state.Bench{AdminPassword: "adm1n-secret-pw", DBPassword: "db-secret-pw-77"})
+	if !slices.Contains(got, "adm1n-secret-pw") || !slices.Contains(got, "db-secret-pw-77") {
+		t.Errorf("BenchSecrets = %q", got)
+	}
+	// The job text is the masked text: a started action masks what it prints.
+	id, err := h.Svc.StartActionSecrets(h.Jobs, manager.JobClone, "gamma", got, func(pw manager.ProgressWriter) error {
+		pw.Println("pw is db-secret-pw-77")
+		return errors.New("failed with adm1n-secret-pw")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j = waitJob(t, h, id)
+	if all := j.Error + strings.Join(jobText(j), "\n"); strings.Contains(all, "secret-pw") {
+		t.Errorf("secret survived: %q", all)
+	}
+}
+
+// bench's output during an update reaches the job; it used to go to io.Discard.
+func TestUpdateJobForwardsBenchOutputToTheJob(t *testing.T) {
+	h, _ := newTestHandler(t)
+	addBench(t, h, "alpha")
+	body := h.updateJob(manager.UpdateInput{Name: "alpha"}, func(in manager.UpdateInput, pw manager.ProgressWriter) error {
+		if in.Out == nil {
+			t.Error("UpdateInput.Out is nil")
+			return nil
+		}
+		in.Out.Write([]byte("Already up to date.\nrunning migrate\n"))
+		return nil
+	})
+	id, err := h.Svc.StartAction(h.Jobs, manager.JobUpdate, "alpha", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := waitJob(t, h, id)
+	if all := strings.Join(jobText(j), "\n"); !strings.Contains(all, "Already up to date.") || !strings.Contains(all, "running migrate") {
+		t.Errorf("update output not in the job: %q", all)
+	}
+}
+
+// After the create form is shown again its password fields are blank; a
+// resubmit that leaves them blank must not silently take the defaults.
+func TestCreateResubmitMustReenterPasswords(t *testing.T) {
+	h, _ := newTestHandler(t, fakeexec.Rule{Match: "docker", Exit: 1})
+	// First submit: blank passwords still mean the CLI defaults.
+	req := httptest.NewRequest(http.MethodPost, "/admin/benches", strings.NewReader(url.Values{"name": {"alpha"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	in, err := parseCreateForm(req)
+	if err != nil || in.AdminPassword != "admin" || in.DBPassword != "ffm123456" {
+		t.Fatalf("first submit: %v, %q %q", err, in.AdminPassword, in.DBPassword)
+	}
+
+	// An error re-render asks for them again.
+	rr := postForm(h, h.Audited(h.BenchCreate), "/admin/benches", "", url.Values{
+		"name": {"alpha"}, "web_port": {"8010"}, "socketio_port": {"9999"}, "admin_password": {"s3cret-adm"},
+	}, true)
+	body := rr.Body.String()
+	if rr.Code != http.StatusBadRequest || !strings.Contains(body, `name="reentry" value="1"`) || !strings.Contains(body, "re-enter") {
+		t.Fatalf("re-rendered form lacks the re-entry marker: %d", rr.Code)
+	}
+	if strings.Contains(body, "s3cret-adm") {
+		t.Error("the password was echoed back")
+	}
+
+	// The resubmit with blank passwords is refused, naming what is missing.
+	for _, form := range []url.Values{
+		{"name": {"alpha"}, "reentry": {"1"}},
+		{"name": {"alpha"}, "reentry": {"1"}, "admin_password": {"s3cret-adm"}},
+		{"name": {"alpha"}, "reentry": {"1"}, "db_password": {"dbpw-secret"}},
+	} {
+		rr := postForm(h, h.Audited(h.BenchCreate), "/admin/benches", "", form, true)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "again") {
+			t.Errorf("form %v: %d, want a 400 asking for the passwords", form, rr.Code)
+		}
+	}
+	if n := len(h.Jobs.ListJobs()); n != 0 {
+		t.Fatalf("%d jobs started from a blank resubmit", n)
+	}
+
+	// Both given: accepted.
+	rr = postForm(h, h.Audited(h.BenchCreate), "/admin/benches", "", url.Values{
+		"name": {"alpha"}, "reentry": {"1"}, "admin_password": {"s3cret-adm"}, "db_password": {"dbpw-secret"},
+	}, true)
+	waitJob(t, h, jobIDFromLocation(t, rr))
 }
 
 func TestRestartFormReachesRebuildAndFresh(t *testing.T) {

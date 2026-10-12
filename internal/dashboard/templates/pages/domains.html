@@ -15,9 +15,10 @@
       {{range .Aliases}}
       <li class="{{template "cls_td"}} font-mono flex items-center justify-between">
         <span>{{.}} <span class="{{template "cls_badge_idle"}}">alias</span></span>
-        <form method="post" action="/admin/benches/{{$name}}/domains/remove" data-confirm="Remove the alias {{.}}?">
+        <form method="post" action="/admin/benches/{{$name}}/domains/remove" class="flex items-center gap-2" data-confirm="Remove the alias {{.}}?">
           {{template "csrf" $csrf}}
           <input type="hidden" name="domain" value="{{.}}">
+          <input name="confirm" required autocomplete="off" aria-label="Type {{.}} to remove it" placeholder="type {{.}}" class="{{template "cls_input"}} font-mono w-48">
           <button class="{{template "cls_btn_danger"}}" type="submit">Remove</button>
         </form>
       </li>

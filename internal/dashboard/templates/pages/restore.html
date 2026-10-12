@@ -52,7 +52,7 @@
       </div>
     </div>
   </div>
-  <p class="text-xs text-zinc-500 dark:text-zinc-400">The admin password stays the archived one and private-app tokens are not accepted here; use <code>ffm restore</code> when you need to change them.</p>
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">The admin password stays the archived one. This form does not offer: an age identity file for an encrypted archive (<code>--identity</code>), <code>--allow-missing-encryption-key</code>, a dump <code>--encryption-key</code>, a <code>--github-token</code> for private apps, <code>--admin-password</code>, <code>--keep-on-failure</code>, <code>--skip-space-check</code> and per-app source overrides (<code>--app &lt;app&gt;=&lt;git-url&gt;[@branch]</code>, needed for archives written before ffm recorded app remotes). For any of those run <code>ffm restore &lt;archive&gt; &lt;name&gt; …</code> on the host (<code>ffm restore --help</code> lists every option).</p>
   <button class="{{template "cls_btn_primary"}}" type="submit" data-confirm="Restore into a new bench? This builds images and can take several minutes.">Restore (run as job)</button>
 </form>
 {{end}}

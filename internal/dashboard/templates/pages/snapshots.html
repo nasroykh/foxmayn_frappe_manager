@@ -29,16 +29,18 @@
             <td class="{{template "cls_td"}}">{{.Size}}</td>
             <td class="{{template "cls_td"}}">{{if .Files}}yes{{else}}no{{end}}</td>
             <td class="{{template "cls_td"}}">
-              <div class="flex flex-wrap items-center gap-2">
-                <form method="post" action="/admin/benches/{{$name}}/snapshots/restore" class="flex items-center gap-2" data-confirm="Restore {{.Name}} into the LIVE site of {{$name}}? The current database is replaced.">
+              <div class="flex flex-col gap-3">
+                <form method="post" action="/admin/benches/{{$name}}/snapshots/restore" class="flex flex-wrap items-center gap-2" data-confirm="Restore {{.Name}} into the LIVE site of {{$name}}? The current database is replaced.">
                   {{template "csrf" $csrf}}
                   <input type="hidden" name="snapshot" value="{{.Name}}">
+                  <input name="confirm" required autocomplete="off" aria-label="Type {{.Name}} to restore it" placeholder="type {{.Name}}" class="{{template "cls_input"}} font-mono w-44">
                   <label class="{{template "cls_check"}}"><input name="migrate" type="checkbox" value="1" class="{{template "cls_checkbox"}}">migrate</label>
                   <button class="{{template "cls_btn"}}" type="submit">Restore</button>
                 </form>
-                <form method="post" action="/admin/benches/{{$name}}/snapshots/delete" data-confirm="Delete the snapshot {{.Name}}?">
+                <form method="post" action="/admin/benches/{{$name}}/snapshots/delete" class="flex flex-wrap items-center gap-2" data-confirm="Delete the snapshot {{.Name}}?">
                   {{template "csrf" $csrf}}
                   <input type="hidden" name="snapshot" value="{{.Name}}">
+                  <input name="confirm" required autocomplete="off" aria-label="Type {{.Name}} to delete it" placeholder="type {{.Name}}" class="{{template "cls_input"}} font-mono w-44">
                   <button class="{{template "cls_btn_danger"}}" type="submit">Delete</button>
                 </form>
               </div>

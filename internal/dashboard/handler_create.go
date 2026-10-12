@@ -13,11 +13,16 @@ import (
 
 // The create form carries every CreateInput field `ffm create` has a flag
 // for, except the ones that make no sense behind a web form (--keep-on-failure,
-// --show-secrets, the project mount) and --agent-read-only. The rules
-// themselves live in manager.Create and the bench validators; the handler only
-// turns text into values and rejects what cannot be turned (a port that is
-// not a number, half a port pair), then the pipeline's own checks run first
-// thing in the job and fail it with the CLI's message before anything is built.
+// --show-secrets, the project mount) and --agent-read-only. It also omits, on
+// purpose and not by oversight: --proxy-port and --proxy-host (the proxy is set
+// with `ffm set-proxy`), --mariadb-fast-commit (a prod tuning knob: use the
+// CLI flag), and the environment fallbacks FFM_NO_SEED,
+// FFM_MATCH_HOST_USER and FFM_KEEP_ON_FAILURE, which are read from the
+// dashboard process's environment, not the request. The rules themselves live
+// in manager.Create and the bench validators; the handler only turns text into
+// values and rejects what cannot be turned (a port that is not a number, half
+// a port pair), then the pipeline's own checks run first thing in the job and
+// fail it with the CLI's message before anything is built.
 
 // splitList splits a comma- or newline-separated field and drops blanks.
 func splitList(s string) []string {
@@ -44,7 +49,8 @@ func formInt(r *http.Request, field string) (int, error) {
 }
 
 // parseCreateForm builds the CreateInput a POST describes. Blank passwords get
-// the CLI flags' defaults.
+// the CLI flags' defaults on a first submit; a resubmit of a re-rendered form
+// (reentry=1) must carry them.
 func parseCreateForm(r *http.Request) (manager.CreateInput, error) {
 	var errs []string
 	num := func(field string) int {
@@ -69,10 +75,25 @@ func parseCreateForm(r *http.Request) (manager.CreateInput, error) {
 	}
 
 	adminPW := r.FormValue("admin_password")
+	dbPW := r.FormValue("db_password")
+	if r.FormValue("reentry") == "1" {
+		// The form was shown again after an error, and the passwords are never
+		// echoed back, so the fields came back blank. A blank here is the
+		// user not having re-typed them, not a request for the defaults.
+		var missing []string
+		if adminPW == "" {
+			missing = append(missing, "the admin password")
+		}
+		if dbPW == "" {
+			missing = append(missing, "the database root password")
+		}
+		if len(missing) > 0 {
+			return manager.CreateInput{}, fmt.Errorf("enter %s again: the form does not carry passwords across a resubmit", strings.Join(missing, " and "))
+		}
+	}
 	if adminPW == "" {
 		adminPW = "admin"
 	}
-	dbPW := r.FormValue("db_password")
 	if dbPW == "" {
 		dbPW = "ffm123456"
 	}
@@ -140,6 +161,9 @@ type benchFormData struct {
 	Nodes       []string
 	AppsText    string
 	AliasesText string
+	// Reentry is set when the form is shown again after an error: the
+	// passwords and the token were not echoed back and must be typed again.
+	Reentry bool
 }
 
 // createDefaults are the form's initial values: the CLI flags' defaults.
@@ -164,6 +188,7 @@ func (h *Handler) renderCreateForm(w http.ResponseWriter, r *http.Request, statu
 		Nodes:       bench.ImageNodes,
 		AppsText:    strings.Join(form.Apps, ", "),
 		AliasesText: strings.Join(form.DomainAliases, ", "),
+		Reentry:     status != http.StatusOK,
 	})
 }
 

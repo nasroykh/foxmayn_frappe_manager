@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -370,10 +372,73 @@ func (h *Handler) BackupPrunePreview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// pruneSelection is what a dry run would delete, as sorted base names.
+type pruneSelection struct{ Archives, Partials []string }
+
+func selectionOf(res manager.PruneResult) pruneSelection {
+	sel := pruneSelection{}
+	for _, a := range res.Removed {
+		sel.Archives = append(sel.Archives, filepath.Base(a.Path))
+	}
+	for _, p := range res.Partials {
+		sel.Partials = append(sel.Partials, filepath.Base(p))
+	}
+	sort.Strings(sel.Archives)
+	sort.Strings(sel.Partials)
+	return sel
+}
+
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+func (s pruneSelection) equal(o pruneSelection) bool {
+	return slices.Equal(s.Archives, o.Archives) && slices.Equal(s.Partials, o.Partials)
+}
+
+// describeDiff names what differs between the previewed selection and now.
+func (s pruneSelection) describeDiff(now pruneSelection) string {
+	var parts []string
+	for _, n := range now.Archives {
+		if !slices.Contains(s.Archives, n) {
+			parts = append(parts, "now also "+n)
+		}
+	}
+	for _, n := range s.Archives {
+		if !slices.Contains(now.Archives, n) {
+			parts = append(parts, "no longer "+n)
+		}
+	}
+	for _, n := range now.Partials {
+		if !slices.Contains(s.Partials, n) {
+			parts = append(parts, "now also "+n+" (partial)")
+		}
+	}
+	for _, n := range s.Partials {
+		if !slices.Contains(now.Partials, n) {
+			parts = append(parts, "no longer "+n+" (partial)")
+		}
+	}
+	if len(parts) == 0 {
+		return "the selection changed"
+	}
+	return strings.Join(parts, ", ")
+}
+
 // BackupPrune deletes what the preview listed, as a job. The form carries the
-// previewed counts; if a fresh dry run no longer matches (an archive was taken
-// or pruned meanwhile) nothing is deleted and the preview is shown again, so a
-// prune can only ever run after a preview of the same selection.
+// base names of the previewed archives and partial files (repeated fields
+// `expect` and `expect_partial`), not counts. The handler recomputes the dry
+// run and refuses unless the two SETS are equal, and the job does it again
+// right before pruning and fails without deleting if the selection changed.
+//
+// What this guarantees: a prune never starts from a selection that differs
+// from the one the user saw. What it cannot: PruneBackups picks its victims
+// itself, so an archive taken between that last check and the delete could
+// change the selection. The job therefore compares what was actually removed
+// with the preview afterwards and fails, naming the difference, if it does not
+// match.
 func (h *Handler) BackupPrune(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
@@ -384,8 +449,12 @@ func (h *Handler) BackupPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	previewPath := backupsPath(name) + "/prune"
-	var wantRemoved, wantPartials int
-	if _, err := fmt.Sscanf(r.FormValue("expect_removed")+" "+r.FormValue("expect_partials"), "%d %d", &wantRemoved, &wantPartials); err != nil {
+	if err := r.ParseForm(); err != nil {
+		redirectWithFlash(w, r, previewPath, "", "Preview the prune first, then confirm it.")
+		return
+	}
+	want := pruneSelection{Archives: sortedCopy(r.PostForm["expect"]), Partials: sortedCopy(r.PostForm["expect_partial"])}
+	if len(want.Archives) == 0 && len(want.Partials) == 0 {
 		redirectWithFlash(w, r, previewPath, "", "Preview the prune first, then confirm it.")
 		return
 	}
@@ -394,12 +463,19 @@ func (h *Handler) BackupPrune(w http.ResponseWriter, r *http.Request) {
 		redirectWithFlash(w, r, backupsPath(name), "", err.Error())
 		return
 	}
-	if len(res.Removed) != wantRemoved || len(res.Partials) != wantPartials {
-		redirectWithFlash(w, r, previewPath, "", "The selection changed since the preview. Check it again.")
+	if now := selectionOf(res); !want.equal(now) {
+		redirectWithFlash(w, r, previewPath, "", "The selection changed since the preview ("+want.describeDiff(now)+"). Check it again.")
 		return
 	}
 	h.runJob(w, r, manager.JobPrune, name, backupsPath(name), func(pw manager.ProgressWriter) error {
 		pw.Step("Pruning scheduled backups of " + name)
+		dry, err := h.Svc.PruneBackups(name, true)
+		if err != nil {
+			return err
+		}
+		if now := selectionOf(dry); !want.equal(now) {
+			return fmt.Errorf("nothing was deleted: the selection changed since the preview (%s)", want.describeDiff(now))
+		}
 		res, err := h.Svc.PruneBackups(name, false)
 		if err != nil {
 			return err
@@ -408,6 +484,9 @@ func (h *Handler) BackupPrune(w http.ResponseWriter, r *http.Request) {
 			pw.Println("removed " + filepath.Base(a.Path))
 		}
 		pw.Println(fmt.Sprintf("kept %d, removed %d, left alone %d", len(res.Kept), len(res.Removed), res.Ignored))
+		if got := selectionOf(res); !want.equal(got) {
+			return fmt.Errorf("the prune removed a different set than the preview showed (%s)", want.describeDiff(got))
+		}
 		return nil
 	})
 }
@@ -457,16 +536,21 @@ func (h *Handler) BackupScheduleSet(w http.ResponseWriter, r *http.Request) {
 		p = manager.PresetPolicy(24)
 	}
 	p.Enabled = true
-	for field, dst := range map[string]*int{"keep_hourly": &p.KeepHourly, "keep_daily": &p.KeepDaily, "keep_weekly": &p.KeepWeekly} {
-		if strings.TrimSpace(r.FormValue(field)) == "" {
+	// An ordered slice, not a map: map iteration is random, so with two bad
+	// fields the message named a different one on each request.
+	for _, k := range []struct {
+		field string
+		dst   *int
+	}{{"keep_hourly", &p.KeepHourly}, {"keep_daily", &p.KeepDaily}, {"keep_weekly", &p.KeepWeekly}} {
+		if strings.TrimSpace(r.FormValue(k.field)) == "" {
 			continue
 		}
-		n, err := formInt(r, field)
+		n, err := formInt(r, k.field)
 		if err != nil {
 			redirectWithFlash(w, r, back, "", err.Error())
 			return
 		}
-		*dst = n
+		*k.dst = n
 	}
 	if f := r.FormValue("files"); f != "" {
 		p.Files = f

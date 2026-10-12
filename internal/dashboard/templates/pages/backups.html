@@ -209,8 +209,8 @@
   {{if or .Removed .Partials}}
   <form method="post" action="/admin/benches/{{.Name}}/backups/prune" data-confirm="Delete the {{len .Removed}} archive(s) listed above? This cannot be undone.">
     {{template "csrf" .Meta.CSRFToken}}
-    <input type="hidden" name="expect_removed" value="{{len .Removed}}">
-    <input type="hidden" name="expect_partials" value="{{len .Partials}}">
+    {{range .Removed}}<input type="hidden" name="expect" value="{{.File}}">{{end}}
+    {{range .Partials}}<input type="hidden" name="expect_partial" value="{{.}}">{{end}}
     <button class="{{template "cls_btn_danger"}}" type="submit">Prune now (job)</button>
   </form>
   {{end}}

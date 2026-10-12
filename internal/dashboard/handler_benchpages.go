@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,7 +80,22 @@ func (h *Handler) DomainRemove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in := manager.DomainInput{Name: b.Name, Domain: strings.TrimSpace(r.FormValue("domain"))}
+	domain := strings.TrimSpace(r.FormValue("domain"))
+	if !typedConfirm(r, domain) {
+		redirectWithFlash(w, r, domainsPath(b.Name), "", confirmMsg("remove the alias", domain))
+		return
+	}
+	// Only a listed alias is ever acted on; the primary host is not one.
+	_, aliases, err := h.Svc.DomainList(b.Name)
+	if err != nil {
+		redirectWithFlash(w, r, domainsPath(b.Name), "", err.Error())
+		return
+	}
+	if !slices.Contains(aliases, domain) {
+		redirectWithFlash(w, r, domainsPath(b.Name), "", fmt.Sprintf("bench %q has no alias %q", b.Name, domain))
+		return
+	}
+	in := manager.DomainInput{Name: b.Name, Domain: domain}
 	h.runJob(w, r, manager.JobDomainRemove, b.Name, domainsPath(b.Name), func(pw manager.ProgressWriter) error {
 		return h.Svc.DomainRemove(in, pw)
 	})
@@ -111,6 +127,19 @@ func (h *Handler) AppUpdatePage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// updateJob returns the job body for an update: it points UpdateInput.Out at the
+// job's line writer, so bench's output (pull, requirements, migrate, build)
+// lands in the job instead of being discarded, and runs the update.
+func (h *Handler) updateJob(in manager.UpdateInput, run func(manager.UpdateInput, manager.ProgressWriter) error) func(manager.ProgressWriter) error {
+	return func(pw manager.ProgressWriter) error {
+		in.Out = pw.Stderr()
+		return run(in, pw)
+	}
+}
+
+// updateInput leaves Out nil: the job closure points it at the job's line
+// writer (pw.Stderr()), so bench's output lands in the job instead of being
+// discarded.
 func (h *Handler) updateInput(r *http.Request, name string, dry bool) manager.UpdateInput {
 	return manager.UpdateInput{
 		Name:       name,
@@ -132,9 +161,7 @@ func (h *Handler) AppUpdatePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := h.updateInput(r, b.Name, true)
-	h.runJob(w, r, manager.JobUpdate, b.Name, updatePath(b.Name), func(pw manager.ProgressWriter) error {
-		return h.Svc.Update(in, pw)
-	})
+	h.runJob(w, r, manager.JobUpdate, b.Name, updatePath(b.Name), h.updateJob(in, h.Svc.Update))
 }
 
 // AppUpdateRun runs the update (backup, snapshot, maintenance mode, pull,
@@ -150,9 +177,7 @@ func (h *Handler) AppUpdateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := h.updateInput(r, b.Name, false)
-	h.runJob(w, r, manager.JobUpdate, b.Name, updatePath(b.Name), func(pw manager.ProgressWriter) error {
-		return h.Svc.Update(in, pw)
-	})
+	h.runJob(w, r, manager.JobUpdate, b.Name, updatePath(b.Name), h.updateJob(in, h.Svc.Update))
 }
 
 // --- snapshots ---
@@ -238,6 +263,10 @@ func (h *Handler) SnapshotRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.FormValue("snapshot")
+	if !typedConfirm(r, name) {
+		redirectWithFlash(w, r, snapshotsPath(b.Name), "", confirmMsg("restore the snapshot", name))
+		return
+	}
 	if err := h.knownSnapshot(b.Name, name); err != nil {
 		redirectWithFlash(w, r, snapshotsPath(b.Name), "", err.Error())
 		return
@@ -249,7 +278,10 @@ func (h *Handler) SnapshotRestore(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SnapshotDelete removes a snapshot directory. It is quick, so synchronous.
+// SnapshotDelete removes a snapshot directory, as a job keyed by the bench: a
+// delete cannot slip in beside a restore, update or snapshot that is using it
+// (StartAction refuses while the key is held). It needs the snapshot's name
+// typed, and the name must be one the bench lists.
 func (h *Handler) SnapshotDelete(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
@@ -259,9 +291,28 @@ func (h *Handler) SnapshotDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.FormValue("snapshot")
-	if err := h.Svc.DeleteSnapshot(b.Name, name); err != nil {
+	if !typedConfirm(r, name) {
+		redirectWithFlash(w, r, snapshotsPath(b.Name), "", confirmMsg("delete the snapshot", name))
+		return
+	}
+	if err := h.knownSnapshot(b.Name, name); err != nil {
 		redirectWithFlash(w, r, snapshotsPath(b.Name), "", err.Error())
 		return
 	}
-	redirectWithFlash(w, r, snapshotsPath(b.Name), fmt.Sprintf("Snapshot %q deleted", name), "")
+	h.runJob(w, r, manager.JobSnapshotDelete, b.Name, snapshotsPath(b.Name), func(pw manager.ProgressWriter) error {
+		pw.Step(fmt.Sprintf("Deleting snapshot %q of %s", name, b.Name))
+		return h.Svc.DeleteSnapshot(b.Name, name)
+	})
+}
+
+// typedConfirm reports whether the form's `confirm` field holds exactly want.
+// A data-confirm dialog is client-side only; this is the check the server can
+// make, and a typed name cannot be satisfied by a stray click or a replayed
+// request that lacks the field.
+func typedConfirm(r *http.Request, want string) bool {
+	return want != "" && r.FormValue("confirm") == want
+}
+
+func confirmMsg(action, name string) string {
+	return fmt.Sprintf("To %s %q, type its name in the confirmation field.", action, name)
 }

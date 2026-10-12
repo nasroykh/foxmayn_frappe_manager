@@ -14,6 +14,8 @@
 <!-- Main Form -->
 <form method="post" action="/admin/benches" class="max-w-3xl space-y-8">
   <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
+  {{if .Reentry}}<input type="hidden" name="reentry" value="1">
+  <div class="{{template "cls_note"}}">The form was not accepted. Passwords and the GitHub token are never sent back to the page: re-enter the admin password, the database root password and, if you use one, the token before submitting again.</div>{{end}}
 
   <!-- Core Settings Card -->
   <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
@@ -56,13 +58,13 @@
       <!-- Admin Password -->
       <div class="col-span-1">
         <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Admin Password</label>
-        <input name="admin_password" type="text" value="{{.Form.AdminPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
+        <input name="admin_password" type="text" {{if .Reentry}}required placeholder="re-enter the password"{{end}} value="{{.Form.AdminPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
       </div>
 
       <!-- DB Password -->
       <div class="col-span-1">
         <label class="block text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Database Root Password</label>
-        <input name="db_password" type="text" value="{{.Form.DBPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
+        <input name="db_password" type="text" {{if .Reentry}}required placeholder="re-enter the password"{{end}} value="{{.Form.DBPassword}}" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors font-mono">
       </div>
 
       <!-- Apps -->
