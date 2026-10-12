@@ -67,6 +67,13 @@ signs:
     args: ["run", "./tools/relsign", "sign", "${artifact}", "${signature}"]
     signature: "${artifact}.sig"
 
+# A tag with a pre-release suffix (v1.0.0-rc.1) is published as a GitHub
+# pre-release. ffm update, the update notice and the installers read
+# releases/latest, which never returns a pre-release, so an rc reaches only
+# those who download it on purpose.
+release:
+  prerelease: auto
+
 changelog:
   sort: asc
   filters:
