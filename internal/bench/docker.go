@@ -285,16 +285,30 @@ func (r *Runner) PS(format string) (string, error) {
 }
 
 // MariaDBRootArgs returns the exec arguments that run sql as root in the
-// mariadb container. The password comes from the container's own
-// MYSQL_ROOT_PASSWORD through MYSQL_PWD, so it never appears in a process
-// argument list on the host or in the container (`-p<password>` did, for
-// anyone running ps). flags are extra mariadb options such as "-N".
+// mariadb container. The password is read inside the container, from the
+// secret file MARIADB_ROOT_PASSWORD_FILE names (benches from template 7 on) or,
+// for an older bench, from MYSQL_ROOT_PASSWORD, and handed to mariadb through
+// MYSQL_PWD, so it never appears in a process argument list on the host or in
+// the container (`-p<password>` did, for anyone running ps). flags are extra
+// mariadb options such as "-N".
 func MariaDBRootArgs(sql string, flags ...string) []string {
-	cmd := `MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mariadb -u root`
+	return []string{"bash", "-c", mariaDBRootCmd(flags) + " -e " + ShellQuote(sql)}
+}
+
+// MariaDBRootStdinArgs is MariaDBRootArgs for SQL read from stdin. Use it for
+// a statement that carries a secret (ALTER USER ... IDENTIFIED BY): the SQL is
+// then on no argument list either.
+func MariaDBRootStdinArgs(flags ...string) []string {
+	return []string{"bash", "-c", mariaDBRootCmd(flags)}
+}
+
+func mariaDBRootCmd(flags []string) string {
+	cmd := `if [ -r "${MARIADB_ROOT_PASSWORD_FILE:-}" ]; then MYSQL_PWD=$(cat "$MARIADB_ROOT_PASSWORD_FILE");` +
+		` else MYSQL_PWD=$MYSQL_ROOT_PASSWORD; fi; export MYSQL_PWD; exec mariadb -u root`
 	for _, f := range flags {
 		cmd += " " + ShellQuote(f)
 	}
-	return []string{"bash", "-c", cmd + " -e " + ShellQuote(sql)}
+	return cmd
 }
 
 // WaitForMariaDB polls until MariaDB accepts connections or the timeout elapses.
@@ -415,20 +429,30 @@ func lastLine(out string) string {
 
 // ConfigureGitHubToken sets up a git credential helper inside the frappe
 // container so that HTTPS github.com URLs authenticate with the given token.
+// The token travels on stdin: it is on no process's argument list.
 func (r *Runner) ConfigureGitHubToken(token string) error {
-	_, err := r.ExecSilent("frappe", "bash", "-c", GitCredentialsCmd(token))
-	return err
+	if err := ValidateGitHubToken(token); err != nil {
+		return err
+	}
+	return r.ExecStdin("frappe", strings.NewReader(token+"\n"), "bash", "-c", GitCredentialsStdinCmd)
 }
 
-// GitCredentialsCmd writes a git credential store for github.com and points
-// git at it. The token is passed to printf as a quoted ARGUMENT, never inside
-// its format string: a token containing ' would otherwise end the quoting and
-// one containing % would be read as a format directive.
-func GitCredentialsCmd(token string) string {
-	return "printf '%s\\n' " + ShellQuote("https://x-oauth-basic:"+token+"@github.com") +
-		" > /tmp/.git-credentials" +
-		" && git config --global credential.helper 'store --file /tmp/.git-credentials'"
+// ValidateGitHubToken refuses a token the stdin transport cannot carry.
+func ValidateGitHubToken(token string) error {
+	if strings.ContainsAny(token, "\n\r\x00") {
+		return fmt.Errorf("the GitHub token contains a newline or NUL character")
+	}
+	return nil
 }
+
+// GitCredentialsStdinCmd reads a GitHub token from its first stdin line,
+// writes a git credential store for github.com and points git at it. The token
+// is only ever a shell variable handed to the printf builtin as an argument
+// (never inside its format string: a % in it would be read as a directive), so
+// it appears in no process's argument list, in the container or on the host.
+const GitCredentialsStdinCmd = `IFS= read -r t` +
+	` && printf 'https://x-oauth-basic:%s@github.com\n' "$t" > /tmp/.git-credentials` +
+	` && git config --global credential.helper 'store --file /tmp/.git-credentials'`
 
 // CleanupGitHubToken removes the temporary git credentials set by ConfigureGitHubToken.
 func (r *Runner) CleanupGitHubToken() {
@@ -524,6 +548,38 @@ func (r *Runner) ExecStdin(service string, in io.Reader, shellArgs ...string) er
 		if msg := r.scrub(strings.TrimSpace(string(out))); msg != "" {
 			return fmt.Errorf("%w\n%s", err, msg)
 		}
+		return err
+	}
+	return nil
+}
+
+// ExecStdinOut is ExecStdin that also returns the command's combined output
+// (scrubbed), for callers that print or parse it. The output is returned on
+// failure too.
+func (r *Runner) ExecStdinOut(service string, in io.Reader, shellArgs ...string) (string, error) {
+	args := append(append(r.baseArgs(), "exec", "-T", service), shellArgs...)
+	cmd := execx.Command("docker", args...)
+	cmd.Dir = r.ComposeDir
+	cmd.Stdin = in
+	out, err := cmd.CombinedOutput()
+	return r.scrub(strings.TrimSpace(string(out))), err
+}
+
+// RunStdin is Run for a command that reads stdin: `compose run --rm -T`
+// without a tty, with in as the command's stdin. Used to hand a secret to a
+// one-off container without putting it on an argument list.
+func (r *Runner) RunStdin(service string, in io.Reader, args ...string) error {
+	full := append(append(r.baseArgs(), "run", "--rm", "-T", service), args...)
+	cmd := execx.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
+	cmd.Stdin = in
+	if r.Verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		os.Stderr.WriteString(r.scrub(string(out)))
 		return err
 	}
 	return nil

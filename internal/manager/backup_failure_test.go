@@ -1,6 +1,9 @@
 package manager
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // realFailure is the shape `bench backup --verbose` produces when the frappe
 // container cannot reach the database: Frappe's blanket message first, then a
@@ -97,4 +100,24 @@ func indexOf(haystack, needle string) int {
 		}
 	}
 	return -1
+}
+
+// Frappe version-16 heads its frame dumps "Traceback with variables"; the
+// frames carry pg_dump's connection URL with the site's password in it.
+func TestBenchBackupFailureVersion16FrameDump(t *testing.T) {
+	out := "Backup failed for Site s.localhost. Database or site_config.json may be corrupted\n" +
+		"Traceback with variables (most recent call last):\n" +
+		"  File \"apps/frappe/frappe/utils/backups.py\", line 500, in take_dump\n" +
+		"      cmd = ['/usr/bin/pg_dump', 'postgresql://_ab12:Site-Pw-Sentinel@postgres:5432/_ab12']\n" +
+		"frappe.exceptions.CommandFailedError: Command failed\n"
+	got := benchBackupFailure(out, false)
+	if strings.Contains(got, "Site-Pw-Sentinel") || strings.Contains(got, "pg_dump'") {
+		t.Errorf("frames or password leaked:\n%s", got)
+	}
+	if !strings.Contains(got, "CommandFailedError: Command failed") || !strings.Contains(got, "may be corrupted") {
+		t.Errorf("cause lost:\n%s", got)
+	}
+	if v := benchBackupFailure(out, true); strings.Contains(v, "Site-Pw-Sentinel") || !strings.Contains(v, "postgresql://_ab12:[redacted]@postgres") {
+		t.Errorf("verbose output:\n%s", v)
+	}
 }

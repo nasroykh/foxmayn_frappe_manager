@@ -15,7 +15,11 @@ services:
   postgres:
     image: docker.io/postgres:18
     environment:
-      POSTGRES_PASSWORD: "{{.DBRootPassword}}"
+      # The password is a compose secret (./secrets/db_root_password), not an
+      # inline value: it would otherwise show in 'docker inspect' and in this file.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets:
+      - db_root_password
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
@@ -50,17 +54,21 @@ services:
       - --long-query-time=2
 {{- end}}
     environment:
-      MYSQL_ROOT_PASSWORD: "{{.DBRootPassword}}"
+      # The password is a compose secret (./secrets/db_root_password), not an
+      # inline value: it would otherwise show in 'docker inspect' and in this file.
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
       MARIADB_AUTO_UPGRADE: 1
+    secrets:
+      - db_root_password
     volumes:
       - mariadb-data:/var/lib/mysql
 {{- if .SlowQueryLog}}
       - ./mysql-logs:/var/log/mysql
 {{- end}}
     healthcheck:
-      # The password comes from the container's own environment, so it is not
-      # written here a second time or passed as an argument.
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mariadb -u root -e 'SELECT 1'"]
+      # The password is read from the mounted secret, so it is not written here
+      # a second time or passed as an argument.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$(cat \"$${MARIADB_ROOT_PASSWORD_FILE}\")\" mariadb -u root -e 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -303,6 +311,12 @@ volumes:
 {{- end}}
   pip-cache:
   redis-queue-data:
+
+secrets:
+  # Rewritten in place by ffm (WriteDBRootSecret): a file secret is a bind
+  # mount, so replacing the file would leave the container on the old inode.
+  db_root_password:
+    file: ./secrets/db_root_password
 
 networks:
   default: {}

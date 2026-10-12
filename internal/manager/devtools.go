@@ -316,9 +316,10 @@ func (s *Service) DBImport(in DBImportInput, pw ProgressWriter) error {
 	}
 	q := bench.ShellQuote
 	pw.Step("Replacing the database of site " + b.SiteName)
-	// The root password arrives on stdin, so it is on no host command line.
-	// bench itself still takes it as an argument inside the container.
-	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && IFS= read -r p && bench --site %s restore %s --db-root-username %s --db-root-password "$p" --force`,
+	// No --db-root-password: bench would keep it on the frappe process's
+	// argument list. Frappe asks with getpass instead, which reads the line
+	// from stdin when there is no terminal.
+	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && bench --site %s restore %s --db-root-username %s --force`,
 		q(b.SiteName), q(remote), rootUser)
 	if err := runner.ExecStdin("frappe", strings.NewReader(b.DBPassword+"\n"), "bash", "-c", cmd); err != nil {
 		return fmt.Errorf("bench restore: %w", err)

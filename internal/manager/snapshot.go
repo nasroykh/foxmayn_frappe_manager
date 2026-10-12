@@ -253,7 +253,9 @@ func (s *Service) restoreSnapshotLocked(in RestoreSnapshotInput, pw ProgressWrit
 		rootUser = "postgres"
 	}
 	q := bench.ShellQuote
-	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && IFS= read -r p && bench --site %s restore %s/database.sql.gz --db-root-username %s --db-root-password "$p" --force`,
+	// The root password is not a flag: Frappe asks for it with getpass, which
+	// reads it from stdin when there is no terminal, so it is on no argument list.
+	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && bench --site %s restore %s/database.sql.gz --db-root-username %s --force`,
 		q(b.SiteName), remote, rootUser)
 	if snap.Files {
 		cmd += fmt.Sprintf(" --with-public-files %s/public-files.tgz --with-private-files %s/private-files.tgz", remote, remote)
@@ -282,6 +284,14 @@ func afterDatabaseSwap(runner *bench.Runner, b state.Bench, migrate bool, pw Pro
 		pw.Step("Running bench migrate")
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", site+" migrate"); err != nil {
 			return fmt.Errorf("bench migrate: %w\n%s", err, lastLines(out, 15))
+		}
+	}
+	// The swapped-in database carries its own Administrator hash: a snapshot
+	// from before a rotation, or another site's dump. ffm's record is the only
+	// place the password is known, so the site is put back on it.
+	if b.AdminPassword != "" {
+		if err := setAdminPassword(runner, b.SiteName, b.AdminPassword); err != nil {
+			return fmt.Errorf("re-apply the recorded Administrator password: %w", err)
 		}
 	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", site+" clear-cache"); err != nil {

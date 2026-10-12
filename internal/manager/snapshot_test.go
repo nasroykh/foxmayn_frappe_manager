@@ -55,8 +55,12 @@ func writeSnapshot(t *testing.T, b state.Bench, name string, at time.Time, files
 }
 
 func TestRestoreSnapshotNewestAndPasswordOffArgv(t *testing.T) {
-	fake := fakeexec.Install(t, fakeexec.Rule{Match: "rev-parse HEAD", Stdout: "frappe new\n"})
-	s, b := newTestBench(t, state.Bench{Name: "rs", Mode: "dev", SiteName: "rs.localhost", WebPort: 8000, SocketIOPort: 9000, DBPassword: "s3cret-db1"})
+	rootIn := filepath.Join(t.TempDir(), "root-pw-stdin")
+	adminIn := filepath.Join(t.TempDir(), "admin-pw-stdin")
+	fake := fakeexec.Install(t, fakeexec.Rule{Match: "rev-parse HEAD", Stdout: "frappe new\n"},
+		fakeexec.Rule{Match: " restore ", StdinTo: rootIn},
+		fakeexec.Rule{Match: "set-admin-password", StdinTo: adminIn})
+	s, b := newTestBench(t, state.Bench{Name: "rs", Mode: "dev", SiteName: "rs.localhost", WebPort: 8000, SocketIOPort: 9000, DBPassword: "s3cret-db1", AdminPassword: "s3cret-adm2"})
 	t0 := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
 	writeSnapshot(t, b, "old", t0, false)
 	writeSnapshot(t, b, "new", t0.Add(time.Hour), true)
@@ -71,11 +75,22 @@ func TestRestoreSnapshotNewestAndPasswordOffArgv(t *testing.T) {
 	if got != "new" {
 		t.Errorf("restored %q, want the newest", got)
 	}
-	if !fake.Called("restore /workspace/.ffm-snapshots/new/database.sql.gz", `--db-root-password "$p"`, "--with-public-files /workspace/.ffm-snapshots/new/public-files.tgz") {
+	if got, _ := os.ReadFile(rootIn); string(got) != "s3cret-db1\n" {
+		t.Errorf("root password on stdin = %q", got)
+	}
+	if fake.Called("--db-root-password") {
+		t.Error("the root password is a flag again")
+	}
+	if !fake.Called("restore /workspace/.ffm-snapshots/new/database.sql.gz", "--with-public-files /workspace/.ffm-snapshots/new/public-files.tgz") {
 		t.Errorf("calls:\n%s", strings.Join(fake.Calls(), "\n"))
 	}
 	if !fake.Called("bench --site 'rs.localhost' clear-cache") {
 		t.Error("cache not cleared after the swap")
+	}
+	// The snapshot may predate a rotation: the site goes back on the
+	// recorded Administrator password.
+	if got, _ := os.ReadFile(adminIn); string(got) != "s3cret-adm2\n" {
+		t.Errorf("admin password on stdin = %q", got)
 	}
 	for _, c := range fake.Calls() {
 		if strings.Contains(c, "s3cret") {

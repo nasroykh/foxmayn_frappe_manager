@@ -541,7 +541,9 @@ code ~/frappe/mybench
 | DB root      | `root` / `ffm123456` (MariaDB or PostgreSQL; prod generates a random one) |
 | Site name    | `<bench-name>.localhost`                        |
 
-Override during creation with `--admin-password`, `--db-password`, and `--db-type`.
+Override during creation with `--admin-password`, `--db-password`, and `--db-type`. Prefer the environment variables `FFM_ADMIN_PASSWORD`, `FFM_DB_PASSWORD`, `FFM_GITHUB_TOKEN` (or `GITHUB_TOKEN`) and `FFM_ENCRYPTION_KEY` (restore): a flag value shows in the process list; a flag wins over its variable.
+
+**Secrets in output:** passwords in text output (create/restore summary, `ffm status`, ffc API secret) print masked as `******** (ffm status <bench> --show-secrets)` unless stdout is a terminal or `--show-secrets` is given. `ffm rotate-credentials [bench] [--db-root] [--admin] [--json]` replaces the database root and Administrator passwords with random ones on a running bench (`ffm.credentials/v1`, new values only with `--show-secrets`). The database root password lives in `<bench>/secrets/db_root_password`; `ffm reconcile` moves an older bench onto it.
 
 **Production:** `--admin-password` is required and must not be `admin`. If `--db-password` is left at its default, a random database password is generated.
 

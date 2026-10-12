@@ -206,6 +206,9 @@ Flags:
   --db-password string    Database root password (default "ffm123456"; prod generates
                           a random one when the default is left)
   --github-token string   GitHub PAT for private HTTPS repos
+                          (prefer env FFM_GITHUB_TOKEN / GITHUB_TOKEN; likewise
+                          FFM_ADMIN_PASSWORD and FFM_DB_PASSWORD for the two passwords)
+  --show-secrets          Print the passwords at the end even when stdout is not a terminal
   --proxy-port int        Dev reverse proxy: set socketio_port (e.g. 443 or 80)
   --proxy-host string     Dev reverse proxy: set per-site host_name
   --web-port int          Fixed host web port instead of auto-allocating from 8000
@@ -966,6 +969,34 @@ and restore only into the same bench. Use `ffm backup` for a copy that outlives 
 rollback warns when an app's commit has changed since the snapshot (run `bench migrate` or pass
 `--migrate`).
 
+### Secrets handling and `ffm rotate-credentials`
+
+ffm keeps passwords and tokens out of every process argument list (what `ps` shows), on the host
+and inside the containers:
+
+- The database root password is a compose file secret: `<bench>/secrets/db_root_password` (directory 0700, file
+  0600), mounted into the database container (`MARIADB_ROOT_PASSWORD_FILE` / `POSTGRES_PASSWORD_FILE`). It is no longer in
+  `docker-compose.yml` or in `docker inspect`. Benches built by an older ffm get this on `ffm reconcile`.
+- `bench new-site`, `restore` (also snapshots, `ffm db --import`) and `set-admin-password` read their passwords from
+  stdin, the GitHub token and the backup encryption key never appear as arguments either.
+- Flag values you type are in *ffm's* argument list: prefer `FFM_ADMIN_PASSWORD`, `FFM_DB_PASSWORD`,
+  `FFM_GITHUB_TOKEN` (or `GITHUB_TOKEN`) and `FFM_ENCRYPTION_KEY`. A flag wins when both are set.
+- Passwords in command output (the `create` / `restore` summary, `ffm status`, the ffc API secret, a tunnel token)
+  are shown when stdout is a terminal or with `--show-secrets`, and printed as `******** (ffm status <bench> --show-secrets)`
+  otherwise, so piped or CI output stays clean. Dashboard jobs and MCP output are always masked. `--json` is unchanged:
+  secrets only with `--show-secrets`.
+
+```bash
+ffm rotate-credentials mybench                 # new database root and Administrator passwords
+ffm rotate-credentials mybench --db-root       # only the database root password
+ffm rotate-credentials mybench --admin --json --show-secrets   # ffm.credentials/v1
+```
+
+The bench must be running. The root password is changed in the database for every root account, the secret file is
+rewritten in place, ffm's record is updated, and the new password is checked with a connection from the frappe
+container. The site's own database user is not touched. Archives, `benches.json.bak` and dashboard job records written
+earlier still hold the old values.
+
 ### `ffm clone <source> <new-name>`
 
 Copies a bench: `ffm backup` of the source, then `ffm restore` under the new name, with each app
@@ -1071,6 +1102,7 @@ Prints the build version, commit hash, and build date.
   <bench-name>/
     docker-compose.yml   # generated per bench (dev: 5 services, prod: 8 services)
     Dockerfile           # dev: full tools image; prod: minimal image
+    secrets/             # 0700: db_root_password (0600), mounted into the database container as a compose secret
     home/                # dev only, 0700: survives the container
       claude/            # Claude Code config and login (CLAUDE_CONFIG_DIR)
       ffc/               # ffc config with the bench's API secret
@@ -1165,6 +1197,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm backup verify … --json` | `ffm.verify/v1` |
 | `ffm notify list --json` | `ffm.notifiers/v1` (no URLs or tokens) |
 | `ffm doctor [bench] --json` | `ffm.doctor/v1` |
+| `ffm rotate-credentials [bench] --json [--show-secrets]` | `ffm.credentials/v1` (new passwords only with `--show-secrets`) |
 | `ffm site [bench] --json` | `ffm.site/v1` |
 | `ffm app list [bench] --json` | `ffm.apps/v1` |
 
@@ -1195,6 +1228,10 @@ Exit codes:
 | `FFM_NO_UPDATE_CHECK` | unset | Skip the background update notice (also skipped when `CI` is set) |
 | `FFM_KEEP_ON_FAILURE` | unset | Same as `ffm create --keep-on-failure` |
 | `FFM_MATCH_HOST_USER` | unset | Same as `ffm create --match-host-user` |
+| `FFM_ADMIN_PASSWORD` | unset | Same as `--admin-password` (`create`, `restore`); the flag wins |
+| `FFM_DB_PASSWORD` | unset | Same as `ffm create --db-password`; the flag wins |
+| `FFM_GITHUB_TOKEN`, `GITHUB_TOKEN` | unset | Same as `--github-token` (`create`, `restore`, `recreate`, `app add`); `FFM_GITHUB_TOKEN` first, the flag wins |
+| `FFM_ENCRYPTION_KEY` | unset | Same as `ffm restore --encryption-key`; the flag wins |
 
 Global flags: `--verbose` (show docker compose output), `--non-interactive`. Shell completion: `ffm completion bash|zsh|fish|powershell`.
 

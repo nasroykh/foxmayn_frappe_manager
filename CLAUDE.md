@@ -39,7 +39,10 @@ bash and git exist), the backup failure formatter
 (`internal/manager/backup_failure_test.go`), the HTTP readiness wait and the
 database-probe classifier (`internal/bench/waithttp_test.go`,
 `internal/bench/dbprobe_test.go`) and the log tail helper
-(`internal/manager/lifecycle_test.go`). All of those run without Docker. The create
+(`internal/manager/lifecycle_test.go`), the compose secret file and rendering
+(`internal/bench/secret_test.go`), the no-secret-on-argv tests
+(`internal/manager/secrets_argv_test.go`) and rotation (`internal/manager/rotate_test.go`).
+All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 
 **Testing without Docker.** Every external command goes through `execx.Command` (never
@@ -72,7 +75,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 43 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 44 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -104,6 +107,12 @@ internal/
                             --app <app>=<git-url>[@branch] (repeatable; frappe=… too).
                             arg0 is the ARCHIVE, arg1 the new bench name — so it does NOT
                             call resolveBenchName: the target must not exist yet
+    rotate.go             → ffm rotate-credentials [bench] [--db-root] [--admin] [--show-secrets] [--json
+                            ffm.credentials/v1]; behaviour in manager/rotate.go. Progress goes to stderr
+                            with --json
+    secretenv.go          → envFallback / preferEnv: FFM_ADMIN_PASSWORD, FFM_DB_PASSWORD,
+                            FFM_GITHUB_TOKEN (then GITHUB_TOKEN), FFM_ENCRYPTION_KEY stand in for the
+                            matching flags (create, restore, recreate, app add); a flag wins
     reconcile.go          → ffm reconcile: --dry-run / --lan / --loopback / --ssh-agent /
                             --no-ssh-agent; behaviour in manager/reconcile.go
     recreate.go           → ffm recreate: --force / --reallocate-ports / --github-token /
@@ -281,6 +290,14 @@ internal/
                             home/ffc/config.yaml; setupBenchAccess first if missing), then host `ffc ping`.
                             FfcVersion: `ffc --version` in a running dev container, "" on any failure
     claude_mcp.go         → writes workspace/frappe-bench/.mcp.json (ffc MCP server)
+    rotate.go             → RotateCredentials: lockBench, running bench only (ErrBenchStopped), template >= 7 for
+                            the root password (PreflightError). MariaDB: SELECT every root Host, one ALTER USER
+                            batch on stdin with localhost (the session's own host) last, a revert batch on
+                            failure; Postgres: ALTER ROLE via psql on stdin. Then bench.WriteDBRootSecret in
+                            place, UpdateBench, and a pymysql/psycopg2 connection from the frappe container.
+                            After the ALTER, any failure prints the new value to stderr (it exists nowhere
+                            else). The site's own db user is out of scope
+    admin.go              → setAdminPassword: `bench set-admin-password` with the password on stdin
     clean_logs.go         → deletes old rows from 7 Frappe log tables
     exec.go               → Exec / ExecOrError: one-shot command in a container
     devtools.go           → SiteURL / MailURL / LoginURL (a sid URL: a credential, shown only on
@@ -300,7 +317,8 @@ internal/
                             marks a complete snapshot. Restore is IN PLACE (bench restore with
                             the root password on stdin) — the one exception to create-only
                             restore, see the vault's ADR-005. afterDatabaseSwap (optional
-                            migrate, then clear-cache) is shared with DBImport
+                            migrate, the recorded Administrator password re-applied, then
+                            clear-cache) is shared with DBImport
     clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, PinApps,
                             ReallocatePorts)
     seed.go               → seeds: a finished frappe-bench minus sites/<site>, logs, skills,
@@ -334,7 +352,10 @@ internal/
                             bench/worktree.go has the slug / bench name / alias rules
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
-    progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
+    progress.go           → ProgressWriter + CLIProgress{Reveal} / DiscardProgress / BufferProgress; SecretFor
+                            (ProgressWriter) and Secret (plain CLI output) mask a secret as
+                            "******** (hint)" unless stdout is a terminal or Reveal (--show-secrets).
+                            Job, MCP, hook and log writers never reveal. New secret-bearing prints use these
 
   archive/                → the ffm backup archive format. Plain tar; members compressed
                             individually. Header FIRST (cheap preflight), manifest LAST (its
@@ -373,7 +394,8 @@ internal/
                             (dev: web and socketio ranges plus Mailpit on web + 6)
     templates/
       dev/
-        docker-compose.yml.tmpl  → 5 services (DB, redis×2, frappe, mailpit); DB conditional on DBType;
+        docker-compose.yml.tmpl  → 5 services (DB, redis×2, frappe, mailpit); DB conditional on DBType, its root
+                                   password a compose secret (./secrets/db_root_password), not inline;
                                    bind-mounts ./workspace, one pip-cache volume that also holds
                                    uv's and yarn's caches (UV_CACHE_DIR, YARN_CACHE_FOLDER; a new
                                    volume over a path the image lacks is root-owned), Traefik labels
@@ -676,7 +698,9 @@ internal/
   traceback's final line. It never prints the frames by default: `frappe.get_traceback` runs
   `with_context=True`, so each frame dumps its locals, which includes the site's database
   password in clear. `ffm --verbose backup` shows the whole traceback, with the credentials
-  redacted either way.
+  redacted either way. version-16 heads the dump "Traceback with variables (most recent call
+  last)"; the marker matches both forms, and `user:password@` in URLs (Frappe's postgres pg_dump
+  argument) is redacted too.
 
 - **A published port that accepts is not a running server.** `docker-proxy` holds the host-side
   listener for every published port for as long as the container exists, so a TCP dial to
@@ -717,6 +741,23 @@ internal/
   before `compose down`.
 
 ### Undocumented-elsewhere gotchas
+
+- **Secrets never go on an argv; the root password is a file secret.** `<bench>/secrets/db_root_password`
+  (dir 0700, file 0600) is written by `bench.WriteDBRootSecret`, called from `WriteCompose`, and mounted as a
+  compose secret (`MARIADB_ROOT_PASSWORD_FILE` / `POSTGRES_PASSWORD_FILE`); template 7. **It is rewritten IN PLACE
+  (O_TRUNC), never temp + rename**: a file secret is a bind mount that pins the inode, and a rename would leave the
+  running database reading the unlinked file (rotation depends on this too). `MariaDBRootArgs` reads the file with
+  `$MYSQL_ROOT_PASSWORD` as the fallback for older benches. Not live-verified here: userns-remap hosts (the entrypoint
+  and healthcheck read it as root). Everything else goes through stdin, because `bench` execs the frappe interpreter
+  and an argument stays on that process's argv: `bench new-site` (no `--*-root-password`, no `--admin-password`; stdin
+  `<root>\n<admin>\n<admin>\n`: version-15's `get_admin_password` asks twice, to confirm, and a missing
+  second line aborts new-site; v16 asks once), `bench restore` (stdin `<root>\n`), `set-admin-password` (no positional), the GitHub token
+  (`ExecStdin`, and `Runner.RunStdin` for bench init), and the backup encryption key (written to site_config as
+  `backup_encryption_key`; `bench restore` reads it when `--encryption-key` is absent). Frappe asks with `getpass`
+  when a value is missing and `getpass` reads a line from stdin without a terminal (v15 and v16 source: `get_root_connection`,
+  `get_admin_password`, `set_user_password`; live-verified on both); root is asked first, so a swapped order fails at the root connect, not
+  silently. Values must be one line. `TestCreateKeepsSecretsOffArgv` and its siblings assert on every recorded fakeexec
+  argv, keep them passing when adding a command that touches a credential.
 
 - **Published ports** bind to `Bench.PublishHost()`: `127.0.0.1` for new benches (`Bind: loopback`),
   all interfaces with `--lan`. Records without `Bind` keep their old behaviour: prod → loopback,

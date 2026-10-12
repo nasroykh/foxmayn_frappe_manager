@@ -61,3 +61,37 @@ func TestRunnerScrubsExecOutput(t *testing.T) {
 		t.Fatalf("not scrubbed: %q", got)
 	}
 }
+
+// A bench from template 7 on has MARIADB_ROOT_PASSWORD_FILE and no
+// MYSQL_ROOT_PASSWORD: the password must come from the file, still not argv.
+func TestMariaDBRootArgsReadsSecretFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs bash")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not found")
+	}
+	dir := t.TempDir()
+	stub := "#!/bin/sh\nprintf 'pwd=%s\\n' \"$MYSQL_PWD\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "mariadb"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(dir, "pw")
+	if err := os.WriteFile(secret, []byte("from-file-pw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := MariaDBRootArgs("SELECT 1")
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"),
+		"MARIADB_ROOT_PASSWORD_FILE="+secret, "MYSQL_ROOT_PASSWORD=stale-env")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "pwd=from-file-pw\n") {
+		t.Errorf("secret file not used:\n%s", out)
+	}
+	if strings.Contains(strings.Join(args, " "), "from-file-pw") {
+		t.Error("password appears in the argument list")
+	}
+}
