@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 )
 
@@ -49,6 +50,7 @@ func newTunnelServerAddCmd() *cobra.Command {
 		token      string
 		baseDomain string
 		noTLS      bool
+		reveal     bool
 	)
 
 	cmd := &cobra.Command{
@@ -97,7 +99,7 @@ func newTunnelServerAddCmd() *cobra.Command {
 				fmt.Printf("  Default:     yes\n")
 			}
 			fmt.Println()
-			printFrpsSnippet(srv)
+			printFrpsSnippet(srv, reveal)
 			return nil
 		},
 	}
@@ -107,6 +109,7 @@ func newTunnelServerAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "frps auth token")
 	cmd.Flags().StringVar(&baseDomain, "base-domain", "", "Base domain for tunnels, e.g. tunnel.example.com")
 	cmd.Flags().BoolVar(&noTLS, "no-tls", false, "Disable TLS on the frp control channel")
+	cmd.Flags().BoolVar(&reveal, "show-secrets", false, "Print the auth token in the VPS setup snippet even when stdout is not a terminal (it is masked then)")
 	return cmd
 }
 
@@ -349,7 +352,7 @@ func parsePort(s string) (int, error) {
 }
 
 // printFrpsSnippet prints a copy-pasteable frps.toml + Caddyfile for VPS setup.
-func printFrpsSnippet(srv tunnel.Server) {
+func printFrpsSnippet(srv tunnel.Server, reveal bool) {
 	fmt.Println("── VPS setup (one-time) ─────────────────────────────────────────────────────")
 	fmt.Println()
 	fmt.Println("1. frps.toml  (save to /etc/frp/frps.toml, run via Docker or systemd):")
@@ -358,7 +361,11 @@ func printFrpsSnippet(srv tunnel.Server) {
 	fmt.Printf("   vhostHTTPPort = 8880\n")
 	fmt.Printf("   subdomainHost = %q\n", srv.BaseDomain)
 	fmt.Printf("   auth.method   = \"token\"\n")
-	fmt.Printf("   auth.token    = %q\n", srv.Token)
+	if reveal || manager.StdoutIsTerminal() {
+		fmt.Printf("   auth.token    = %q\n", srv.Token)
+	} else {
+		fmt.Printf("   auth.token    = \"%s\"   # the token you gave; --show-secrets prints it\n", manager.MaskedSecret)
+	}
 	fmt.Println()
 	fmt.Println("   Docker: docker run -d --name frps --restart unless-stopped \\")
 	fmt.Printf("             -p %d:%d -p 8880:8880 \\\n", srv.Port, srv.Port)

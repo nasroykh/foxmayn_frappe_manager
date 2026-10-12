@@ -913,8 +913,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 		pw.Printf("  Site:          %s\n", siteName)
 	}
-	pw.Printf("  Admin:         administrator / %s\n", adminPassword)
-	pw.Printf("  DB (%s): root / %s\n", dbType, dbPassword)
+	hint := "ffm status " + name + " --show-secrets"
+	pw.Printf("  Admin:         administrator / %s\n", SecretFor(pw, adminPassword, hint))
+	pw.Printf("  DB (%s): root / %s\n", dbType, SecretFor(pw, dbPassword, hint))
 	if len(apps) > 0 {
 		pw.Printf("  Apps:          %v\n", apps)
 	}

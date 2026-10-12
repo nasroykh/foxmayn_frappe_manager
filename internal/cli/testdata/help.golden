@@ -3,49 +3,50 @@ Usage:
   ffm [command]
 
 Available Commands:
-  agent       Turn a dev bench's agent-ready profile on or off (bare: show it)
-  app         Add, remove and list a bench's apps
-  backup      Archive a bench's site into a single restorable file
-  clean       Remove volumes and images left by deleted benches (and, opt-in, Docker caches)
-  clean-logs  Delete old log table rows to reclaim database space
-  clone       Copy a bench, its site's data and app commits, to a new bench
-  console     Open bench console (Python REPL with the site loaded)
-  create      Create and start a new Frappe bench
-  dashboard   Web dashboard for managing Frappe benches
-  db          Open the site's database console, or import/export its database
-  debug       Run a dev bench's web server under debugpy (on / off / status)
-  delete      Delete a bench and all its data
-  doctor      Check that benches are healthy, not just running
-  domain      Manage extra hostnames that route to a bench
-  ffc         Generate Frappe API keys and configure ffc inside a bench
-  list        List all managed benches
-  login       Open a dev bench's desk already logged in (Administrator by default)
-  logs        Stream logs from a bench (all services or one)
-  mail        Open the Mailpit inbox that catches a dev bench's outgoing mail
-  mcp         Serve ffm's bench tools to an MCP client (stdio)
-  notify      Where ffm reports failed scheduled backups, verifies and checks (add / list / remove / test)
-  open        Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
-  poweroff    Stop every running bench and the shared proxy
-  proxy       Manage the shared Traefik reverse proxy (sitename.localhost routing)
-  reconcile   Apply this ffm version's templates to an existing bench without losing data
-  recreate    Delete a bench and provision it again from saved settings
-  restart     Restart a bench (stop then start)
-  restore     Rebuild a bench from a backup archive
-  run         Run a tooling command from this project's ffm.yaml in its bench
-  set-proxy   Configure a bench to run behind a reverse proxy
-  shell       Open an interactive shell inside a bench container
-  site        Site operations: migrate, maintenance mode, Frappe's scheduler (bare: show state)
-  snapshot    Quick local rollback points for a bench's database (create / list / restore / delete)
-  start       Start a stopped bench
-  status      Show per-container status for a bench
-  stop        Stop a running bench (containers remain, data preserved)
-  test        Run an app's tests on a dev bench
-  trust       Allow this project's ffm.yaml hooks and tooling to run
-  tunnel      Expose a bench over a secure public URL via a VPS tunnel
-  up          Create or start the development bench this project's ffm.yaml describes
-  update      Update ffm to the latest version
-  version     Print the ffm version
-  worktree    Run a branch of your project in its own bench, in a git worktree
+  agent              Turn a dev bench's agent-ready profile on or off (bare: show it)
+  app                Add, remove and list a bench's apps
+  backup             Archive a bench's site into a single restorable file
+  clean              Remove volumes and images left by deleted benches (and, opt-in, Docker caches)
+  clean-logs         Delete old log table rows to reclaim database space
+  clone              Copy a bench, its site's data and app commits, to a new bench
+  console            Open bench console (Python REPL with the site loaded)
+  create             Create and start a new Frappe bench
+  dashboard          Web dashboard for managing Frappe benches
+  db                 Open the site's database console, or import/export its database
+  debug              Run a dev bench's web server under debugpy (on / off / status)
+  delete             Delete a bench and all its data
+  doctor             Check that benches are healthy, not just running
+  domain             Manage extra hostnames that route to a bench
+  ffc                Generate Frappe API keys and configure ffc inside a bench
+  list               List all managed benches
+  login              Open a dev bench's desk already logged in (Administrator by default)
+  logs               Stream logs from a bench (all services or one)
+  mail               Open the Mailpit inbox that catches a dev bench's outgoing mail
+  mcp                Serve ffm's bench tools to an MCP client (stdio)
+  notify             Where ffm reports failed scheduled backups, verifies and checks (add / list / remove / test)
+  open               Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
+  poweroff           Stop every running bench and the shared proxy
+  proxy              Manage the shared Traefik reverse proxy (sitename.localhost routing)
+  reconcile          Apply this ffm version's templates to an existing bench without losing data
+  recreate           Delete a bench and provision it again from saved settings
+  restart            Restart a bench (stop then start)
+  restore            Rebuild a bench from a backup archive
+  rotate-credentials Replace a bench's database root and Administrator passwords with new random ones
+  run                Run a tooling command from this project's ffm.yaml in its bench
+  set-proxy          Configure a bench to run behind a reverse proxy
+  shell              Open an interactive shell inside a bench container
+  site               Site operations: migrate, maintenance mode, Frappe's scheduler (bare: show state)
+  snapshot           Quick local rollback points for a bench's database (create / list / restore / delete)
+  start              Start a stopped bench
+  status             Show per-container status for a bench
+  stop               Stop a running bench (containers remain, data preserved)
+  test               Run an app's tests on a dev bench
+  trust              Allow this project's ffm.yaml hooks and tooling to run
+  tunnel             Expose a bench over a secure public URL via a VPS tunnel
+  up                 Create or start the development bench this project's ffm.yaml describes
+  update             Update ffm to the latest version
+  version            Print the ffm version
+  worktree           Run a branch of your project in its own bench, in a git worktree
 
 Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -81,7 +82,8 @@ Usage:
   ffm agent on [bench] [flags]
 
 Flags:
-      --read-only   Limit the MCP server to read tools
+      --read-only      Limit the MCP server to read tools
+      --show-secrets   Print a newly generated Administrator password even when stdout is not a terminal (it is masked then)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -114,7 +116,7 @@ Examples:
   ffm app add git@github.com:org/private_app.git mybench
 
 Flags:
-      --github-token string   GitHub token for a private HTTPS repository
+      --github-token string   GitHub token for a private HTTPS repository. Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
       --no-install            Only fetch the app into the bench
 
 Global Flags:
@@ -550,18 +552,18 @@ Usage:
 
 Flags:
       --acme-email string            Email for Let's Encrypt certificates (required on first --mode prod bench with SSL)
-      --admin-password string        Frappe site admin password (default "admin")
+      --admin-password string        Frappe site admin password. Prefer the environment variable FFM_ADMIN_PASSWORD: a flag value is visible in the process list. (default "admin")
       --agent                        Agent-ready dev bench: ports on 127.0.0.1, no SSH agent, a random admin password unless you set one, and ffc/MCP acting as a dedicated System Manager user (agent@<site>) instead of Administrator
       --agent-read-only              Like --agent, with the MCP server limited to read tools
       --alias-tls                    Serve --domain-alias names over HTTPS with Let's Encrypt instead of plain HTTP. Production with SSL only; every alias must be publicly resolvable.
       --apps stringArray             Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch
-      --db-password string           Database root password (default "ffm123456")
+      --db-password string           Database root password. Prefer the environment variable FFM_DB_PASSWORD: a flag value is visible in the process list. (default "ffm123456")
       --db-type string               Database engine: mariadb or postgres (default "mariadb")
       --domain string                Public domain for production (required for --mode prod), e.g. erp.example.com
       --domain-alias stringArray     Extra hostname the bench also answers on, e.g. erp.internal. Repeatable. Requires the shared proxy ('ffm proxy start') and DNS pointing the name at this host. Same as 'ffm domain add' after creation.
       --frappe-branch string         Frappe branch (version-16 or version-15) (default "version-16")
       --frappe-repo string           Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.
-      --github-token string          GitHub personal access token for private HTTPS repos
+      --github-token string          GitHub personal access token for private HTTPS repos. Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
       --gunicorn-workers int         Number of gunicorn worker processes (prod only). Rule of thumb: 2*CPU+1. (default 2)
       --keep-on-failure              On failure, leave containers and the bench directory in place instead of rolling back, so logs survive for diagnosis. Env: FFM_KEEP_ON_FAILURE
       --lan                          Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
@@ -577,6 +579,7 @@ Flags:
       --python string                Python version for the bench virtualenv: 3.12 or 3.14. Default: 3.12 for version-15, 3.14 otherwise
       --redis-cache-maxmem string    Redis cache maxmemory limit (e.g. 256mb, 512mb, 1gb). Uses allkeys-lru eviction. (default "512mb")
       --redis-queue-maxmem string    Redis queue maxmemory limit. Uses noeviction so jobs are never silently dropped. (default "512mb")
+      --show-secrets                 Print the admin and database passwords at the end even when stdout is not a terminal (they are masked then)
       --slow-query-log               Enable MariaDB slow query log (threshold: 2s). Writes to <bench>/mysql-logs/. Prod + MariaDB only.
       --socketio-port int            Fixed host Socket.IO port. Must equal --web-port + 1000.
       --ssh-agent                    Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK
@@ -777,8 +780,9 @@ Usage:
   ffm ffc [name] [flags]
 
 Flags:
-      --force   With --host: replace a host ffc site of the same name
-      --host    Add the bench to the host's ffc (reuses the bench's keys) instead of regenerating them
+      --force          With --host: replace a host ffc site of the same name
+      --host           Add the bench to the host's ffc (reuses the bench's keys) instead of regenerating them
+      --show-secrets   Print the new API secret even when stdout is not a terminal (it is masked then)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -1045,7 +1049,7 @@ Usage:
 
 Flags:
       --force                 Skip confirmation prompt
-      --github-token string   GitHub token for private app repos (not stored in state)
+      --github-token string   GitHub token for private app repos (not stored in state). Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
       --no-backup             Do not back the bench up before tearing it down
       --proxy-host string     Override derived reverse-proxy hostname for dev (without scheme)
       --proxy-port int        Override derived reverse-proxy public port for dev (socketio_port)
@@ -1080,13 +1084,13 @@ Examples:
 
 Flags:
       --acme-email string              Let's Encrypt account address for a production restore
-      --admin-password string          Set a new Administrator password instead of keeping the archived one
+      --admin-password string          Set a new Administrator password instead of keeping the archived one. Prefer the environment variable FFM_ADMIN_PASSWORD: a flag value is visible in the process list.
       --allow-missing-encryption-key   Restore even though the archive has no site encryption key, accepting that Password fields (email passwords, integration secrets) will not decrypt
       --app stringArray                Clone an app from this source instead: <app>=<git-url>[@branch] (repeatable; frappe=... sets the framework's repo)
       --domain string                  Override the production domain recorded in the archive
       --dry-run                        Validate the archive and print the plan without creating anything
-      --encryption-key string          Key for a GPG-encrypted database dump, when the archive does not carry it
-      --github-token string            GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it
+      --encryption-key string          Key for a GPG-encrypted database dump, when the archive does not carry it. Prefer the environment variable FFM_ENCRYPTION_KEY: a flag value is visible in the process list.
+      --github-token string            GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it. Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
       --identity string                age identity file that decrypts an encrypted (.age) archive. Env: FFM_AGE_IDENTITY_FILE
       --keep-on-failure                Leave a failed restore in place for diagnosis instead of removing it
       --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
@@ -1094,11 +1098,30 @@ Flags:
       --no-ssl                         Serve the restored production bench over plain HTTP
       --pin-apps                       Check each app out at the commit recorded in the archive instead of its branch head
       --reallocate-ports               Always assign a fresh port pair instead of reusing the archive's
+      --show-secrets                   Print the Administrator password at the end even when stdout is not a terminal (it is masked then)
       --skip-migrate                   Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions
       --skip-space-check               Restore without checking free disk space first
       --socketio-port int              Explicit host Socket.IO port
       --ssh-agent                      Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK
       --web-port int                   Explicit host web port
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm rotate-credentials
+Usage:
+  ffm rotate-credentials [bench] [flags]
+
+Examples:
+  ffm rotate-credentials mybench
+  ffm rotate-credentials mybench --admin --json --show-secrets
+
+Flags:
+      --admin          Rotate the Administrator password (default: both)
+      --db-root        Rotate the database root password (default: both)
+      --json           Print machine-readable JSON (schema ffm.credentials/v1)
+      --show-secrets   Print the new passwords even when stdout is not a terminal; with --json, include them in the document
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -1275,7 +1298,7 @@ Usage:
 
 Flags:
       --json           Print machine-readable JSON (schema ffm.status/v1)
-      --show-secrets   Include the admin and database passwords in --json output
+      --show-secrets   Include the admin and database passwords in --json output, and print them in text output even when stdout is not a terminal (they are masked then)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -1372,6 +1395,7 @@ Flags:
       --host string          VPS hostname or IP address
       --no-tls               Disable TLS on the frp control channel
       --port string          frps bind port (control channel), e.g. 7000
+      --show-secrets         Print the auth token in the VPS setup snippet even when stdout is not a terminal (it is masked then)
       --token string         frps auth token
 
 Global Flags:

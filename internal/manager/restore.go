@@ -903,7 +903,7 @@ func printRestoreSummary(pw ProgressWriter, b state.Bench, m Manifest, target st
 		pw.Printf("  URL:           http://localhost:%d\n", b.WebPort)
 	}
 	pw.Printf("  Site:          %s\n", b.SiteName)
-	pw.Printf("  Admin:         administrator / %s\n", b.AdminPassword)
+	pw.Printf("  Admin:         administrator / %s\n", SecretFor(pw, b.AdminPassword, "ffm status "+b.Name+" --show-secrets"))
 	pw.Printf("  Attachments:   %s\n", yesNo(withFiles))
 
 	// Say plainly what a logical restore cannot carry, rather than letting the

@@ -41,7 +41,7 @@ one. Create one directly with 'ffm create --agent'.
 			return nil
 		},
 	}
-	var readOnly bool
+	var readOnly, showSecrets bool
 	on := &cobra.Command{
 		Use:   "on [bench]",
 		Short: "Give ffc and MCP a dedicated agent user",
@@ -51,10 +51,11 @@ one. Create one directly with 'ffm create --agent'.
 			if err != nil {
 				return err
 			}
-			return manager.New(verbose).SetAgent(manager.SetAgentInput{Name: name, On: true, ReadOnly: readOnly}, manager.CLIProgress{})
+			return manager.New(verbose).SetAgent(manager.SetAgentInput{Name: name, On: true, ReadOnly: readOnly}, manager.CLIProgress{Reveal: showSecrets})
 		},
 	}
 	on.Flags().BoolVar(&readOnly, "read-only", false, "Limit the MCP server to read tools")
+	on.Flags().BoolVar(&showSecrets, "show-secrets", false, "Print a newly generated Administrator password even when stdout is not a terminal (it is masked then)")
 	off := &cobra.Command{
 		Use:   "off [bench]",
 		Short: "Put ffc and MCP back on Administrator and disable the agent user",

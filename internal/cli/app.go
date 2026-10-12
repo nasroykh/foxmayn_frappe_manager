@@ -69,6 +69,7 @@ backups know about it.`,
   ffm app add git@github.com:org/private_app.git mybench`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			envFallback(cmd, "github-token", &add.GithubToken, envGitHubTokens...)
 			name, err := resolveBenchName(args[1:], "Select a bench")
 			if err != nil {
 				return err
@@ -86,7 +87,7 @@ backups know about it.`,
 			return nil
 		},
 	}
-	addCmd.Flags().StringVar(&add.GithubToken, "github-token", "", "GitHub token for a private HTTPS repository")
+	addCmd.Flags().StringVar(&add.GithubToken, "github-token", "", "GitHub token for a private HTTPS repository."+preferEnv(envGitHubTokens...))
 	addCmd.Flags().BoolVar(&add.NoInstall, "no-install", false, "Only fetch the app into the bench")
 
 	var rm manager.AppRemoveInput

@@ -32,6 +32,20 @@ func jsonTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
+// jsonCredentials is the ffm.credentials/v1 document of 'ffm rotate-credentials'.
+// The new passwords are present only with --show-secrets.
+type jsonCredentials struct {
+	Schema        string `json:"schema"`
+	Bench         string `json:"bench"`
+	DBRootRotated bool   `json:"db_root_rotated"`
+	AdminRotated  bool   `json:"admin_rotated"`
+	// Verified: the new database root password opened a connection from the
+	// frappe container. False when the database was not rotated.
+	Verified      bool   `json:"verified"`
+	DBPassword    string `json:"db_password,omitempty"`
+	AdminPassword string `json:"admin_password,omitempty"`
+}
+
 type jsonBench struct {
 	Name         string `json:"name"`
 	Mode         string `json:"mode"`

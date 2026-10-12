@@ -29,11 +29,12 @@ func newStatusCmd() *cobra.Command {
 			if asJSON {
 				return runStatusJSON(name, showSecrets)
 			}
-			return runStatus(name)
+			return runStatus(name, showSecrets)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print machine-readable JSON (schema ffm.status/v1)")
-	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Include the admin and database passwords in --json output")
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false,
+		"Include the admin and database passwords in --json output, and print them in text output even when stdout is not a terminal (they are masked then)")
 	return cmd
 }
 
@@ -128,7 +129,7 @@ func parseComposePS(raw string) []jsonContainer {
 	return out
 }
 
-func runStatus(name string) error {
+func runStatus(name string, showSecrets bool) error {
 	store := state.Default()
 	b, err := store.Get(name)
 	if err != nil {
@@ -181,9 +182,10 @@ func runStatus(name string) error {
 	if v := manager.New(verbose).FfcVersion(name); v != "" {
 		label("ffc", ffcStatusValue(v))
 	}
-	label("admin", fmt.Sprintf("administrator / %s", b.AdminPassword))
+	hint := "ffm status " + name + " --show-secrets"
+	label("admin", fmt.Sprintf("administrator / %s", manager.Secret(b.AdminPassword, hint, showSecrets)))
 	if b.DBPassword != "" {
-		label("database", fmt.Sprintf("%s (root / %s)", b.DBEngine(), b.DBPassword))
+		label("database", fmt.Sprintf("%s (root / %s)", b.DBEngine(), manager.Secret(b.DBPassword, hint, showSecrets)))
 	}
 	if len(b.Apps) > 0 {
 		label("apps", strings.Join(b.Apps, ", "))

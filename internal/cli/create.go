@@ -46,6 +46,7 @@ func newCreateCmd() *cobra.Command {
 		noSeed            bool
 		agent             bool
 		agentReadOnly     bool
+		showSecrets       bool
 	)
 
 	cmd := &cobra.Command{
@@ -53,6 +54,9 @@ func newCreateCmd() *cobra.Command {
 		Short: "Create and start a new Frappe bench",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			envFallback(cmd, "admin-password", &adminPassword, envAdminPassword)
+			envFallback(cmd, "db-password", &dbPassword, envDBPassword)
+			envFallback(cmd, "github-token", &githubToken, envGitHubTokens...)
 			modeSet := cmd.Flags().Changed("mode")
 			branchSet := cmd.Flags().Changed("frappe-branch")
 			appsSet := cmd.Flags().Changed("apps")
@@ -109,7 +113,7 @@ func newCreateCmd() *cobra.Command {
 				DomainAliases: domainAliases, AliasTLS: aliasTLS,
 				NoSeed: noSeed || envEnabled("FFM_NO_SEED"),
 				Agent:  agent, AgentReadOnly: agentReadOnly,
-			}, manager.CLIProgress{})
+			}, manager.CLIProgress{Reveal: showSecrets})
 		},
 	}
 
@@ -121,10 +125,12 @@ func newCreateCmd() *cobra.Command {
 		"Node major version: "+strings.Join(bench.ImageNodes, " or ")+". Default: 22 for version-15, 24 otherwise")
 	cmd.Flags().StringVar(&frappeRepo, "frappe-repo", "", "Custom Frappe repository URL with optional @branch suffix (e.g. https://github.com/your-org/frappe.git@main). Defaults to the official frappe/frappe repo.")
 	cmd.Flags().StringArrayVar(&apps, "apps", nil, "Apps to install: short name (erpnext), URL (git@github.com:org/app.git), or URL@branch")
-	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password")
-	cmd.Flags().StringVar(&dbPassword, "db-password", "ffm123456", "Database root password")
+	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "Frappe site admin password."+preferEnv(envAdminPassword))
+	cmd.Flags().StringVar(&dbPassword, "db-password", "ffm123456", "Database root password."+preferEnv(envDBPassword))
 	cmd.Flags().StringVar(&dbType, "db-type", "mariadb", "Database engine: mariadb or postgres")
-	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private HTTPS repos."+preferEnv(envGitHubTokens...))
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false,
+		"Print the admin and database passwords at the end even when stdout is not a terminal (they are masked then)")
 	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Configure for reverse proxy: set socketio_port to this value (e.g. 443 for HTTPS, 80 for HTTP)")
 	cmd.Flags().StringVar(&proxyHost, "proxy-host", "", "Public domain for reverse proxy, e.g. frappe.example.com (sets per-site host_name)")
 	cmd.Flags().StringVar(&mode, "mode", "dev", "Bench mode: dev or prod")

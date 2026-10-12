@@ -28,6 +28,7 @@ func newRestoreCmd() *cobra.Command {
 		sshAgent        bool
 		skipSpaceCheck  bool
 		appOverrides    []string
+		showSecrets     bool
 	)
 
 	cmd := &cobra.Command{
@@ -60,6 +61,9 @@ touching Docker.`,
   ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			envFallback(cmd, "admin-password", &adminPassword, envAdminPassword)
+			envFallback(cmd, "github-token", &githubToken, envGitHubTokens...)
+			envFallback(cmd, "encryption-key", &encryptionKey, envEncryptionKey)
 			target := ""
 			if len(args) > 1 {
 				target = args[1]
@@ -87,7 +91,7 @@ touching Docker.`,
 				SSHAgent:                  sshAgent,
 				SkipSpaceCheck:            skipSpaceCheck,
 				AppOverrides:              appOverrides,
-			}, manager.CLIProgress{})
+			}, manager.CLIProgress{Reveal: showSecrets})
 		},
 	}
 
@@ -100,7 +104,7 @@ touching Docker.`,
 		"Restore even though the archive has no site encryption key, accepting that Password "+
 			"fields (email passwords, integration secrets) will not decrypt")
 	cmd.Flags().StringVar(&encryptionKey, "encryption-key", "",
-		"Key for a GPG-encrypted database dump, when the archive does not carry it")
+		"Key for a GPG-encrypted database dump, when the archive does not carry it."+preferEnv(envEncryptionKey))
 	cmd.Flags().StringVar(&domain, "domain", "", "Override the production domain recorded in the archive")
 	cmd.Flags().BoolVar(&noSSL, "no-ssl", false, "Serve the restored production bench over plain HTTP")
 	cmd.Flags().StringVar(&acmeEmail, "acme-email", "", "Let's Encrypt account address for a production restore")
@@ -109,9 +113,11 @@ touching Docker.`,
 	cmd.Flags().IntVar(&webPort, "web-port", 0, "Explicit host web port")
 	cmd.Flags().IntVar(&socketIOPort, "socketio-port", 0, "Explicit host Socket.IO port")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "",
-		"Set a new Administrator password instead of keeping the archived one")
+		"Set a new Administrator password instead of keeping the archived one."+preferEnv(envAdminPassword))
 	cmd.Flags().StringVar(&githubToken, "github-token", "",
-		"GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it")
+		"GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it."+preferEnv(envGitHubTokens...))
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false,
+		"Print the Administrator password at the end even when stdout is not a terminal (it is masked then)")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false,
 		"Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions")
 	cmd.Flags().BoolVar(&pinApps, "pin-apps", false,

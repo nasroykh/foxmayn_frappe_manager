@@ -194,7 +194,7 @@ func (s *Service) SetupFFC(name string, pw ProgressWriter) error {
 
 	pw.Printf("\nffc configured on bench %q.\n", name)
 	pw.Printf("  api_key:    %s\n", keys.Key)
-	pw.Printf("  api_secret: %s\n", keys.Secret)
+	pw.Printf("  api_secret: %s\n", SecretFor(pw, keys.Secret, "ffm ffc "+name+" --show-secrets, or home/ffc/config.yaml in the bench"))
 	pw.Printf("  site:       %s\n", b.SiteName)
 	if pingErr != nil {
 		pw.Printf("  ping:       FAILED — start the bench and run 'ffc ping' to verify\n")

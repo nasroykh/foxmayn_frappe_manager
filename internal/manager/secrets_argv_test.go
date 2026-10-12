@@ -158,3 +158,48 @@ func TestConfigureGitHubTokenKeepsTokenOffArgv(t *testing.T) {
 		t.Error("a multi-line token was accepted")
 	}
 }
+
+func TestSecretMasking(t *testing.T) {
+	if StdoutIsTerminal() {
+		t.Skip("stdout is a terminal")
+	}
+	const hint = "ffm status b --show-secrets"
+	for name, pw := range map[string]ProgressWriter{
+		"buffer":  &BufferProgress{},
+		"discard": DiscardProgress{},
+		"cli":     CLIProgress{},
+	} {
+		if got := SecretFor(pw, "hunter2-secret", hint); got != "******** (ffm status b --show-secrets)" {
+			t.Errorf("%s: SecretFor = %q", name, got)
+		}
+	}
+	if got := SecretFor(CLIProgress{Reveal: true}, "hunter2-secret", hint); got != "hunter2-secret" {
+		t.Errorf("--show-secrets: SecretFor = %q", got)
+	}
+	if got := Secret("x-secret", "", false); got != MaskedSecret {
+		t.Errorf("Secret without a hint = %q", got)
+	}
+	if got := Secret("x-secret", "h", true); got != "x-secret" {
+		t.Errorf("Secret(show) = %q", got)
+	}
+}
+
+// A job's progress is persisted to jobs.json and streamed over SSE: the create
+// summary must not put passwords in it.
+func TestCreateSummaryMasksPasswordsForJobs(t *testing.T) {
+	r := newMountRig(t, "msk")
+	in := r.createInput("msk")
+	in.AdminPassword, in.DBPassword = secAdmin, secDB
+	in.ProjectApp, in.ProjectAppPath = "", ""
+	var out BufferProgress
+	if err := r.s.Create(in, &out); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	all := strings.Join(out.Lines, "\n")
+	if strings.Contains(all, secAdmin) || strings.Contains(all, secDB) {
+		t.Errorf("a password reached the job output:\n%s", all)
+	}
+	if !strings.Contains(all, "ffm status msk --show-secrets") {
+		t.Errorf("no hint in the summary:\n%s", all)
+	}
+}

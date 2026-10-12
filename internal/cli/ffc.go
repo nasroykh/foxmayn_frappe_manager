@@ -9,7 +9,7 @@ import (
 )
 
 func newFfcCmd() *cobra.Command {
-	var host, force bool
+	var host, force, showSecrets bool
 	cmd := &cobra.Command{
 		Use:   "ffc [name]",
 		Short: "Generate Frappe API keys and configure ffc inside a bench",
@@ -35,12 +35,13 @@ same name. Re-run it after a plain 'ffm ffc', which mints new keys.`,
 			}
 			svc := manager.New(verbose)
 			if host {
-				return svc.FfcHost(name, force, manager.CLIProgress{})
+				return svc.FfcHost(name, force, manager.CLIProgress{Reveal: showSecrets})
 			}
-			return svc.SetupFFC(name, manager.CLIProgress{})
+			return svc.SetupFFC(name, manager.CLIProgress{Reveal: showSecrets})
 		},
 	}
 	cmd.Flags().BoolVar(&host, "host", false, "Add the bench to the host's ffc (reuses the bench's keys) instead of regenerating them")
 	cmd.Flags().BoolVar(&force, "force", false, "With --host: replace a host ffc site of the same name")
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Print the new API secret even when stdout is not a terminal (it is masked then)")
 	return cmd
 }

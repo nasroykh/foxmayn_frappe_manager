@@ -197,7 +197,7 @@ func (s *Service) SetAgent(in SetAgentInput, pw ProgressWriter) error {
 		}
 		pw.Printf("Bench %q is agent-ready: ffc and MCP (%s) act as %s.\n", b.Name, mode, agentEmail(b))
 		if newPassword != "" {
-			pw.Printf("  The Administrator password is now %s (also in 'ffm status %s --show-secrets').\n", newPassword, b.Name)
+			pw.Printf("  The Administrator password is now %s.\n", SecretFor(pw, newPassword, "ffm status "+b.Name+" --show-secrets"))
 		}
 	} else {
 		pw.Printf("Agent profile off for %q: ffc and MCP act as Administrator again.\n", b.Name)

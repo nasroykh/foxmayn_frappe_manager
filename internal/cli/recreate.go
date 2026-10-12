@@ -36,6 +36,7 @@ Private app repos: pass --github-token if required for bench get-app.`,
 			if err != nil {
 				return err
 			}
+			envFallback(cmd, "github-token", &githubToken, envGitHubTokens...)
 			var proxyPortPtr *int
 			if cmd.Flags().Changed("proxy-port") {
 				proxyPortPtr = &proxyPort
@@ -51,7 +52,7 @@ Private app repos: pass --github-token if required for bench get-app.`,
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&noBackup, "no-backup", false, "Do not back the bench up before tearing it down")
 	cmd.Flags().BoolVar(&reallocatePorts, "reallocate-ports", false, "Allocate a new web/socketio port pair instead of reusing stored ports")
-	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token for private app repos (not stored in state)")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token for private app repos (not stored in state)."+preferEnv(envGitHubTokens...))
 	cmd.Flags().IntVar(&proxyPort, "proxy-port", 0, "Override derived reverse-proxy public port for dev (socketio_port)")
 	cmd.Flags().StringVar(&proxyHost, "proxy-host", "", "Override derived reverse-proxy hostname for dev (without scheme)")
 	return cmd
