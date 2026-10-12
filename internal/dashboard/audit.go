@@ -100,7 +100,9 @@ func (h *Handler) Audited(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entry := &auditEntry{}
 		sw := &statusWriter{ResponseWriter: w}
-		next(sw, r.WithContext(context.WithValue(r.Context(), auditCtxKey{}, entry)))
+		// Handlers parse the form on this copy, so the audit reads it from here.
+		r = r.WithContext(context.WithValue(r.Context(), auditCtxKey{}, entry))
+		next(sw, r)
 
 		action := r.Pattern
 		if i := strings.Index(action, " "); i >= 0 {

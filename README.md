@@ -194,10 +194,46 @@ ffm dashboard stop
 ffm dashboard logs -f
 ```
 
-- Default URL: **http://127.0.0.1:8787/admin** (HTTP Basic auth)
-- Bind on LAN: `ffm dashboard start --listen 0.0.0.0:8787 --admin-password '…'` — use TLS via a reverse proxy in production
+- Default URL: **http://127.0.0.1:8787/admin** (HTTP Basic auth; any user name, the admin password)
 - Long operations (`create`, `recreate`) run as **background jobs** with live log streaming
-- Interactive shell: use `ffm shell <name>` in the terminal (dashboard supports one-shot `exec` only)
+- Interactive shell: use `ffm shell <name>` in the terminal; the dashboard has no shell
+- The UI loads nothing from another origin (no CDN, no web fonts) and sets a strict
+  Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`
+  and, over TLS, HSTS. Cross-site POSTs are refused before any handler runs.
+- Passwords are not in the bench page. **Reveal** and **Copy** fetch them with an audited POST.
+- Wrong passwords are throttled per client address: 5 failures in a minute lock that address
+  out (`429` with `Retry-After`), starting at 30 s and doubling to 15 min; 30 failures
+  from all addresses in a minute lock everyone out until the window drains.
+- Every dashboard POST (and each password reveal) is appended to
+  `~/.config/ffm/dashboard-audit.jsonl` (mode `0600`): time, client address, action, bench,
+  result, and for exec the service and the command, verbatim. The file is not rotated.
+
+### Breaking changes (since the unauthenticated-LAN defaults)
+
+- **A non-loopback `--listen` is refused** unless the dashboard serves TLS itself or you opt
+  out. This applies to the saved setting and to the background daemon too, so an old
+  `dashboard.json` with `0.0.0.0:8787` stops starting until you choose one:
+
+  ```bash
+  # HTTPS from a certificate you already have
+  ffm dashboard start -d --listen 0.0.0.0:8787 --tls-cert cert.pem --tls-key key.pem --admin-password '…'
+
+  # Plain HTTP on the network: the password and session cookie cross it in clear
+  ffm dashboard start -d --listen 0.0.0.0:8787 --insecure-http --admin-password '…'
+  ```
+
+  `--tls-cert`, `--tls-key` and `--insecure-http` are saved in `dashboard.json`
+  (pass `--insecure-http=false` to clear it).
+- **The exec page is off by default.** It runs a command in a bench container, which is remote
+  code execution behind one shared password. Without `--allow-exec` the route answers `404`
+  and the link is hidden; with it, the service must be one of the bench's compose services.
+  Saved like the other flags (`--allow-exec=false` turns it off again).
+- **Behind a reverse proxy, every visitor shares the proxy's address**, so one person
+  typing the wrong password five times locks the dashboard out for everyone for 30 s or more.
+  ffm keys the limiter on the TCP peer only: `X-Forwarded-For` is attacker-controlled, so it is
+  not trusted. Prefer ffm's own TLS, or restrict who can reach the proxy.
+- The dashboard's CSS is a committed `tailwind.css`. After editing templates
+  run `make dashboard-css` (pinned, sha256-verified Tailwind CLI) and commit the result; CI fails on a diff.
 
 Settings are stored in `~/.config/ffm/dashboard.json` (mode `0600` when a password is set).
 
