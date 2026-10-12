@@ -29,7 +29,7 @@ Version info is injected at build time via `-ldflags` (see `Makefile` LDFLAGS).
 
 Tests are sparse but present — `make test` runs `go test ./...`. Coverage today is template
 rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`),
-dashboard handlers and security (`internal/dashboard/handler_test.go`,
+dashboard handlers, security and the parity pages (`internal/dashboard/handler_test.go`, `pages_test.go`,
 `security_test.go`; every one isolates FFM_CONFIG_DIR / FFM_BENCHES_DIR / FFM_BACKUPS_DIR to
 a temp dir and fakes docker), the server's headers and listen check
 (`internal/server/server_test.go`), the archive format
@@ -398,7 +398,23 @@ internal/
                             BenchReveal (POST-only password fetch, no-store JSON), BenchExec (404
                             unless Handler.AllowExec; 403 on bad CSRF; service checked against
                             the bench's compose services; audited BEFORE it runs), serviceAllowed
-    handler_actions.go    → POST endpoints for every bench operation
+    handler_actions.go    → POST endpoints for every bench operation (each is a job via runJob)
+    handler.go (pageBase) → pageBase embeds Meta and implements metaHolder: a new page's
+                            data struct embeds pageBase and renderPage needs no type switch
+    handler_create.go     → create form: parseCreateForm (every CreateInput field the CLI has a flag for;
+                            only parsing + port-pair check here, manager.Create validates in the job),
+                            form re-rendered with its values minus secrets on error (renderPageStatus 400)
+    handler_backups.go    → /admin/backups, /admin/benches/{n}/backups (+ prune preview GET then POST with
+                            expect_removed/expect_partials that must match a fresh dry run, + schedule);
+                            findArchive: "<bench>/<file>" accepted only if ScanArchives lists it;
+                            schedulerStatus (var, stubbed in tests) is read-only: the dashboard never installs
+                            the hourly job (CLI --no-install semantics)
+    handler_restore.go    → /admin/restore: archive from the listing only, new bench name, job keyed by target
+    handler_benchpages.go → domains (add/remove = jobs), app update (preview + run = jobs), snapshots
+                            (create/restore = jobs, delete sync)
+    handler_tools.go      → doctor (job: unbounded probes, no ctx) and clone (job keyed by the target)
+    templates/pages/ui.html → shared Tailwind class strings as named templates (cls_*): the CSS build scans
+                            templates, not Go, so classes must live there
     handler_jobs.go       → job list/detail + SSE progress stream
     handler_logs.go       → SSE docker compose log stream (?service= validated)
     handler_csrf.go       → HMAC double-submit CSRF tokens; cookie Secure when r.TLS != nil

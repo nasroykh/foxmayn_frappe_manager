@@ -1,0 +1,71 @@
+{{define "snapshots_body"}}
+{{template "benchcrumb" crumb .Name "Snapshots"}}
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Snapshots of {{.Name}}</h1>
+  <p class="{{template "cls_sub"}}">Fast rollback points that live inside the bench and go away with it. They are not backups.</p>
+</div>
+{{if .Err}}<div class="{{template "cls_note"}}">{{.Err}}</div>{{end}}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <div class="lg:col-span-2 {{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Snapshots</h2></div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="{{template "cls_thead"}}">
+          <tr>
+            <th scope="col" class="{{template "cls_th"}}">Name</th>
+            <th scope="col" class="{{template "cls_th"}}">Created</th>
+            <th scope="col" class="{{template "cls_th"}}">Size</th>
+            <th scope="col" class="{{template "cls_th"}}">Files</th>
+            <th scope="col" class="{{template "cls_th"}}"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+          {{$name := .Name}}{{$csrf := .Meta.CSRFToken}}
+          {{range .Snapshots}}
+          <tr>
+            <td class="{{template "cls_td"}} font-mono">{{.Name}}</td>
+            <td class="{{template "cls_td"}}">{{.Created}}</td>
+            <td class="{{template "cls_td"}}">{{.Size}}</td>
+            <td class="{{template "cls_td"}}">{{if .Files}}yes{{else}}no{{end}}</td>
+            <td class="{{template "cls_td"}}">
+              <div class="flex flex-col gap-3">
+                <form method="post" action="/admin/benches/{{$name}}/snapshots/restore" class="flex flex-wrap items-center gap-2" data-confirm="Restore {{.Name}} into the LIVE site of {{$name}}? The current database is replaced.">
+                  {{template "csrf" $csrf}}
+                  <input type="hidden" name="snapshot" value="{{.Name}}">
+                  <input name="confirm" required autocomplete="off" aria-label="Type {{.Name}} to restore it" placeholder="type {{.Name}}" class="{{template "cls_input"}} font-mono w-44">
+                  <label class="{{template "cls_check"}}"><input name="migrate" type="checkbox" value="1" class="{{template "cls_checkbox"}}">migrate</label>
+                  <button class="{{template "cls_btn"}}" type="submit">Restore</button>
+                </form>
+                <form method="post" action="/admin/benches/{{$name}}/snapshots/delete" class="flex flex-wrap items-center gap-2" data-confirm="Delete the snapshot {{.Name}}?">
+                  {{template "csrf" $csrf}}
+                  <input type="hidden" name="snapshot" value="{{.Name}}">
+                  <input name="confirm" required autocomplete="off" aria-label="Type {{.Name}} to delete it" placeholder="type {{.Name}}" class="{{template "cls_input"}} font-mono w-44">
+                  <button class="{{template "cls_btn_danger"}}" type="submit">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="5" class="px-6 py-8 text-center text-sm text-zinc-500">No snapshots yet.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="{{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Take a snapshot</h2></div>
+    <form method="post" action="/admin/benches/{{.Name}}/snapshots" class="p-6 space-y-3">
+      {{template "csrf" .Meta.CSRFToken}}
+      <div>
+        <label class="{{template "cls_label"}}">Name (optional)</label>
+        <input name="name" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" maxlength="64" placeholder="before-the-change" class="{{template "cls_input"}} font-mono">
+        <span class="{{template "cls_hint"}}">Defaults to the UTC time.</span>
+      </div>
+      <label class="{{template "cls_check"}}"><input name="files" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Include public and private files</label>
+      <button class="{{template "cls_btn_primary"}} w-full" type="submit">Create snapshot (job)</button>
+    </form>
+  </div>
+</div>
+{{end}}

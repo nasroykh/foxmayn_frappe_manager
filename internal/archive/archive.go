@@ -218,3 +218,43 @@ func PeekHeader(src string) ([]byte, error) {
 	// cannot claim a 100 GB header and exhaust memory during preflight.
 	return io.ReadAll(io.LimitReader(tr, 1<<20))
 }
+
+// PeekManifest returns the bytes of the archive's LAST member without
+// extracting anything, and errors if that member is not ManifestName. The tar
+// is walked member by member and the bodies are skipped (a seek on a regular
+// file), so it costs one pass over the headers, not over the data. Callers use
+// it to learn what an archive contains (its secrets, to mask them) before any
+// job that handles it starts.
+func PeekManifest(src string) ([]byte, error) {
+	f, err := os.Open(src)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	tr := tar.NewReader(f)
+	var last string
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w (not a tar archive?)", filepath.Base(src), err)
+		}
+		last = path.Clean(hdr.Name)
+		if last == ManifestName {
+			// Capped like PeekHeader: a hostile archive must not exhaust memory.
+			data, err := io.ReadAll(io.LimitReader(tr, 16<<20))
+			if err != nil {
+				return nil, err
+			}
+			// The manifest is only trusted as the final member.
+			if _, err := tr.Next(); err != io.EOF {
+				return nil, ErrNoManifest
+			}
+			return data, nil
+		}
+	}
+	return nil, ErrNoManifest
+}

@@ -1,0 +1,59 @@
+{{define "restore_body"}}
+<nav class="{{template "cls_crumb"}}">
+  <a href="/admin/backups" class="{{template "cls_crumb_link"}}">Backups</a>
+  <span>/</span>
+  <span class="text-zinc-900 dark:text-zinc-200">Restore</span>
+</nav>
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Restore an archive</h1>
+  <p class="{{template "cls_sub"}}">Rebuilds a NEW bench from an archive in the backups directory. It never writes into an existing bench, so a failed restore leaves nothing behind.</p>
+</div>
+
+{{if not .Archives}}
+<div class="{{template "cls_note"}}">There are no archives to restore. Take one from a bench's Backups page.</div>
+{{else}}
+<form method="post" action="/admin/restore" class="max-w-3xl space-y-8">
+  {{template "csrf" .Meta.CSRFToken}}
+  <div class="{{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Source and target</h2></div>
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div class="col-span-1 md:col-span-2">
+        <label class="{{template "cls_label"}}">Archive</label>
+        <select name="archive" required class="{{template "cls_input"}} font-mono">
+          {{range .Archives}}{{if not .Err}}<option value="{{.Key}}" {{if eq .Key $.Selected}}selected{{end}}>{{.Bench}} — {{.Created}} — {{.File}} ({{.Size}}{{if .Encrypted}}, encrypted{{end}})</option>{{end}}{{end}}
+        </select>
+        <span class="{{template "cls_hint"}}">Only archives found under the backups directory are listed. An encrypted archive needs the age identity in FFM_AGE_IDENTITY_FILE for the dashboard's environment.</span>
+      </div>
+      <div class="col-span-1">
+        <label class="{{template "cls_label"}}">New bench name</label>
+        <input name="target" required pattern="[a-zA-Z][a-zA-Z0-9-]*" placeholder="restored" class="{{template "cls_input"}}">
+        <span class="{{template "cls_hint"}}">Must not exist yet.</span>
+      </div>
+      <div class="col-span-1">
+        <label class="{{template "cls_label"}}">Production domain override</label>
+        <input name="domain" placeholder="only for prod archives" class="{{template "cls_input"}}">
+      </div>
+      <div class="col-span-1">
+        <label class="{{template "cls_label"}}">Let's Encrypt email</label>
+        <input name="acme_email" type="email" class="{{template "cls_input"}}">
+      </div>
+      <div class="col-span-1 grid grid-cols-2 gap-2">
+        <div><label class="{{template "cls_label"}}">Web port</label><input name="web_port" type="number" min="0" class="{{template "cls_input"}}"></div>
+        <div><label class="{{template "cls_label"}}">Socket.IO port</label><input name="socketio_port" type="number" min="0" class="{{template "cls_input"}}"></div>
+      </div>
+      <div class="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label class="{{template "cls_check"}}"><input name="reallocate_ports" type="checkbox" value="1" checked class="{{template "cls_checkbox"}}">Assign a fresh port pair (needed while the original runs)</label>
+        <label class="{{template "cls_check"}}"><input name="no_files" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Database only (skip attachments)</label>
+        <label class="{{template "cls_check"}}"><input name="pin_apps" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Pin apps to the archived commits</label>
+        <label class="{{template "cls_check"}}"><input name="skip_migrate" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Skip bench migrate</label>
+        <label class="{{template "cls_check"}}"><input name="no_ssl" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Serve a prod restore over plain HTTP</label>
+        <label class="{{template "cls_check"}}"><input name="lan" type="checkbox" value="1" class="{{template "cls_checkbox"}}">LAN: publish ports on all interfaces</label>
+        <label class="{{template "cls_check"}}"><input name="dry_run" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Dry run: validate and print the plan only</label>
+      </div>
+    </div>
+  </div>
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">The admin password stays the archived one. This form does not offer: an age identity file for an encrypted archive (<code>--identity</code>), <code>--allow-missing-encryption-key</code>, a dump <code>--encryption-key</code>, a <code>--github-token</code> for private apps, <code>--admin-password</code>, <code>--keep-on-failure</code>, <code>--skip-space-check</code> and per-app source overrides (<code>--app &lt;app&gt;=&lt;git-url&gt;[@branch]</code>, needed for archives written before ffm recorded app remotes). For any of those run <code>ffm restore &lt;archive&gt; &lt;name&gt; …</code> on the host (<code>ffm restore --help</code> lists every option).</p>
+  <button class="{{template "cls_btn_primary"}}" type="submit" data-confirm="Restore into a new bench? This builds images and can take several minutes.">Restore (run as job)</button>
+</form>
+{{end}}
+{{end}}

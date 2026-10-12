@@ -52,6 +52,18 @@ const (
 	JobCleanLogs  JobType = "clean-logs"
 	JobProxyStart JobType = "proxy-start"
 	JobProxyStop  JobType = "proxy-stop"
+	// The dashboard's parity pages.
+	JobBackup          JobType = "backup"
+	JobPrune           JobType = "prune"
+	JobRestore         JobType = "restore"
+	JobClone           JobType = "clone"
+	JobUpdate          JobType = "update"
+	JobDoctor          JobType = "doctor"
+	JobDomainAdd       JobType = "domain-add"
+	JobDomainRemove    JobType = "domain-remove"
+	JobSnapshotCreate  JobType = "snapshot-create"
+	JobSnapshotRestore JobType = "snapshot-restore"
+	JobSnapshotDelete  JobType = "snapshot-delete"
 )
 
 // ProxyJobKey is the job key of the shared Traefik proxy, which belongs to no
@@ -218,6 +230,13 @@ func (s *Service) StartAction(js *JobStore, typ JobType, key string, fn func(Pro
 			secrets = benchSecrets(b)
 		}
 	}
+	return s.startJobSecrets(js, typ, key, secrets, fn)
+}
+
+// StartActionSecrets is StartAction with the secrets to mask given by the
+// caller. It is for jobs whose key has no bench record yet (restore and clone
+// create their target), where StartAction would find nothing to mask.
+func (s *Service) StartActionSecrets(js *JobStore, typ JobType, key string, secrets []string, fn func(ProgressWriter) error) (string, error) {
 	return s.startJobSecrets(js, typ, key, secrets, fn)
 }
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
@@ -61,9 +60,11 @@ func (h *Handler) BenchRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	rebuild := r.FormValue("rebuild") == "1"
+	// Same as the CLI: --fresh implies --rebuild.
+	fresh := r.FormValue("fresh") == "1"
+	rebuild := r.FormValue("rebuild") == "1" || fresh
 	h.runJob(w, r, manager.JobRestart, name, benchPath(name), func(pw manager.ProgressWriter) error {
-		return h.Svc.Restart(manager.RestartInput{Name: name, Rebuild: rebuild}, pw)
+		return h.Svc.Restart(manager.RestartInput{Name: name, Rebuild: rebuild, Fresh: fresh}, pw)
 	})
 }
 
@@ -187,54 +188,6 @@ func (h *Handler) ProxyStop(w http.ResponseWriter, r *http.Request) {
 	h.runJob(w, r, manager.JobProxyStop, manager.ProxyJobKey, "/admin/proxy", func(pw manager.ProgressWriter) error {
 		return h.Svc.ProxyStop(pw)
 	})
-}
-
-func (h *Handler) BenchCreate(w http.ResponseWriter, r *http.Request) {
-	if !h.auth(w, r) || !h.requirePOST(w, r) {
-		return
-	}
-	in := parseCreateForm(r)
-	id, err := h.Svc.StartCreate(context.Background(), h.Jobs, in)
-	if err != nil {
-		redirectWithFlash(w, r, "/admin/benches/new", "", err.Error())
-		return
-	}
-	http.Redirect(w, r, "/admin/jobs/"+id, http.StatusSeeOther)
-}
-
-func parseCreateForm(r *http.Request) manager.CreateInput {
-	gw, _ := strconv.Atoi(r.FormValue("gunicorn_workers"))
-	wl, _ := strconv.Atoi(r.FormValue("worker_long"))
-	ws, _ := strconv.Atoi(r.FormValue("worker_short"))
-	apps := strings.FieldsFunc(r.FormValue("apps"), func(c rune) bool {
-		return c == ',' || c == '\n'
-	})
-	var trimmed []string
-	for _, a := range apps {
-		if t := strings.TrimSpace(a); t != "" {
-			trimmed = append(trimmed, t)
-		}
-	}
-	return manager.CreateInput{
-		Name:              r.FormValue("name"),
-		Mode:              r.FormValue("mode"),
-		FrappeBranch:      r.FormValue("frappe_branch"),
-		Apps:              trimmed,
-		AdminPassword:     r.FormValue("admin_password"),
-		DBPassword:        r.FormValue("db_password"),
-		DBType:            r.FormValue("db_type"),
-		GithubToken:       r.FormValue("github_token"),
-		Domain:            r.FormValue("domain"),
-		NoSSL:             r.FormValue("no_ssl") == "1",
-		AcmeEmail:         r.FormValue("acme_email"),
-		MariaDBBufferPool: r.FormValue("mariadb_buffer_pool"),
-		GunicornWorkers:   gw,
-		WorkerLongCount:   wl,
-		WorkerShortCount:  ws,
-		RedisCacheMaxmem:  r.FormValue("redis_cache_maxmem"),
-		RedisQueueMaxmem:  r.FormValue("redis_queue_maxmem"),
-		SlowQueryLog:      r.FormValue("slow_query_log") == "1",
-	}
 }
 
 func (h *Handler) TunnelServerAdd(w http.ResponseWriter, r *http.Request) {

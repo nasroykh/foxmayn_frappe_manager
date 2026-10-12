@@ -648,7 +648,7 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 on every push and PR. Docker-free coverage lives in `internal/archive/` (hostile tars built in
 memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.go`,
 `internal/bench/*_test.go` (template rendering), `internal/dashboard/handler_test.go` +
-`security_test.go` and `internal/server/server_test.go`. Every dashboard test isolates
+`security_test.go`, `pages_test.go` and `internal/server/server_test.go`. Every dashboard test isolates
 `FFM_CONFIG_DIR` / `FFM_BENCHES_DIR` / `FFM_BACKUPS_DIR` to a temp dir and fakes docker
 (`fakeexec`); a test that does not would read the developer's real `benches.json` and
 `jobs.json`.
@@ -656,6 +656,11 @@ memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.g
 The dashboard ships under a strict CSP (`script-src 'self'; style-src 'self'`): no inline
 `<script>`, no `on*=` or `style=` attributes, no external origin in a template, or
 `TestRenderedPageLoadsOnlyOwnFiles` fails. Pass page data to JS through `data-*` attributes.
+A new dashboard page: embed `pageBase` in its data struct (`renderPage` finds the metadata through the
+`metaHolder` interface; there is no type switch to extend), put class strings that repeat in
+`templates/pages/ui.html` (`cls_*`), run anything that touches Docker through `h.runJob` (303 to the job),
+register the POST with `h.Audited`, take archive/snapshot names only from a listing (`findArchive`), and
+never install the scheduler job from a handler. `pages_test.go` is the model.
 Tailwind is a committed build: after editing a template run `make dashboard-css` (pinned,
 sha256-checked CLI) and commit `internal/dashboard/static/tailwind.css`; CI fails on a diff.
 Scheduled backups are covered the same way: `backup_retention_test.go` simulates 60 days of
