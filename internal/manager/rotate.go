@@ -90,6 +90,8 @@ func (s *Service) RotateCredentials(in RotateInput, pw ProgressWriter) (RotateRe
 }
 
 // tellNewValue prints a password that exists nowhere but in memory.
+// Deliberately os.Stderr, not the ProgressWriter: the value exists nowhere else
+// and job output is masked, so routing it through a job would destroy the only copy.
 func tellNewValue(what, value string) {
 	fmt.Fprintf(os.Stderr, "\nThe new %s is already active but ffm could not record it. Note it now:\n  %s\n", what, value)
 }

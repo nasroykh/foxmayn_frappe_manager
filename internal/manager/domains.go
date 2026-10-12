@@ -3,7 +3,6 @@ package manager
 import (
 	"fmt"
 	"net"
-	"os"
 	"slices"
 	"strings"
 
@@ -298,7 +297,7 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 	// Socket.IO auth resolves the site from the request Host unless this patch is
 	// in place, so re-apply it before the containers come back up.
 	if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch authenticate.js: %v\n", err)
 	}
 
 	if st := s.LiveStatus(b); st != StatusRunning && st != StatusPartial {

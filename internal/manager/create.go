@@ -515,7 +515,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	}
 	defer os.Remove(filepath.Join(frappeBench, seedCommonConfig))
 
-	if err := s.afterBenchInit(benchDir, workspaceDir, name, siteName, mode); err != nil {
+	if err := s.afterBenchInit(benchDir, workspaceDir, name, siteName, mode, pw); err != nil {
 		return err
 	}
 	if projectApp != "" {
@@ -1013,7 +1013,7 @@ func (s *Service) benchInit(runner *bench.Runner, mode, branch, repoURL, src str
 
 // afterBenchInit writes the files and patches a new bench tree needs, whether
 // it came from bench init or from a seed.
-func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode string) error {
+func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode string, pw ProgressWriter) error {
 	// Write wsgi.py after bench init so sites/ exists. Lives under the workspace
 	// bind mount — no extra volume entry needed in docker-compose.yml.
 	if mode == "prod" {
@@ -1022,21 +1022,21 @@ func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode st
 		}
 	}
 	if err := bench.PatchAuthenticateJs(benchDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch authenticate.js: %v\n", err)
 	}
 	if err := bench.PatchUtilsJs(benchDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 	}
 
 	if mode == "dev" {
 		frappeBench := filepath.Join(workspaceDir, "frappe-bench")
 		if err := writeClaudeMcpConfigHost(frappeBench, name, false); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not write Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 		// Make the RQ worker self-restart so an idle Redis timeout (which exits
 		// the worker rc=0) doesn't make honcho tear down the whole dev stack.
 		if err := bench.PatchProcfileWorker(benchDir); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not patch Procfile worker: %v\n", err)
 		}
 	}
 	return nil

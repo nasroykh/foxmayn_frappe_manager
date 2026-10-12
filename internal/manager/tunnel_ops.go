@@ -2,7 +2,6 @@ package manager
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
@@ -103,7 +102,7 @@ func (s *Service) TunnelEnable(in TunnelEnableInput, pw ProgressWriter) error {
 
 	runner := s.runnerFor(b)
 	if err := s.applyTunnelFrappeConfig(b, runner, publicURL, pw); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: could not update Frappe settings (bench may be stopped): %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "  warning: could not update Frappe settings (bench may be stopped): %v\n", err)
 	}
 
 	pw.Printf("\nTunnel enabled for bench %q.\n", in.BenchName)
@@ -127,7 +126,7 @@ func (s *Service) TunnelDisable(name string, pw ProgressWriter) error {
 
 	pw.Printf("Disabling tunnel for bench %q...\n", name)
 	if err := tunnel.Stop(b.Name); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: could not stop frpc container: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "  warning: could not stop frpc container: %v\n", err)
 	} else {
 		pw.Println("  ✓ frpc container stopped and removed")
 	}
@@ -142,7 +141,7 @@ func (s *Service) TunnelDisable(name string, pw ProgressWriter) error {
 	b, _ = s.GetBench(name)
 	runner := s.runnerFor(b)
 	if err := s.runSetProxyReset(b, runner, pw); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: could not reset Frappe proxy settings: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "  warning: could not reset Frappe proxy settings: %v\n", err)
 	}
 	return nil
 }

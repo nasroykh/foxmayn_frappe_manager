@@ -174,22 +174,23 @@ func (s *Service) Stop(name string, pw ProgressWriter) error {
 }
 
 // TeardownBenchFiles runs docker compose down with volumes and removes the bench directory.
-func (s *Service) TeardownBenchFiles(b state.Bench) {
+// Warnings go to pw.Stderr(); CLI callers pass CLIProgress{}.
+func (s *Service) TeardownBenchFiles(b state.Bench, pw ProgressWriter) {
 	if b.Tunnel != nil && b.Tunnel.Enabled {
 		if err := tunnel.Stop(b.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: stop frpc container: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: stop frpc container: %v\n", err)
 		}
 	}
 	runner := s.runnerFor(b)
 	if err := runner.Down(true); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: docker compose down: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: docker compose down: %v\n", err)
 	}
 	// `down --volumes` removes only the volumes the current compose file
 	// declares. A volume a later template dropped (yarn-cache, in v0.11.1)
 	// still carries the project label, so it goes too.
-	removeProjectVolumes(strings.ToLower(bench.ProjectName(b.Name)))
+	removeProjectVolumes(strings.ToLower(bench.ProjectName(b.Name)), pw)
 	if err := os.RemoveAll(b.Dir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: remove bench dir: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: remove bench dir: %v\n", err)
 	}
 }
 
@@ -252,7 +253,7 @@ func (s *Service) deleteLocked(name string, pw ProgressWriter) error {
 		return err
 	}
 	pw.Printf("Deleting bench %q...\n", name)
-	s.TeardownBenchFiles(b)
+	s.TeardownBenchFiles(b, pw)
 	if err := s.RemoveBench(name); err != nil {
 		return fmt.Errorf("update state: %w", err)
 	}
@@ -261,14 +262,14 @@ func (s *Service) deleteLocked(name string, pw ProgressWriter) error {
 }
 
 // removeProjectVolumes deletes the volumes labelled with a compose project.
-func removeProjectVolumes(project string) {
+func removeProjectVolumes(project string, pw ProgressWriter) {
 	out, err := execx.Command("docker", "volume", "ls", "-q", "--filter", "label="+composeProjectLabel+"="+project).Output()
 	if err != nil {
 		return
 	}
 	for _, v := range strings.Fields(string(out)) {
 		if o, err := execx.Command("docker", "volume", "rm", v).CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: remove volume %s: %v %s\n", v, err, strings.TrimSpace(string(o)))
+			fmt.Fprintf(pw.Stderr(), "warning: remove volume %s: %v %s\n", v, err, strings.TrimSpace(string(o)))
 		}
 	}
 }

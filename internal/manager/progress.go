@@ -43,6 +43,20 @@ func StdoutIsTerminal() bool {
 // persists or relays what it is given, so it never reveals.
 type secretRevealer interface{ RevealSecrets() bool }
 
+// secretAdder is implemented by the ProgressWriters that mask secrets in what
+// they record (jobs). A step that learns a secret late, such as Restore after
+// reading an encrypted archive's manifest, registers it so everything recorded
+// afterwards is masked.
+type secretAdder interface{ AddSecrets(vals ...string) }
+
+// addSecrets registers vals with pw when it can mask them; any other writer
+// ignores them.
+func addSecrets(pw ProgressWriter, vals ...string) {
+	if a, ok := pw.(secretAdder); ok {
+		a.AddSecrets(vals...)
+	}
+}
+
 // MaskedSecret is what a secret is printed as when it must not be shown.
 const MaskedSecret = "********"
 

@@ -133,6 +133,9 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if err != nil {
 		return err
 	}
+	// Masks them in a job's output from here on; this is what covers an
+	// encrypted archive, whose secrets ArchiveSecrets could not read.
+	addSecrets(pw, manifestSecrets(m)...)
 	if err := verifyMembers(m, res); err != nil {
 		return err
 	}

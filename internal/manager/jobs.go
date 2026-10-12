@@ -284,7 +284,8 @@ func (s *Service) startJobSecrets(js *JobStore, typ JobType, key string, secrets
 		j.UpdatedAt = time.Now()
 		if err != nil {
 			j.Status = JobFailed
-			j.Error = bench.Scrub(err.Error(), secrets...)
+			// pw.secrets includes whatever fn registered late (AddSecrets).
+			j.Error = bench.Scrub(err.Error(), pw.secrets...)
 		} else {
 			j.Status = JobSucceeded
 		}
@@ -351,10 +352,10 @@ func newJobProgress(js *JobStore, j *Job, secrets []string) *jobProgress {
 // plain lines are not, to keep chatty output from rewriting jobs.json on
 // every line.
 func (p *jobProgress) add(step, line string, persist bool) {
-	line = bench.Scrub(line, p.secrets...)
-	step = bench.Scrub(step, p.secrets...)
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()
+	line = bench.Scrub(line, p.secrets...)
+	step = bench.Scrub(step, p.secrets...)
 	j := p.job
 	if step != "" {
 		j.Steps = append(j.Steps, step)
@@ -368,6 +369,21 @@ func (p *jobProgress) add(step, line string, persist bool) {
 	if persist {
 		p.store.persistLocked()
 	}
+}
+
+// AddSecrets registers values to mask in everything recorded from now on.
+// Empty values are ignored.
+func (p *jobProgress) AddSecrets(vals ...string) {
+	p.store.mu.Lock()
+	defer p.store.mu.Unlock()
+	// A fresh slice: the caller's secrets slice must not be appended into.
+	merged := append([]string(nil), p.secrets...)
+	for _, v := range vals {
+		if v != "" {
+			merged = append(merged, v)
+		}
+	}
+	p.secrets = merged
 }
 
 func (p *jobProgress) Step(msg string) { p.add(msg, "→ "+msg, true) }

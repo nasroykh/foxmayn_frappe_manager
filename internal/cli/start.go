@@ -20,4 +20,3 @@ func newStartCmd() *cobra.Command {
 		},
 	}
 }
-

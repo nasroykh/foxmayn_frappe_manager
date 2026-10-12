@@ -114,7 +114,7 @@ func (s *Service) Recreate(in RecreateInput, pw ProgressWriter) (recreateErr err
 	}
 
 	pw.Printf("Recreating bench %q...\n", in.Name)
-	s.TeardownBenchFiles(b)
+	s.TeardownBenchFiles(b, pw)
 	if err := s.RemoveBench(in.Name); err != nil {
 		return fmt.Errorf("update state: %w", err)
 	}
