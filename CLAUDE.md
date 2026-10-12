@@ -60,7 +60,11 @@ existed, neither ran anywhere. `.github/workflows/backup-roundtrip.yml` is a
 weekly (Monday 03:17 UTC) and on-demand end-to-end proof: create → plant a marker row →
 snapshot rollback → clone through the seed → backup → delete → restore
 under a different name → assert the marker came back. It asserts on data, not exit codes,
-because every interesting failure in this area exits 0.
+because every interesting failure in this area exits 0. `.github/workflows/arm64-smoke.yml`
+(on demand, monthly, `ubuntu-24.04-arm`) checks that every pinned image has an arm64 manifest,
+creates a dev bench, asserts `uname -m` is aarch64 in the frappe container and runs `ffm doctor`;
+whether the dev image's curl installers (ffc, Claude Code) ship arm64 builds is only proven by
+that run, not by anything local.
 
 ## Architecture
 
@@ -96,9 +100,10 @@ internal/
     backup_schedule.go    → ffm backup schedule [bench] (presets, --keep shorthand, per-tier
                             counts, --files, --off, --no-install) and ffm backup run-due
                             [--dry-run] [--log FILE] (rotated at 1 MiB, one old generation)
-    backup_scheduler.go   → ffm backup scheduler install|uninstall|status|print; syncSchedulerJob
-                            installs the crontab line with the first schedule, removes it with
-                            the last
+    backup_scheduler.go   → ffm backup scheduler install|uninstall|status|print (install and print take
+                            --backend cron|systemd|launchd|schtasks); syncSchedulerJob installs the
+                            job with the first schedule, removes it with the last, both through
+                            scheduler.Install / scheduler.Uninstall
     restore.go            → ffm restore <archive> [name]: --dry-run / --no-files / --pin-apps /
                             --allow-missing-encryption-key / --encryption-key / --domain /
                             --no-ssl / --acme-email / --reallocate-ports / --web-port /
@@ -177,8 +182,12 @@ internal/
     dashboard.go          → ffm dashboard start/stop/status/logs; --daemon re-execs the binary
                             with the hidden __dashboard-daemon argv
     dashboard_daemon.go   → maybeRunDashboardDaemon(): that hidden entrypoint
-    dashboard_sys_unix.go / dashboard_sys_windows.go → SysProcAttr for the detached daemon
-    update.go             → ffm update: releases API, semver compare, atomic self-replace
+    dashboard_sys_unix.go / dashboard_sys_windows.go → SysProcAttr for the detached daemon (Windows:
+                            HideWindow + CreationFlags DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP so the
+                            daemon outlives the console — UNVERIFIED on a real Windows host)
+    update.go             → ffm update: releases API, semver compare, atomic self-replace;
+                            removeStaleBinary() (called at the start of Execute) deletes the
+                            ffm.exe.old a Windows update leaves behind, best effort
     update_check.go       → background update notice (24 h TTL); returns immediately when
                             $FFM_NO_UPDATE_CHECK or $CI is set
 
@@ -266,7 +275,7 @@ internal/
                             are ever candidates
     backup_schedule.go    → RunDue / runOne / ScheduleStatuses / SetBackupSchedule; RunState in
                             <backups>/<bench>/.schedule.json
-    diskfree_unix.go / diskfree_windows.go → freeBytes(); no-op on Windows
+    diskfree_unix.go / diskfree_windows.go → freeBytes() (both implemented)
     reconcile.go          → Reconcile: re-render docker-compose.yml from the record (composeDataFor)
                             and apply it with applyDomainChange (up -d, no data loss). The way
                             template fixes reach existing benches; recreate is destructive
@@ -419,12 +428,33 @@ internal/
   lock/                   → TryAcquire: non-blocking exclusive file lock (flock / LockFileEx via
                             golang.org/x/sys). The OS drops it when the process dies — no
                             stale-lock handling exists or is needed
-  scheduler/              → the single crontab line for run-due: CurrentJob / Job.Line /
-                            Merge / Remove / Find / Install / Uninstall / WindowsCommand. Tagged
-                            `# ffm-backup-tick`; other crontab lines are kept byte for byte.
-                            Install/Uninstall refuse a line whose --log (LogOf) is another
-                            configuration's (ForeignJobError) unless forced: a run with another
-                            FFM_CONFIG_DIR used to replace the real one's job
+  scheduler/              → the single hourly job for run-due, behind one Backend interface
+                            (backend.go: Name/Available/Where/Install/Uninstall/Installed/Render/Print).
+                            Backends: cronBackend (scheduler.go: CurrentJob / Job.Line / Merge / Remove
+                            / Find; line tagged `# ffm-backup-tick`, other crontab lines kept byte
+                            for byte; refuses a line whose --log (LogOf) is another configuration's
+                            (ForeignJobError) unless forced), systemdBackend (systemd.go: oneshot
+                            .service + .timer in $XDG_CONFIG_HOME/systemd/user, `OnCalendar=*-*-*
+                            *:MM:00`, Persistent=true, % and $ escaped; linger=no gives a warning
+                            and the `loginctl enable-linger` command, NEVER run),
+                            launchdBackend (launchd.go: plist in ~/Library/LaunchAgents,
+                            bootout then bootstrap gui/<uid>), schtasks (schtasks.go: a
+                            backup-run-due.cmd in the config dir that the task runs, because /TR is
+                            limited to 261 chars and has no environment).
+                            Resolve(flag) order: --backend > backup-scheduler.json
+                            ({backend,name,ffm}; config.BackupSchedulerFile) > an ffm line already in
+                            the crontab (cron) > Default() (windows schtasks, darwin launchd, linux
+                            cron if crontab on PATH AND cron/crond in /proc, else systemd --user if
+                            `systemctl --user show-environment` works, else ErrNoBackend with the
+                            `print --backend cron` hint). Install(job, flag, force) installs the new
+                            backend FIRST, records it, then uninstalls the previous one (worst case
+                            two jobs; the run-due lock makes the second a no-op). With FFM_CONFIG_DIR
+                            set, names carry fnv32(abs config dir) in hex (JobName, launchd label,
+                            task name), so configurations do not collide; ForeignJobError is cron
+                            only. Tests inject goos/lookPath/homeDir/getenv/procDir/uid and use
+                            fakeexec; they must set FFM_CONFIG_DIR and never reach the real crontab,
+                            systemd, launchctl or schtasks. The Windows backend is untested on a real
+                            Windows host (cmd file and schtasks argv are unit-tested only)
   project/                → ffm.yaml: File (version 1, strict YAML via go.yaml.in/yaml/v3 KnownFields),
                             Find (cwd up to the .git root), Load/Parse/validate, Commands, Hash;
                             trust.go = trust.json {path: sha256} (0600), Trusted/Trust/Revoke;
@@ -435,6 +465,13 @@ internal/
                             (v1.13.0): port fixes both ways
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
                             IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
+  proxy/socket.go         → dockerSocket(): the host path mounted at /var/run/docker.sock. The
+                            context/DOCKER_HOST socket is used ONLY when `docker info` lists
+                            "rootless" (Docker Desktop's context socket cannot be bind-mounted);
+                            a non-unix endpoint under rootless is an error. checkUnprivilegedPorts:
+                            rootless and net.ipv4.ip_unprivileged_port_start above 80 (443 too for
+                            HTTPS) fails before `docker run` with the sysctl fix; portHint also
+                            recognises "privileged port"/"permission denied" after a failed run
   tunnel/
     config.go             → Server + Config; ~/.config/ffm/tunnel.json (0o600)
     frpc.go               → frpc container via docker run (not compose); RenderFrpcToml (0o600)
@@ -898,6 +935,8 @@ git push origin v0.1.0
 ~/.config/ffm/
   benches.json           # state file (0600, atomic writes)
   backup-scheduler.log   # run-due results, rotated at 1 MiB (.1 kept)
+  backup-scheduler.json  # which scheduler backend holds the hourly job ({backend,name,ffm})
+  backup-run-due.cmd     # Windows only: what the Task Scheduler task runs (hashed name with FFM_CONFIG_DIR)
   locks/                 # bench-<name>.lock and backup-run-due.lock (OS file locks)
   .update_check.json     # cached latest release tag (24 h TTL; skipped when $CI is set)
   .acme_email            # saved Let's Encrypt email

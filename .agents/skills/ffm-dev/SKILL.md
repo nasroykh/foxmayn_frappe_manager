@@ -649,7 +649,10 @@ memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.g
 Scheduled backups are covered the same way: `backup_retention_test.go` simulates 60 days of
 runs per preset (count and coverage bounds, gaps, DST, the floor) and prunes real archives
 on disk; `backup_schedule_test.go` covers due/files decisions and run-due with docker
-unreachable; `internal/scheduler` drives install/uninstall through a stand-in `crontab`;
+unreachable; `internal/scheduler` renders every backend (cron, systemd, launchd, schtasks) and drives
+install/uninstall through `fakeexec` with injected `goos`/`lookPath`/`homeDir`/`procDir` (never the
+real crontab or systemd; tests set `FFM_CONFIG_DIR` to a temp dir); `internal/proxy` checks the
+rootless socket and port preflight the same way;
 `internal/lock` checks exclusion across processes by re-running the test binary.
 
 The create pipeline and most of the CLI are still untested, because they shell out to Docker.
