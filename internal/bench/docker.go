@@ -292,12 +292,23 @@ func (r *Runner) PS(format string) (string, error) {
 // the container (`-p<password>` did, for anyone running ps). flags are extra
 // mariadb options such as "-N".
 func MariaDBRootArgs(sql string, flags ...string) []string {
+	return []string{"bash", "-c", mariaDBRootCmd(flags) + " -e " + ShellQuote(sql)}
+}
+
+// MariaDBRootStdinArgs is MariaDBRootArgs for SQL read from stdin. Use it for
+// a statement that carries a secret (ALTER USER ... IDENTIFIED BY): the SQL is
+// then on no argument list either.
+func MariaDBRootStdinArgs(flags ...string) []string {
+	return []string{"bash", "-c", mariaDBRootCmd(flags)}
+}
+
+func mariaDBRootCmd(flags []string) string {
 	cmd := `if [ -r "${MARIADB_ROOT_PASSWORD_FILE:-}" ]; then MYSQL_PWD=$(cat "$MARIADB_ROOT_PASSWORD_FILE");` +
 		` else MYSQL_PWD=$MYSQL_ROOT_PASSWORD; fi; export MYSQL_PWD; exec mariadb -u root`
 	for _, f := range flags {
 		cmd += " " + ShellQuote(f)
 	}
-	return []string{"bash", "-c", cmd + " -e " + ShellQuote(sql)}
+	return cmd
 }
 
 // WaitForMariaDB polls until MariaDB accepts connections or the timeout elapses.
