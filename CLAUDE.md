@@ -874,7 +874,7 @@ internal/
   with no cluster selected runs the newest installed client: verified with 17 and 18 installed. One
   constant, `bench.PostgresMajor`, feeds the image tag and the client;
   `TestPostgresClientMatchesServerImage` guards it. Existing postgres benches get the client through
-  `ffm restart --rebuild` (template 7); `backup-roundtrip.yml` has a postgres job.
+  `ffm restart --rebuild` (template 8); `backup-roundtrip.yml` has a postgres job.
 - **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
   image), `FrappeSkillsCommit` (skill pack) and `FfcRef` (ffc: the binary AND its skills). The dev Dockerfile
   installs ffc, then `ffc update --version <FfcRef> --yes` and a `ffc --version` grep fail the build if
