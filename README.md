@@ -102,9 +102,10 @@ With a rootful daemon the proxy always mounts `/var/run/docker.sock`, whatever t
   brackets matter: inside a `bash -c` the plain pattern also matches the shell itself and kills it.
 - **Traefik lost its network or ports** after a WSL or Docker restart: check
   `docker inspect ffm-proxy --format '{{json .NetworkSettings.Networks}} {{json .HostConfig.PortBindings}}'`,
-  then `ffm proxy stop && ffm proxy start`. If the bindings are still wrong, `docker rm ffm-proxy` and
-  `ffm proxy start` recreate it (benches keep their routing labels). Not on a host whose proxy serves
-  HTTPS for a prod bench: `ffm proxy start` recreates only the plain-HTTP proxy.
+  then `ffm proxy start`: it recreates a proxy that runs without its network or published ports, or that
+  still runs an older Traefik image (benches keep their routing labels; the Let's Encrypt volume is
+  kept, and an HTTPS proxy comes back with the same ACME email). `ffm proxy status` and `ffm doctor`
+  report such a proxy as broken.
 - **Keep project checkouts off `/mnt/<drive>`.** `ffm up` warns when the mounted checkout is on a Windows
   drive: the 9p mount is slow, Windows-side edits may not trigger reloads, and file modes are ignored.
   Clone into the Linux filesystem.
@@ -710,7 +711,7 @@ Flags:
 Manages the shared [Traefik](https://traefik.io/) container.
 
 ```bash
-ffm proxy start    # start Traefik
+ffm proxy start    # start Traefik (recreates a broken or outdated container)
 ffm proxy stop     # stop Traefik
 ffm proxy status   # show status + dashboard URL
 ```

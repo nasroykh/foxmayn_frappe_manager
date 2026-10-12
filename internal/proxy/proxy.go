@@ -15,9 +15,11 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"strings"
+
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 )
 
 const (
@@ -73,17 +75,103 @@ func EnsureNetwork() error {
 	return nil
 }
 
+// acmeEmailFlag is the Traefik argument that carries the Let's Encrypt email.
+const acmeEmailFlag = "--certificatesresolvers.letsencrypt.acme.email="
+
+// containerInfo is what one `docker inspect` says about the proxy container.
+type containerInfo struct {
+	Status string // "running", "exited", "created", …; "" when the container does not exist
+	Image  string // the image the container was created from
+	// Attached reports whether the container has an endpoint on NetworkName.
+	Attached bool
+	// Published80 reports whether the host side of 80/tcp is bound right now.
+	Published80 bool
+	// Published443 likewise for 443/tcp.
+	Published443 bool
+	// HTTPS reports whether the container was created with 443 in its port
+	// bindings (a configuration, not a live state).
+	HTTPS     bool
+	AcmeEmail string
+}
+
+// inspectFormat builds one JSON document, which parses more robustly than
+// the Go-template text of a map.
+const inspectFormat = `{"status":{{json .State.Status}},"image":{{json .Config.Image}},` +
+	`"networks":{{json .NetworkSettings.Networks}},"ports":{{json .NetworkSettings.Ports}},` +
+	`"bindings":{{json .HostConfig.PortBindings}},"args":{{json .Args}}}`
+
+type portBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+// inspectContainer is a seam for tests that need the container to change
+// between two calls.
+var inspectContainer = realInspect
+
+func realInspect() containerInfo {
+	out, err := execx.Command("docker", "inspect", ContainerName, "--format", inspectFormat).Output()
+	if err != nil {
+		return containerInfo{}
+	}
+	var raw struct {
+		Status   string                   `json:"status"`
+		Image    string                   `json:"image"`
+		Networks map[string]any           `json:"networks"`
+		Ports    map[string][]portBinding `json:"ports"`
+		Bindings map[string][]portBinding `json:"bindings"`
+		Args     []string                 `json:"args"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(string(out))), &raw) != nil {
+		return containerInfo{}
+	}
+	published := func(port string) bool {
+		for _, b := range raw.Ports[port] {
+			if b.HostPort != "" {
+				return true
+			}
+		}
+		return false
+	}
+	info := containerInfo{
+		Status:       raw.Status,
+		Image:        raw.Image,
+		Published80:  published("80/tcp"),
+		Published443: published("443/tcp"),
+	}
+	_, info.Attached = raw.Networks[NetworkName]
+	_, info.HTTPS = raw.Bindings["443/tcp"]
+	for _, a := range raw.Args {
+		if v, ok := strings.CutPrefix(a, acmeEmailFlag); ok {
+			info.AcmeEmail = v
+		}
+	}
+	return info
+}
+
+// problem says why a container is not serving, or "" when it is. A container
+// that docker reports as running can hold no network endpoint and no
+// published port (seen after an old ffm's container was stopped and started),
+// and then nothing answers on *.localhost.
+func (i containerInfo) problem() string {
+	switch {
+	case i.Status != "running":
+		return "the container is not running"
+	case !i.Attached:
+		return "it is not attached to the " + NetworkName + " network"
+	case !i.Published80:
+		return fmt.Sprintf("port %d is not published", WebPort)
+	case i.HTTPS && !i.Published443:
+		return fmt.Sprintf("port %d is not published", HTTPSPort)
+	}
+	return ""
+}
+
 // containerStatus returns the Docker status of the Traefik container
 // ("running", "exited", "created", …) or an empty string if the container
 // does not exist.
 func containerStatus() string {
-	out, err := execx.Command(
-		"docker", "inspect", ContainerName, "--format", "{{.State.Status}}",
-	).CombinedOutput()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return inspectContainer().Status
 }
 
 // IsRunning reports whether the Traefik proxy container is currently running.
@@ -91,12 +179,29 @@ func IsRunning() bool {
 	return containerStatus() == "running"
 }
 
+// Healthy reports whether the proxy container is running, attached to the
+// ffm-proxy network and publishing its ports. When it is not, reason says why.
+func Healthy() (bool, string) {
+	i := inspectContainer()
+	if p := i.problem(); p != "" {
+		return false, p
+	}
+	return true, ""
+}
+
 // Status returns a human-readable proxy status string.
 func Status() string {
-	s := containerStatus()
-	switch s {
+	i := inspectContainer()
+	switch i.Status {
 	case "running":
-		return "running"
+		st := "running"
+		if p := i.problem(); p != "" {
+			st = fmt.Sprintf("running but broken: %s (run 'ffm proxy start' to recreate it)", p)
+		}
+		if i.Image != Image {
+			st += fmt.Sprintf(" (image %s, ffm pins %s: 'ffm proxy stop && ffm proxy start' updates it)", i.Image, Image)
+		}
+		return st
 	case "exited":
 		return "stopped (run 'ffm proxy start' to resume)"
 	case "created":
@@ -104,27 +209,43 @@ func Status() string {
 	case "":
 		return "not installed (run 'ffm proxy start')"
 	default:
-		return s
+		return i.Status
 	}
 }
 
 // Start ensures the ffm-proxy network exists and brings the Traefik container
-// up. If the container already exists in a stopped state it is restarted; if
-// it does not exist it is created fresh.
+// up. A stopped container is restarted, and a missing one is created. A
+// container that is running without its network or ports, one that does not
+// serve after a restart, and a stopped one on an older image are removed and
+// created again; the Let's Encrypt volume survives that.
 func Start() error {
 	if err := EnsureNetwork(); err != nil {
 		return err
 	}
 
-	switch s := containerStatus(); s {
+	info := inspectContainer()
+	switch s := info.Status; s {
 	case "running":
-		return fmt.Errorf("proxy is already running — dashboard: %s", DashboardURL())
+		p := info.problem()
+		if p == "" {
+			return fmt.Errorf("proxy is already running — dashboard: %s", DashboardURL())
+		}
+		fmt.Printf("  Proxy container is running but broken: %s. Recreating it...\n", p)
+		return recreate(info)
 
 	case "exited", "created":
-		// Container exists but is stopped; restart it.
+		if info.Image != Image {
+			fmt.Printf("  Updating proxy image %s -> %s...\n", info.Image, Image)
+			return recreate(info)
+		}
 		out, err := execx.Command("docker", "start", ContainerName).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("restart proxy container: %w\n%s", err, strings.TrimSpace(string(out)))
+		}
+		after := inspectContainer()
+		if p := after.problem(); p != "" {
+			fmt.Printf("  Proxy container restarted but is not serving: %s. Recreating it...\n", p)
+			return recreate(info)
 		}
 		return nil
 
@@ -138,6 +259,25 @@ func Start() error {
 			s, ContainerName,
 		)
 	}
+}
+
+// recreate removes the container and creates it again with the settings old
+// had: HTTPS with the same ACME email when it published 443.
+func recreate(old containerInfo) error {
+	if old.HTTPS && old.AcmeEmail == "" {
+		return fmt.Errorf("the proxy publishes port %d (HTTPS) but its Let's Encrypt email cannot be read, "+
+			"so it cannot be recreated as it was. Run 'docker rm -f %s', then enable HTTPS again by creating "+
+			"a prod bench with a domain ('ffm create --mode prod --domain <domain> --acme-email <email>'); "+
+			"certificates stay in the %s volume",
+			HTTPSPort, ContainerName, LetsEncryptVolume)
+	}
+	if out, err := execx.Command("docker", "rm", "-f", ContainerName).CombinedOutput(); err != nil {
+		return fmt.Errorf("remove proxy container: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	if old.HTTPS {
+		return createContainerHTTPS(old.AcmeEmail)
+	}
+	return createContainer()
 }
 
 // Stop halts the Traefik container without removing it or the network.
@@ -166,14 +306,7 @@ func Stop() error {
 // SupportsHTTPS reports whether the running Traefik container has port 443
 // bound, indicating it was started with Let's Encrypt support.
 func SupportsHTTPS() bool {
-	out, err := execx.Command(
-		"docker", "inspect", ContainerName,
-		"--format", `{{range $p, $conf := .HostConfig.PortBindings}}{{$p}} {{end}}`,
-	).CombinedOutput()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "443")
+	return inspectContainer().HTTPS
 }
 
 // EnsureHTTPS ensures the proxy is running with HTTPS (port 443) and Let's

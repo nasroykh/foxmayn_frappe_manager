@@ -532,7 +532,14 @@ internal/
                             diff, backup, atomic write). COPIED from ffc's internal/mcpinstall
                             (v1.13.0): port fixes both ways
   proxy/proxy.go          → Traefik lifecycle: EnsureNetwork / IsNetworkPresent / Start / Stop /
-                            IsRunning / Status / DashboardURL / SupportsHTTPS / EnsureHTTPS(email)
+                            IsRunning / Status / Healthy / DashboardURL / SupportsHTTPS / EnsureHTTPS(email).
+                            One `docker inspect` JSON (inspectContainer) feeds status, health and Start. Start
+                            self-repairs: a running container with no network endpoint or no published 80 (and
+                            443 for HTTPS) is `rm -f` + recreated, as is a stopped one on an image other than
+                            Image or one that is still unhealthy after `docker start`; an HTTPS proxy is
+                            recreated with the ACME email read from its args, or Start errors if there is none.
+                            Status says "running but broken" / names an outdated image; doctor fails a "proxy"
+                            check for a running-but-broken proxy on dev benches
   proxy/socket.go         → dockerSocket(): the host path mounted at /var/run/docker.sock. The
                             context/DOCKER_HOST socket is used ONLY when `docker info` lists
                             "rootless" (Docker Desktop's context socket cannot be bind-mounted);

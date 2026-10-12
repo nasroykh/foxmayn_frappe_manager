@@ -90,7 +90,12 @@ func (s *Service) Doctor(name string) (BenchHealth, error) {
 	} else {
 		add(siteCheck(b))
 		if b.IsDev() && proxy.IsRunning() {
-			add(traefikCheck(b))
+			if ok, why := proxy.Healthy(); !ok {
+				add(Check{Name: "proxy", Status: CheckFail, Detail: "the Traefik container is running but broken: " + why +
+					". Run 'ffm proxy start' to recreate it"})
+			} else {
+				add(traefikCheck(b))
+			}
 		}
 		for _, c := range jobChecks(s, b) {
 			add(c)
