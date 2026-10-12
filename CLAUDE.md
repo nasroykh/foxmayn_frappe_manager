@@ -72,7 +72,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 42 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 43 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -124,6 +124,11 @@ internal/
     snapshot.go           → ffm snapshot create|list|restore|delete (--name, --files, --yes,
                             --migrate, --json ffm.snapshots/v1)
     clone.go              → ffm clone <source> <new-name> (--no-files, --vendor-apps, --domain)
+    worktree.go           → ffm worktree add <branch> (--from/--base/--path/--name/--no-files/--json) /
+                            remove <branch|path|bench> (--force/--keep-worktree/--delete-branch/--no-backup) /
+                            list (--json ffm.worktrees/v1). worktree_hook.go: ffm worktree hook
+                            create|remove|print (Claude Code WorktreeCreate/WorktreeRemove; create prints
+                            the path as the only stdout line, everything else goes to stderr)
     agent.go              → ffm agent on|off [--read-only], bare = state; create takes --agent /
                             --agent-read-only
     doctor.go             → ffm doctor [bench] (--json ffm.doctor/v1, --notify)
@@ -323,6 +328,10 @@ internal/
     projectmount.go       → project mount helpers: projectMountOf, checkProjectMount (preflight for Start,
                             Recreate, applyDomainChange), wslMountWarning (readOSRelease is injectable),
                             registerProjectApp. See "Project mount" under Key patterns
+    worktree.go           → WorktreeAdd / WorktreeRemove / WorktreeList / WorktreeSource: a bench per git
+                            worktree. See "Worktree benches" under Key patterns. attachProjectMount
+                            (projectmount.go) mounts the worktree into the restored clone;
+                            bench/worktree.go has the slug / bench name / alias rules
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
     jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
     progress.go           → ProgressWriter + CLIProgress / DiscardProgress / BufferProgress
@@ -514,6 +523,27 @@ internal/
     It is not added to `sites/excluded_apps.txt`: that would also drop it from bare
     `bench setup requirements --dev`, which `ffm test` relies on.
   An existing bench is not changed by `ffm up`: delete it and run `ffm up` again to get a mount.
+- **Worktree benches** (`ffm worktree add <branch>`; dev only; needs a project-mount bench).
+  `WorktreeAdd` = `Clone` (backup + restore, unchanged) → `git worktree add` → `attachProjectMount`
+  under the new bench's lock. Restore never mounts, so the clone first has a plain copy of the app:
+  attach removes that copy (`apps/<app>` inside the bench dir only, after checking it is a real
+  directory, not a symlink, and the bench has no mount), records `ProjectApp`/`ProjectAppPath` +
+  `WorktreeOf`/`WorktreeBranch`/`WorktreeCreatedBranch`, drops the app from `Apps`, adds the alias
+  `<slug>.<from>.localhost`, re-renders compose (`applyDomainChange`), runs the two `setup
+  requirements` halves, migrate and `bench build --app`. The restored clone gets `MatchHostUser`
+  from the host (`needsHostUserRemap`), so the worktree is writable. Bench name `<from>-<slug>`
+  (hash suffix past 63); worktree at `<repo-parent>/<repo>.worktrees/<slug>`, never inside the repo.
+  `*.localhost` aliases are exempt from the dev "aliases need --lan" rule (`aliasesNeedLAN`).
+  **Invariant: ffm never deletes the user's worktree/checkout or changes its git state**, except
+  `git worktree remove` WITHOUT `--force` (git refuses dirty/untracked; `--force` only when the user
+  passes it) and `git branch -d` (never -D) only for a branch ffm created and only with
+  `--delete-branch`. Every failure after the git step deletes the bench, keeps the worktree and
+  prints the `git -C <repo> worktree remove <path>` (+ `branch -d`) commands (`ffm worktree remove`
+  cannot be used then: the bench record is gone). Remove checks `git status --porcelain` first so a
+  dirty worktree is refused before the backup, runs git before deleting the bench, and keeps both on
+  any refusal. Recreate carries the Worktree* fields. The Claude Code hooks: create is synchronous
+  (`"timeout": 1800`), remove never forces, deletes the branch only if ffm created it, refuses an
+  unknown `worktree_path`. `.worktreeinclude` matches (untracked files) are copied, never over a file.
 - **Domain aliases** (`ffm domain add`, `ffm create --domain-alias`) route extra hostnames — LAN
   names like `erp.internal` — to a bench alongside its primary host. ffm only configures Traefik;
   pointing DNS at the host is the user's job and `domain add` prints the records to create.

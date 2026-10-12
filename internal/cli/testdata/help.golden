@@ -45,6 +45,7 @@ Available Commands:
   up          Create or start the development bench this project's ffm.yaml describes
   update      Update ffm to the latest version
   version     Print the ffm version
+  worktree    Run a branch of your project in its own bench, in a git worktree
 
 Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -1445,6 +1446,109 @@ Usage:
 
 Flags:
       --json   Print machine-readable JSON (schema ffm.version/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree
+Usage:
+  ffm worktree [command]
+
+Available Commands:
+  add         Clone a project bench and mount a new git worktree of the branch into it
+  hook        Claude Code WorktreeCreate and WorktreeRemove hooks
+  list        List worktree benches
+  remove      Remove a worktree bench and its git worktree
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm worktree [command] --help" for more information about a command.
+
+=== ffm worktree add
+Usage:
+  ffm worktree add <branch> [flags]
+
+Examples:
+  ffm worktree add feat/login
+  ffm worktree add fix/csv --base origin/main --from myapp --no-files
+
+Flags:
+      --base string   Commit or branch a new branch starts from
+      --from string   Source bench (default: the bench of this repository's main checkout)
+      --json          Print the result as JSON (ffm.worktree/v1); progress goes to stderr
+      --name string   Bench name (default: <source>-<branch slug>)
+      --no-files      Leave the site's attachments behind
+      --path string   Where the worktree goes (default: <repo>.worktrees/<slug> beside the checkout)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree hook
+Usage:
+  ffm worktree hook [command]
+
+Available Commands:
+  create      WorktreeCreate hook: reads {cwd, name} on stdin, prints the worktree path
+  print       Print the .claude/settings.json snippet that installs the hooks
+  remove      WorktreeRemove hook: reads {worktree_path} on stdin, removes the worktree and its bench
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm worktree hook [command] --help" for more information about a command.
+
+=== ffm worktree hook create
+Usage:
+  ffm worktree hook create [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree hook print
+Usage:
+  ffm worktree hook print [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree hook remove
+Usage:
+  ffm worktree hook remove [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree list
+Usage:
+  ffm worktree list [flags]
+
+Aliases:
+  list, ls
+
+Flags:
+      --json   Print JSON (ffm.worktrees/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm worktree remove
+Usage:
+  ffm worktree remove <branch|path|bench> [flags]
+
+Flags:
+      --delete-branch   Also run git branch -d on a branch ffm created
+      --force           Pass --force to git worktree remove: discard uncommitted and untracked files
+      --keep-worktree   Remove the bench only; leave the worktree
+      --no-backup       Do not back the bench up before deleting it
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
