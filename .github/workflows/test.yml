@@ -33,6 +33,14 @@ jobs:
       - name: go test (race)
         run: go test -race ./...
 
+      # The dashboard's committed stylesheet must be what the pinned Tailwind
+      # CLI generates from the templates: a template edit without a rebuild
+      # would ship pages with missing classes.
+      - name: dashboard CSS is up to date
+        run: |
+          make dashboard-css
+          git diff --exit-code -- internal/dashboard/static/tailwind.css
+
       - name: build for windows and darwin
         run: |
           GOOS=windows GOARCH=amd64 go build ./...

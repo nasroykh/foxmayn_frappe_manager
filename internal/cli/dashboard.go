@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,7 +24,12 @@ func newDashboardCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Web dashboard for managing Frappe benches",
-		Long:  `Optional HTTP admin UI at /admin (HTTP Basic auth). Default: 127.0.0.1:8787`,
+		Long: `Optional admin UI at /admin (HTTP Basic auth). Default: http://127.0.0.1:8787
+
+A non-loopback --listen address is refused unless the dashboard serves TLS
+itself (--tls-cert and --tls-key) or you pass --insecure-http. The one-shot
+command page is off unless started with --allow-exec. Every dashboard POST is
+appended to dashboard-audit.jsonl in the config directory.`,
 	}
 	cmd.AddCommand(
 		newDashboardStartCmd(),
@@ -39,6 +45,10 @@ func newDashboardStartCmd() *cobra.Command {
 		daemon        bool
 		listen        string
 		adminPassword string
+		tlsCert       string
+		tlsKey        string
+		insecureHTTP  bool
+		allowExec     bool
 	)
 
 	cmd := &cobra.Command{
@@ -55,32 +65,70 @@ func newDashboardStartCmd() *cobra.Command {
 			if adminPassword != "" {
 				cfg.AdminPassword = adminPassword
 			}
+			if cmd.Flags().Changed("tls-cert") {
+				cfg.TLSCert = tlsCert
+			}
+			if cmd.Flags().Changed("tls-key") {
+				cfg.TLSKey = tlsKey
+			}
+			if cmd.Flags().Changed("insecure-http") {
+				cfg.InsecureHTTP = insecureHTTP
+			}
+			if cmd.Flags().Changed("allow-exec") {
+				cfg.AllowExec = allowExec
+			}
 			if cfg.AdminPassword == "" {
-				return fmt.Errorf("--admin-password is required to enable the /admin UI")
+				return usageError{errors.New("--admin-password is required to enable the /admin UI")}
+			}
+			if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
+				return usageError{errors.New("--tls-cert and --tls-key go together")}
+			}
+			// Checked before anything is saved or spawned: the daemon would
+			// otherwise fail into dashboard.log after "Dashboard started".
+			if err := server.CheckListen(cfg.ListenAddr, cfg.TLSCert != "", cfg.InsecureHTTP); err != nil {
+				return usageError{err}
 			}
 			if err := dashboard.SaveConfig(cfg); err != nil {
 				return err
 			}
 			if daemon {
-				return startDashboardDaemon(cfg.ListenAddr)
+				return startDashboardDaemon(cfg)
 			}
-			return runDashboardForeground(cfg.ListenAddr, cfg.AdminPassword)
+			return runDashboardForeground(cfg)
 		},
 	}
 	cmd.Flags().BoolVarP(&daemon, "daemon", "d", false, "Run in background")
 	cmd.Flags().StringVar(&listen, "listen", "", "Listen address (default 127.0.0.1:8787)")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "HTTP Basic password for /admin")
+	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "PEM certificate file: serve HTTPS (needs --tls-key); saved in dashboard.json")
+	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "PEM private key file for --tls-cert")
+	cmd.Flags().BoolVar(&insecureHTTP, "insecure-http", false, "Allow a non-loopback --listen address over plain HTTP (the password crosses the network in clear)")
+	cmd.Flags().BoolVar(&allowExec, "allow-exec", false, "Enable the one-shot command page (remote code execution in bench containers; off by default)")
 	return cmd
 }
 
-func runDashboardForeground(addr, password string) error {
+func dashboardOptions(cfg dashboard.Config, addr string) []server.Option {
+	return []server.Option{
+		server.WithAddr(addr),
+		server.WithAdminPassword(cfg.AdminPassword),
+		server.WithTLS(cfg.TLSCert, cfg.TLSKey),
+		server.WithInsecureHTTP(cfg.InsecureHTTP),
+		server.WithAllowExec(cfg.AllowExec),
+	}
+}
+
+func dashboardScheme(cfg dashboard.Config) string {
+	if cfg.TLSCert != "" {
+		return "https"
+	}
+	return "http"
+}
+
+func runDashboardForeground(cfg dashboard.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	s := server.New(
-		server.WithAddr(addr),
-		server.WithAdminPassword(password),
-	)
-	fmt.Printf("Dashboard: http://%s/admin\n", addr)
+	s := server.New(dashboardOptions(cfg, cfg.ListenAddr)...)
+	fmt.Printf("Dashboard: %s://%s/admin\n", dashboardScheme(cfg), cfg.ListenAddr)
 	return s.Run(ctx)
 }
 
@@ -102,7 +150,8 @@ func isDashboardRunning() (pid int, alive bool) {
 // startDashboardDaemon re-executes ffm in the background. The admin password
 // is not passed on the command line, where every local user could read it in
 // `ps`: the daemon reads it from dashboard.json, saved just before.
-func startDashboardDaemon(addr string) error {
+func startDashboardDaemon(cfg dashboard.Config) error {
+	addr := cfg.ListenAddr
 	if pid, alive := isDashboardRunning(); alive {
 		return fmt.Errorf("dashboard already running (PID %d)", pid)
 	}
@@ -133,17 +182,14 @@ func startDashboardDaemon(addr string) error {
 		return err
 	}
 	fmt.Printf("Dashboard started (PID %d). Log: %s\n", cmd.Process.Pid, dashboardLogPath())
-	fmt.Printf("Open http://%s/admin\n", addr)
+	fmt.Printf("Open %s://%s/admin\n", dashboardScheme(cfg), addr)
 	return nil
 }
 
 // RunDashboardDaemon is the hidden entrypoint for background mode.
-func RunDashboardDaemon(listen, adminPassword string) error {
+func RunDashboardDaemon(cfg dashboard.Config, listen string) error {
 	ctx := context.Background()
-	return server.New(
-		server.WithAddr(listen),
-		server.WithAdminPassword(adminPassword),
-	).Run(ctx)
+	return server.New(dashboardOptions(cfg, listen)...).Run(ctx)
 }
 
 func newDashboardStopCmd() *cobra.Command {
@@ -175,7 +221,7 @@ func newDashboardStatusCmd() *cobra.Command {
 			pid, alive := isDashboardRunning()
 			cfg, _ := dashboard.LoadConfig()
 			if alive {
-				fmt.Printf("Dashboard running (PID %d) at http://%s/admin\n", pid, cfg.ListenAddr)
+				fmt.Printf("Dashboard running (PID %d) at %s://%s/admin\n", pid, dashboardScheme(cfg), cfg.ListenAddr)
 			} else {
 				fmt.Println("Dashboard stopped.")
 			}

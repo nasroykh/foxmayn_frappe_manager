@@ -29,7 +29,10 @@ Version info is injected at build time via `-ldflags` (see `Makefile` LDFLAGS).
 
 Tests are sparse but present — `make test` runs `go test ./...`. Coverage today is template
 rendering (`internal/bench/hostuid_render_test.go`, `internal/bench/renderout_test.go`),
-dashboard handlers (`internal/dashboard/handler_test.go`), the archive format
+dashboard handlers and security (`internal/dashboard/handler_test.go`,
+`security_test.go`; every one isolates FFM_CONFIG_DIR / FFM_BENCHES_DIR / FFM_BACKUPS_DIR to
+a temp dir and fakes docker), the server's headers and listen check
+(`internal/server/server_test.go`), the archive format
 (`internal/archive/archive_test.go` — hostile tars built in memory), the archived app
 source validator (`internal/archive/appsource_test.go`), the backup/restore
 manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
@@ -180,8 +183,12 @@ internal/
     tunnel.go             → ffm tunnel flags; bare 'ffm tunnel' PRINTS STATUS, it does not enable
     tunnel_server.go      → ffm tunnel server list/add/set/remove/use
     dashboard.go          → ffm dashboard start/stop/status/logs; --daemon re-execs the binary
-                            with the hidden __dashboard-daemon argv
-    dashboard_daemon.go   → maybeRunDashboardDaemon(): that hidden entrypoint
+                            with the hidden __dashboard-daemon argv. --tls-cert / --tls-key /
+                            --insecure-http / --allow-exec are persisted in dashboard.json (a flag
+                            only overrides when given; =false clears); server.CheckListen runs
+                            before anything is saved or spawned
+    dashboard_daemon.go   → maybeRunDashboardDaemon(): that hidden entrypoint (reads TLS/exec
+                            settings from dashboard.json, never argv)
     dashboard_sys_unix.go / dashboard_sys_windows.go → SysProcAttr for the detached daemon (Windows:
                             HideWindow + CreationFlags DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP so the
                             daemon outlives the console — UNVERIFIED on a real Windows host)
@@ -375,16 +382,43 @@ internal/
                             <app>/ (links included) before tar unpacks it in the container
 
   dashboard/              → the /admin web UI. Stdlib only: html/template, embed, net/http.
-    handler.go            → //go:embed templates + static, basic auth, rendering
+    handler.go            → //go:embed templates + static, basic auth behind the limiter, rendering;
+                            BenchReveal (POST-only password fetch, no-store JSON), BenchExec (404
+                            unless Handler.AllowExec; 403 on bad CSRF; service checked against
+                            the bench's compose services; audited BEFORE it runs), serviceAllowed
     handler_actions.go    → POST endpoints for every bench operation
     handler_jobs.go       → job list/detail + SSE progress stream
-    handler_logs.go       → SSE docker compose log stream
-    handler_csrf.go       → HMAC double-submit CSRF tokens
-    config.go             → dashboard.json; DefaultListenAddr 127.0.0.1:8787
-    templates/ static/    → layout + 10 pages; admin.css, admin.js
+    handler_logs.go       → SSE docker compose log stream (?service= validated)
+    handler_csrf.go       → HMAC double-submit CSRF tokens; cookie Secure when r.TLS != nil
+    auth_limit.go         → authLimiter: per TCP-peer address 5 wrong passwords/min -> 429 +
+                            Retry-After, backoff 30 s doubling to 15 min; global 30/min; a request
+                            with no credentials is not a failure; X-Forwarded-For deliberately
+                            ignored (behind a reverse proxy all clients share one budget)
+    audit.go              → h.Audited wraps every POST route: JSONL to config.DashboardAuditFile
+                            (0600), action/bench/status/result, exec service+command verbatim,
+                            reveal field name (never the value). Handlers add outcomes through
+                            auditNote (redirectWithFlash does it for flashes)
+    config.go             → dashboard.json; DefaultListenAddr 127.0.0.1:8787; TLSCert / TLSKey /
+                            InsecureHTTP / AllowExec
+    tailwind.config.js / tailwind.in.css → input of `make dashboard-css`
+    templates/ static/    → layout + 10 pages; tailwind.css is GENERATED AND COMMITTED (pinned
+                            Tailwind v3.4.19 standalone CLI, sha256-checked in the Makefile; CI
+                            fails on a diff), admin.css, admin.js (reveal/copy/confirm/menu),
+                            logs.js, jobs.js. No inline script, no on*= attribute, no style=
+                            attribute, no external origin: the CSP forbids all of them
+                            (TestRenderedPageLoadsOnlyOwnFiles). Edit a template -> run
+                            `make dashboard-css` and commit the CSS. Page data goes to JS
+                            through data-* attributes; fetch() takes the CSRF token from
+                            <meta name="csrf-token">
 
   server/server.go        → net/http server (Go 1.22 method+pattern routes). GET /health always;
-                            /admin/* only when an admin password is set; WriteTimeout 0 for SSE
+                            /admin/* only when an admin password is set; WriteTimeout 0 for SSE.
+                            securityHeaders (outermost, so 401/403 carry them: CSP, XFO DENY,
+                            nosniff, Referrer-Policy no-referrer, COOP; HSTS only under TLS) around
+                            http.CrossOriginProtection around the mux. Run enforces checkListen
+                            (non-loopback needs TLS or --insecure-http; that covers the daemon),
+                            ListenAndServeTLS when a cert is set, ReadHeaderTimeout 10 s.
+                            POST routes go through h.Audited
 
   bench/                  → core bench logic, no CLI concerns
     bench.go              → name validation, ProjectName/container helpers
@@ -877,7 +911,7 @@ internal/
 - `github.com/go-resty/resty/v2` — HTTP client for the GitHub releases API
 
 The dashboard and server add **no** dependencies — stdlib `net/http`, `html/template`, `embed`,
-`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.1; the router uses Go 1.22 method+pattern
+`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.9; the router uses Go 1.22 method+pattern
 syntax.
 
 ## Release

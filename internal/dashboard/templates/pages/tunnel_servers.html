@@ -50,7 +50,7 @@
                     </button>
                   </form>
                   {{end}}
-                  <form method="post" action="/admin/tunnel-servers/{{$name}}/remove" class="inline" onsubmit="return confirm('Remove tunnel server {{$name}} permanently?')">
+                  <form method="post" action="/admin/tunnel-servers/{{$name}}/remove" class="inline" data-confirm="Remove tunnel server {{$name}} permanently?">
                     <input type="hidden" name="csrf_token" value="{{$.Meta.CSRFToken}}">
                     <button class="inline-flex items-center justify-center rounded-md bg-white hover:bg-rose-50 dark:bg-zinc-900 dark:hover:bg-rose-950/20 border border-zinc-200 dark:border-zinc-800 hover:border-rose-200 dark:hover:border-rose-900/30 text-zinc-700 dark:text-zinc-200 hover:text-rose-600 dark:hover:text-rose-400 px-2.5 py-1.5 text-xs font-semibold transition-colors focus:outline-none" type="submit">
                       Remove

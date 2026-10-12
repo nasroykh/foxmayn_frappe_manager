@@ -2,17 +2,23 @@ package dashboard
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/json"
+	"errors"
 	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/version"
 )
@@ -36,8 +42,13 @@ type Handler struct {
 	Jobs     *manager.JobStore
 	Password string
 	Logger   *slog.Logger
-	tmpl     *template.Template
-	static   http.Handler
+	// AllowExec enables the exec page and POST. Off by default; when off the
+	// routes answer 404 and the bench page hides the link.
+	AllowExec bool
+	tmpl      *template.Template
+	static    http.Handler
+	limiter   *authLimiter
+	audit     *auditLog
 }
 
 // NewHandler builds a Handler with parsed templates.
@@ -77,16 +88,40 @@ func NewHandler(password string, logger *slog.Logger) (*Handler, error) {
 		Logger:   logger,
 		tmpl:     tmpl,
 		static:   http.FileServer(http.FS(staticSub)),
+		limiter:  newAuthLimiter(),
+		audit:    &auditLog{},
 	}, nil
 }
 
+// auth checks HTTP Basic credentials (the user name is ignored) behind the
+// failed-login limiter. A request without credentials is only the browser's
+// first probe and is answered 401 without counting as a failure.
 func (h *Handler) auth(w http.ResponseWriter, r *http.Request) bool {
+	ip := clientIP(r)
+	if ok, retry := h.limiter.check(ip); !ok {
+		secs := int(retry.Round(time.Second) / time.Second)
+		if secs < 1 {
+			secs = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		http.Error(w, "Too many failed logins. Try again later.", http.StatusTooManyRequests)
+		return false
+	}
 	_, pass, ok := r.BasicAuth()
-	if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(h.Password)) != 1 {
+	if !ok {
 		w.Header().Set("WWW-Authenticate", `Basic realm="ffm admin"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return false
 	}
+	// Hash first so the comparison does not leak the password's length.
+	got, want := sha256.Sum256([]byte(pass)), sha256.Sum256([]byte(h.Password))
+	if subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
+		h.limiter.fail(ip)
+		w.Header().Set("WWW-Authenticate", `Basic realm="ffm admin"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	h.limiter.success(ip)
 	return true
 }
 
@@ -235,8 +270,9 @@ func (h *Handler) BenchesList(w http.ResponseWriter, r *http.Request) {
 }
 
 type benchDetailData struct {
-	Meta  PageMeta
-	Bench manager.BenchDetail
+	Meta      PageMeta
+	Bench     manager.BenchDetail
+	AllowExec bool
 }
 
 func (h *Handler) BenchDetail(w http.ResponseWriter, r *http.Request) {
@@ -249,10 +285,42 @@ func (h *Handler) BenchDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	// Passwords never go into the page: the Reveal and Copy buttons fetch
+	// them on demand through BenchReveal, which audits each read.
+	detail.AdminPassword = ""
+	detail.DBPassword = ""
 	h.renderPage(w, r, "bench_detail_body", &benchDetailData{
-		Meta:  h.meta(r, name, "benches"),
-		Bench: detail,
+		Meta:      h.meta(r, name, "benches"),
+		Bench:     detail,
+		AllowExec: h.AllowExec,
 	})
+}
+
+// BenchReveal answers POST /admin/benches/{name}/reveal with one stored
+// password as JSON. It is POST-only with a CSRF token (a GET could be fetched
+// cross-site or prefetched), never cached, and audited.
+func (h *Handler) BenchReveal(w http.ResponseWriter, r *http.Request) {
+	if !h.auth(w, r) || !h.requirePOST(w, r) {
+		return
+	}
+	b, err := h.Svc.GetBench(r.PathValue("name"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var value string
+	switch r.FormValue("field") {
+	case "admin":
+		value = b.AdminPassword
+	case "db":
+		value = b.DBPassword
+	default:
+		http.Error(w, "field must be admin or db", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]string{"value": value})
 }
 
 type benchFormData struct {
@@ -360,11 +428,38 @@ func (h *Handler) BenchLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	service := r.URL.Query().Get("service")
+	if !h.serviceAllowed(w, name, service) {
+		return
+	}
 	h.renderPage(w, r, "logs_body", &logsPageData{
 		Meta:    h.meta(r, "Logs — "+name, "benches"),
 		Bench:   name,
-		Service: r.URL.Query().Get("service"),
+		Service: service,
 	})
+}
+
+// serviceAllowed checks service against the bench's compose services and
+// writes the error response itself. An empty service means "all" (logs) and
+// passes. The name reaches a docker argument list and a container exec, so it
+// must be one the bench defines.
+func (h *Handler) serviceAllowed(w http.ResponseWriter, bench, service string) bool {
+	if service == "" {
+		return true
+	}
+	err := h.Svc.ValidateService(bench, service)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, manager.ErrUnknownService):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, state.ErrNotFound):
+		http.Error(w, "bench not found", http.StatusNotFound)
+	default:
+		h.Logger.Error("dashboard: list compose services", "bench", bench, "err", err)
+		http.Error(w, "could not list the bench's services", http.StatusBadGateway)
+	}
+	return false
 }
 
 type execPageData struct {
@@ -375,8 +470,16 @@ type execPageData struct {
 	Command string
 }
 
+// BenchExec is the one-shot command page. It is off unless the dashboard was
+// started with --allow-exec: running commands in a container is remote code
+// execution behind a single shared password. Every attempt is audited, and the
+// command is written to the log before it runs.
 func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) {
+		return
+	}
+	if !h.AllowExec {
+		http.NotFound(w, r)
 		return
 	}
 	name := r.PathValue("name")
@@ -385,10 +488,27 @@ func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 		Bench:   name,
 		Service: "frappe",
 	}
-	if r.Method == http.MethodPost && h.validateCSRF(r) {
-		_ = r.ParseForm()
+	if r.Method == http.MethodPost {
+		if !h.validateCSRF(r) {
+			http.Error(w, "invalid csrf token", http.StatusForbidden)
+			return
+		}
 		data.Service = r.FormValue("service")
 		data.Command = r.FormValue("command")
+		if data.Service == "" {
+			data.Service = "frappe"
+		}
+		if !h.serviceAllowed(w, name, data.Service) {
+			return
+		}
+		if err := h.audit.write(auditEntry{
+			Time: time.Now().UTC(), IP: clientIP(r), Action: "/admin/benches/{name}/exec",
+			Bench: name, Service: data.Service, Command: data.Command, Result: "started",
+		}); err != nil {
+			h.Logger.Error("dashboard: audit write failed, refusing exec", "err", err)
+			http.Error(w, "audit log unavailable; command not run", http.StatusInternalServerError)
+			return
+		}
 		out, err := h.Svc.Exec(manager.ExecInput{
 			BenchName: name,
 			Service:   data.Service,
@@ -396,6 +516,7 @@ func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			data.Output = err.Error()
+			auditNote(r, "error: "+clip(err.Error(), 300))
 		} else {
 			data.Output = out
 		}
@@ -408,6 +529,12 @@ func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 // id: error text often embeds command output, and in a query string it would
 // land in browser history, proxy logs and Referer headers.
 func redirectWithFlash(w http.ResponseWriter, r *http.Request, path, okMsg, errMsg string) {
+	switch {
+	case errMsg != "":
+		auditNote(r, "error: "+clip(errMsg, 300))
+	case okMsg != "":
+		auditNote(r, "ok")
+	}
 	u, _ := url.Parse(path)
 	if okMsg != "" || errMsg != "" {
 		q := u.Query()

@@ -35,7 +35,7 @@ func maybeRunDashboardDaemon() bool {
 		fmt.Fprintln(os.Stderr, "dashboard: no admin password in dashboard.json; start it with --admin-password")
 		os.Exit(1)
 	}
-	if err := RunDashboardDaemon(listen, cfg.AdminPassword); err != nil {
+	if err := RunDashboardDaemon(cfg, listen); err != nil {
 		fmt.Fprintf(os.Stderr, "dashboard: %v\n", err)
 		os.Exit(1)
 	}

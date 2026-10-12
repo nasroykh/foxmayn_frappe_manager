@@ -39,25 +39,79 @@
     });
   });
 
-  // Reveal / Mask toggle helper
+  // CSRF token for fetch(): the layout puts it in a <meta>.
+  function csrfToken() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.getAttribute('content') : '';
+  }
+
+  // Secrets are never in the page. A POST fetches one on demand; the server
+  // audits it and answers with Cache-Control: no-store.
+  function fetchSecret(url, field) {
+    var body = new URLSearchParams();
+    body.set('csrf_token', csrfToken());
+    body.set('field', field);
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (d) { return d.value; });
+  }
+
+  // Reveal / Hide toggle: the placeholder is shown until the server is asked.
+  var MASK = '••••••••';
   document.querySelectorAll('[data-reveal]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var id = btn.getAttribute('data-reveal');
-      var code = document.getElementById(id);
+      var code = document.getElementById(btn.getAttribute('data-reveal'));
       if (!code) return;
-      
-      // If we are revealing
-      if (code.classList.contains('blur-[4px]')) {
-        code.classList.remove('blur-[4px]', 'select-none');
-        code.classList.add('select-all');
-        btn.textContent = 'Hide';
-      } else {
-        code.classList.add('blur-[4px]', 'select-none');
+      if (btn.textContent === 'Hide') {
+        code.textContent = MASK;
+        code.classList.add('select-none');
         code.classList.remove('select-all');
         btn.textContent = 'Reveal';
+        return;
       }
+      fetchSecret(btn.getAttribute('data-reveal-url'), btn.getAttribute('data-reveal-field'))
+        .then(function (value) {
+          code.textContent = value;
+          code.classList.remove('select-none');
+          code.classList.add('select-all');
+          btn.textContent = 'Hide';
+        })
+        .catch(function () {
+          btn.textContent = 'Failed';
+          setTimeout(function () { btn.textContent = 'Reveal'; }, 1500);
+        });
     });
   });
+
+  // Copy a secret without ever placing it in the DOM.
+  document.querySelectorAll('[data-copy-reveal]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      fetchSecret(btn.getAttribute('data-copy-reveal'), btn.getAttribute('data-reveal-field'))
+        .then(function (value) { copyText(value, btn); })
+        .catch(function () {});
+    });
+  });
+
+  // Copy the text of another element (terminal panes).
+  document.querySelectorAll('[data-copy-from]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById(btn.getAttribute('data-copy-from'));
+      if (el) copyText(el.innerText, btn);
+    });
+  });
+
+  // Mobile navigation drawer.
+  var menuBtn = document.getElementById('mobile-menu-btn');
+  var menu = document.getElementById('mobile-menu');
+  if (menuBtn && menu) {
+    menuBtn.addEventListener('click', function () { menu.classList.toggle('hidden'); });
+  }
 
   // Client-side search logic for tables
   var searchInput = document.getElementById('table-search');
@@ -72,10 +126,11 @@
     });
   }
 
-  // Direct simple confirmation dialogs
-  document.querySelectorAll('[data-confirm]').forEach(function (btn) {
-    btn.addEventListener('click', function (e) {
-      var msg = btn.getAttribute('data-confirm');
+  // Confirmation dialogs: data-confirm on a form (submit) or a button/link (click).
+  document.querySelectorAll('[data-confirm]').forEach(function (el) {
+    var type = el.tagName === 'FORM' ? 'submit' : 'click';
+    el.addEventListener(type, function (e) {
+      var msg = el.getAttribute('data-confirm');
       if (msg && !window.confirm(msg)) e.preventDefault();
     });
   });

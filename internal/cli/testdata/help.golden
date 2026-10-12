@@ -629,8 +629,12 @@ Usage:
 
 Flags:
       --admin-password string   HTTP Basic password for /admin
+      --allow-exec              Enable the one-shot command page (remote code execution in bench containers; off by default)
   -d, --daemon                  Run in background
+      --insecure-http           Allow a non-loopback --listen address over plain HTTP (the password crosses the network in clear)
       --listen string           Listen address (default 127.0.0.1:8787)
+      --tls-cert string         PEM certificate file: serve HTTPS (needs --tls-key); saved in dashboard.json
+      --tls-key string          PEM private key file for --tls-cert
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

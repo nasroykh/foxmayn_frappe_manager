@@ -645,7 +645,17 @@ make skills-init   # symlinks .agents/skills/* → .claude/ .cursor/ .agent/
 `make test` runs `go test ./...`, and `.github/workflows/test.yml` runs `go vet` + `go test`
 on every push and PR. Docker-free coverage lives in `internal/archive/` (hostile tars built in
 memory), `internal/manager/backup_manifest_test.go` and `backup_preflight_test.go`,
-`internal/bench/*_test.go` (template rendering) and `internal/dashboard/handler_test.go`.
+`internal/bench/*_test.go` (template rendering), `internal/dashboard/handler_test.go` +
+`security_test.go` and `internal/server/server_test.go`. Every dashboard test isolates
+`FFM_CONFIG_DIR` / `FFM_BENCHES_DIR` / `FFM_BACKUPS_DIR` to a temp dir and fakes docker
+(`fakeexec`); a test that does not would read the developer's real `benches.json` and
+`jobs.json`.
+
+The dashboard ships under a strict CSP (`script-src 'self'; style-src 'self'`): no inline
+`<script>`, no `on*=` or `style=` attributes, no external origin in a template, or
+`TestRenderedPageLoadsOnlyOwnFiles` fails. Pass page data to JS through `data-*` attributes.
+Tailwind is a committed build: after editing a template run `make dashboard-css` (pinned,
+sha256-checked CLI) and commit `internal/dashboard/static/tailwind.css`; CI fails on a diff.
 Scheduled backups are covered the same way: `backup_retention_test.go` simulates 60 days of
 runs per preset (count and coverage bounds, gaps, DST, the floor) and prunes real archives
 on disk; `backup_schedule_test.go` covers due/files decisions and run-due with docker

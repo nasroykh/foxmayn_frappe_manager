@@ -67,7 +67,7 @@
           <span class="text-xs text-zinc-500 font-mono font-medium ml-2">Terminal Execution Output</span>
         </div>
         {{if .Output}}
-        <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="copy-output-btn">
+        <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="copy-output-btn" data-copy-from="exec-output">
           Copy Output
         </button>
         {{end}}
@@ -88,19 +88,4 @@
   </div>
 </div>
 
-<script>
-(function(){
-  var copyBtn = document.getElementById('copy-output-btn');
-  var outputEl = document.getElementById('exec-output');
-  if (copyBtn && outputEl) {
-    copyBtn.addEventListener('click', function() {
-      navigator.clipboard.writeText(outputEl.innerText).then(function() {
-        var orig = copyBtn.textContent;
-        copyBtn.textContent = 'Copied!';
-        setTimeout(function() { copyBtn.textContent = orig; }, 1500);
-      });
-    });
-  }
-})();
-</script>
 {{end}}

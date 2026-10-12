@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -282,6 +283,28 @@ func (r *Runner) PS(format string) (string, error) {
 	cmd.Dir = r.ComposeDir
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// ConfigServices lists the services the bench's compose files define
+// (`docker compose config --services`), sorted.
+func (r *Runner) ConfigServices() ([]string, error) {
+	full := append(r.baseArgs(), "config", "--services")
+	cmd := execx.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("docker compose config --services: %w: %s", err, r.scrub(strings.TrimSpace(stderr.String())))
+	}
+	var services []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			services = append(services, line)
+		}
+	}
+	sort.Strings(services)
+	return services, nil
 }
 
 // MariaDBRootArgs returns the exec arguments that run sql as root in the

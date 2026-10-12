@@ -19,6 +19,9 @@ func (h *Handler) LogsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	service := r.URL.Query().Get("service")
+	if !h.serviceAllowed(w, name, service) {
+		return
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
