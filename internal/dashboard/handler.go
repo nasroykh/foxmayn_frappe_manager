@@ -62,6 +62,10 @@ func NewHandler(password string, logger *slog.Logger) (*Handler, error) {
 			}
 			return s[:2] + "****" + s[len(s)-2:]
 		},
+		// crumb feeds the benchcrumb template: bench name and current page.
+		"crumb": func(name, page string) map[string]string {
+			return map[string]string{"Name": name, "Page": page}
+		},
 		"statusClass": func(status string) string {
 			if status == "running" {
 				return "badge-active"

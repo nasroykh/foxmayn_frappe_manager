@@ -1,0 +1,219 @@
+{{define "scheduler_status"}}
+<div class="{{template "cls_card"}}">
+  <div class="{{template "cls_card_head"}}">
+    <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Hourly system job</h2>
+    {{if not .Known}}<span class="{{template "cls_badge_idle"}}">unknown</span>
+    {{else if .Installed}}<span class="{{template "cls_badge_ok"}}">installed ({{.Backend}})</span>
+    {{else}}<span class="{{template "cls_badge_warn"}}">not installed ({{.Backend}})</span>{{end}}
+  </div>
+  <div class="p-6 text-sm text-zinc-600 dark:text-zinc-400 space-y-2">
+    <p>Scheduled backups run from one hourly system job. The dashboard only saves each bench's policy and shows this status; it never installs or removes the job.</p>
+    {{if .Err}}<p>Could not inspect the scheduler: {{.Err}}</p>{{end}}
+    {{if and .Known (not .Installed)}}<p>Nothing runs the schedules yet. Install the job from a terminal: <code class="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono select-all">ffm backup scheduler install</code> (or <code class="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono select-all">ffm backup scheduler print</code> to install it by hand).</p>{{end}}
+    {{if .Drift}}<p>The installed job differs from what this ffm would install now. Update it with <code class="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono select-all">ffm backup scheduler install</code>.</p>{{end}}
+    {{if .Missing}}<p>The job's ffm binary no longer exists, so every run fails.</p>{{end}}
+    {{range .Warnings}}<p>{{.}}</p>{{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "backups_overview_body"}}
+<div class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+  <div>
+    <h1 class="{{template "cls_h1"}}">Backups</h1>
+    <p class="{{template "cls_sub"}}">Archives written by <code>ffm backup</code>, per bench. Restore always creates a new bench.</p>
+  </div>
+  <a class="{{template "cls_btn_primary"}}" href="/admin/restore">Restore an archive</a>
+</div>
+
+<div class="{{template "cls_card"}} mb-8">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left">
+      <thead class="{{template "cls_thead"}}">
+        <tr>
+          <th scope="col" class="{{template "cls_th"}}">Bench</th>
+          <th scope="col" class="{{template "cls_th"}}">Archives</th>
+          <th scope="col" class="{{template "cls_th"}}">Newest</th>
+          <th scope="col" class="{{template "cls_th"}}">Schedule</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+        {{range .Rows}}
+        <tr>
+          <td class="{{template "cls_td"}} font-mono font-semibold">
+            {{if .Exists}}<a class="hover:underline text-indigo-600 dark:text-indigo-400" href="/admin/benches/{{.Name}}/backups">{{.Name}}</a>
+            {{else}}{{.Name}} <span class="{{template "cls_badge_idle"}}">deleted</span>{{end}}
+          </td>
+          <td class="{{template "cls_td"}}">{{.Archives}}</td>
+          <td class="{{template "cls_td"}}">{{if .Newest}}{{.Newest}}{{else}}never{{end}}</td>
+          <td class="{{template "cls_td"}}">{{.Schedule}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="4" class="px-6 py-8 text-center text-sm text-zinc-500">No benches and no archives yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{template "scheduler_status" .Scheduler}}
+{{end}}
+
+{{define "bench_backups_body"}}
+{{template "benchcrumb" crumb .Name "Backups"}}
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Backups of {{.Name}}</h1>
+  <p class="{{template "cls_sub"}}">Portable archives in the backups directory, outside the bench: they survive a recreate or delete.</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <div class="lg:col-span-2 space-y-8">
+    <div class="{{template "cls_card"}}">
+      <div class="{{template "cls_card_head"}}">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Archives</h2>
+        <span class="text-xs text-zinc-400">{{len .Archives}} found</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="{{template "cls_thead"}}">
+            <tr>
+              <th scope="col" class="{{template "cls_th"}}">Created</th>
+              <th scope="col" class="{{template "cls_th"}}">File</th>
+              <th scope="col" class="{{template "cls_th"}}">Size</th>
+              <th scope="col" class="{{template "cls_th"}}">Kind</th>
+              <th scope="col" class="{{template "cls_th"}}"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {{range .Archives}}
+            <tr>
+              <td class="{{template "cls_td"}}">{{if .Err}}unreadable{{else}}{{.Created}}{{end}}</td>
+              <td class="{{template "cls_td"}} font-mono">{{.File}}{{if .Label}}<div class="text-zinc-400">{{.Label}}</div>{{end}}{{if .Err}}<div class="text-rose-500">{{.Err}}</div>{{end}}</td>
+              <td class="{{template "cls_td"}}">{{.Size}}</td>
+              <td class="{{template "cls_td"}}">{{.Trigger}}, {{if .Files}}db+files{{else}}db{{end}}{{if .Encrypted}}, encrypted{{end}}</td>
+              <td class="{{template "cls_td"}}">{{if not .Err}}<a class="hover:underline text-indigo-600 dark:text-indigo-400" href="/admin/restore?archive={{.Key}}">Restore</a>{{end}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="5" class="px-6 py-8 text-center text-sm text-zinc-500">No archives yet.</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {{template "scheduler_status" .Scheduler}}
+  </div>
+
+  <div class="space-y-8">
+    <div class="{{template "cls_card"}}">
+      <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Back up now</h2></div>
+      <form method="post" action="/admin/benches/{{.Name}}/backups" class="p-6 space-y-3">
+        {{template "csrf" .Meta.CSRFToken}}
+        <div>
+          <label class="{{template "cls_label"}}">Label (optional)</label>
+          <input name="label" maxlength="200" placeholder="before the upgrade" class="{{template "cls_input"}}">
+        </div>
+        <label class="{{template "cls_check"}}"><input name="no_files" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Database only (no attachments)</label>
+        <button class="{{template "cls_btn_primary"}} w-full" type="submit">Run backup (job)</button>
+      </form>
+    </div>
+
+    <div class="{{template "cls_card"}}">
+      <div class="{{template "cls_card_head"}}">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Schedule</h2>
+        {{if and .Policy .Policy.Enabled}}<span class="{{template "cls_badge_ok"}}">on</span>{{else}}<span class="{{template "cls_badge_idle"}}">off</span>{{end}}
+      </div>
+      <div class="p-6 space-y-4">
+        {{if .Policy}}
+        <dl class="text-xs space-y-1 text-zinc-600 dark:text-zinc-400">
+          <div>Every {{.Policy.EveryHours}}h, attachments {{.Policy.Files}}</div>
+          <div>Keep {{.Policy.KeepHourly}} hourly / {{.Policy.KeepDaily}} daily / {{.Policy.KeepWeekly}} weekly</div>
+          <div>Last success: {{.LastOK}}; next due: {{.NextDue}}</div>
+          {{if .LastRun}}<div>Last attempt: {{.LastRun}}</div>{{end}}
+        </dl>
+        {{end}}
+        <form method="post" action="/admin/benches/{{.Name}}/backups/schedule" class="space-y-3">
+          {{template "csrf" .Meta.CSRFToken}}
+          <div>
+            <label class="{{template "cls_label"}}">Every</label>
+            <select name="every" class="{{template "cls_input"}}">
+              <option value="">{{if .Policy}}keep the current interval{{else}}24h (default){{end}}</option>
+              <option value="1h">1h (24 hourly, 7 daily, 5 weekly)</option>
+              <option value="6h">6h</option>
+              <option value="24h">24h (7 daily, 5 weekly)</option>
+              <option value="168h">168h (4 weekly)</option>
+            </select>
+            <span class="{{template "cls_hint"}}">Choosing an interval resets retention to its preset.</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div><label class="{{template "cls_label"}}">Hourly</label><input name="keep_hourly" type="number" min="0" class="{{template "cls_input"}}"></div>
+            <div><label class="{{template "cls_label"}}">Daily</label><input name="keep_daily" type="number" min="0" class="{{template "cls_input"}}"></div>
+            <div><label class="{{template "cls_label"}}">Weekly</label><input name="keep_weekly" type="number" min="0" class="{{template "cls_input"}}"></div>
+          </div>
+          <div>
+            <label class="{{template "cls_label"}}">Attachments</label>
+            <select name="files" class="{{template "cls_input"}}">
+              <option value="">preset / current</option>
+              <option value="every-run">every run</option>
+              <option value="daily">daily</option>
+              <option value="weekly">weekly</option>
+              <option value="never">never</option>
+            </select>
+          </div>
+          <span class="{{template "cls_hint"}}">Encryption and upload targets are set from the CLI and kept as they are.</span>
+          <button class="{{template "cls_btn"}} w-full" type="submit" name="action" value="set">Save schedule</button>
+        </form>
+        {{if .Policy}}
+        <form method="post" action="/admin/benches/{{.Name}}/backups/schedule" data-confirm="Turn scheduled backups off for {{.Name}}? Existing archives are kept.">
+          {{template "csrf" .Meta.CSRFToken}}
+          <button class="{{template "cls_btn_danger"}} w-full" type="submit" name="action" value="off">Turn schedule off</button>
+        </form>
+        <a class="{{template "cls_btn"}} w-full" href="/admin/benches/{{.Name}}/backups/prune">Preview prune</a>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "backups_prune_body"}}
+{{template "benchcrumb" crumb .Name "Prune backups"}}
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Prune backups of {{.Name}}</h1>
+  <p class="{{template "cls_sub"}}">Preview only: nothing has been deleted. Only scheduled archives are ever pruned, never below 3 of them; manual archives are left alone ({{.Ignored}} left alone).</p>
+</div>
+
+<div class="{{template "cls_card"}} mb-8">
+  <div class="{{template "cls_card_head"}}">
+    <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Would be removed</h2>
+    <span class="text-xs text-zinc-400">{{len .Removed}} archives, {{len .Partials}} stale partial files</span>
+  </div>
+  <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
+    {{range .Removed}}<li class="{{template "cls_td"}} font-mono">{{.File}} <span class="text-zinc-400">{{.Created}}, {{.Size}}</span></li>{{end}}
+    {{range .Partials}}<li class="{{template "cls_td"}} font-mono">{{.}} <span class="text-zinc-400">partial</span></li>{{end}}
+    {{if and (not .Removed) (not .Partials)}}<li class="px-6 py-6 text-sm text-zinc-500">Nothing to prune.</li>{{end}}
+  </ul>
+</div>
+
+<div class="{{template "cls_card"}} mb-8">
+  <div class="{{template "cls_card_head"}}">
+    <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Kept</h2>
+    <span class="text-xs text-zinc-400">{{len .Kept}} archives</span>
+  </div>
+  <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
+    {{range .Kept}}<li class="{{template "cls_td"}} font-mono">{{.File}} <span class="text-zinc-400">{{.Created}}, {{.Size}}</span></li>{{end}}
+  </ul>
+</div>
+
+<div class="flex items-center gap-4">
+  {{if or .Removed .Partials}}
+  <form method="post" action="/admin/benches/{{.Name}}/backups/prune" data-confirm="Delete the {{len .Removed}} archive(s) listed above? This cannot be undone.">
+    {{template "csrf" .Meta.CSRFToken}}
+    <input type="hidden" name="expect_removed" value="{{len .Removed}}">
+    <input type="hidden" name="expect_partials" value="{{len .Partials}}">
+    <button class="{{template "cls_btn_danger"}}" type="submit">Prune now (job)</button>
+  </form>
+  {{end}}
+  <a class="{{template "cls_btn"}}" href="/admin/benches/{{.Name}}/backups">Back</a>
+</div>
+{{end}}

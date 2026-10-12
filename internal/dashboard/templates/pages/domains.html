@@ -1,0 +1,46 @@
+{{define "domains_body"}}
+{{template "benchcrumb" crumb .Name "Domains"}}
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Domains of {{.Name}}</h1>
+  <p class="{{template "cls_sub"}}">Extra hostnames Traefik routes to this bench. ffm only configures the proxy; pointing DNS at this host is up to you.</p>
+</div>
+{{if .Err}}<div class="{{template "cls_note"}}">{{.Err}}</div>{{end}}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <div class="lg:col-span-2 {{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Hosts</h2></div>
+    <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
+      <li class="{{template "cls_td"}} font-mono">{{.Primary}} <span class="{{template "cls_badge_idle"}}">primary</span></li>
+      {{$name := .Name}}{{$csrf := .Meta.CSRFToken}}
+      {{range .Aliases}}
+      <li class="{{template "cls_td"}} font-mono flex items-center justify-between">
+        <span>{{.}} <span class="{{template "cls_badge_idle"}}">alias</span></span>
+        <form method="post" action="/admin/benches/{{$name}}/domains/remove" data-confirm="Remove the alias {{.}}?">
+          {{template "csrf" $csrf}}
+          <input type="hidden" name="domain" value="{{.}}">
+          <button class="{{template "cls_btn_danger"}}" type="submit">Remove</button>
+        </form>
+      </li>
+      {{else}}
+      <li class="px-6 py-6 text-sm text-zinc-500">No aliases.</li>
+      {{end}}
+    </ul>
+  </div>
+
+  <div class="{{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Add an alias</h2></div>
+    <form method="post" action="/admin/benches/{{.Name}}/domains" class="p-6 space-y-3">
+      {{template "csrf" .Meta.CSRFToken}}
+      <div>
+        <label class="{{template "cls_label"}}">Hostname</label>
+        <input name="domain" required placeholder="erp.internal" class="{{template "cls_input"}} font-mono">
+      </div>
+      {{if eq .Mode "prod"}}
+      <label class="{{template "cls_check"}}"><input name="tls" type="checkbox" value="1" class="{{template "cls_checkbox"}}">HTTPS with Let's Encrypt (the name must resolve publicly)</label>
+      {{end}}
+      <span class="{{template "cls_hint"}}">Applying re-renders the compose file and runs <code>up -d</code>; volumes and data are untouched. A dev bench with aliases needs LAN access.</span>
+      <button class="{{template "cls_btn_primary"}} w-full" type="submit">Add alias (job)</button>
+    </form>
+  </div>
+</div>
+{{end}}

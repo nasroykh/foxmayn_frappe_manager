@@ -225,7 +225,7 @@
           <h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Clone this bench</h3>
           <div>
             <label class="{{template "cls_label"}}">New bench name</label>
-            <input name="target" required pattern="[a-z0-9][a-z0-9_-]*" placeholder="{{.Bench.Name}}-copy" class="{{template "cls_input"}}">
+            <input name="target" required pattern="[a-zA-Z][a-zA-Z0-9-]*" placeholder="{{.Bench.Name}}-copy" class="{{template "cls_input"}}">
           </div>
           {{if eq .Bench.Mode "prod"}}
           <div>

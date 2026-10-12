@@ -1,0 +1,35 @@
+{{define "update_body"}}
+{{template "benchcrumb" crumb .Name "Update apps"}}
+<div class="mb-8">
+  <h1 class="{{template "cls_h1"}}">Update apps of {{.Name}}</h1>
+  <p class="{{template "cls_sub"}}">Frappe branch <code>{{.Branch}}</code>. Preview first: it prints each app's branch and commit and what would be pulled, and changes nothing.</p>
+</div>
+
+<div class="{{template "cls_note"}}">
+  An update backs the site up, takes a snapshot, puts the site in maintenance mode, pulls, migrates and builds, and rolls back on failure. The bench must be running and its app trees clean.
+</div>
+
+<form method="post" action="/admin/benches/{{.Name}}/update" class="max-w-2xl space-y-6">
+  {{template "csrf" .Meta.CSRFToken}}
+  <div class="{{template "cls_card"}}">
+    <div class="{{template "cls_card_head"}}"><h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Options</h2></div>
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="{{template "cls_label"}}">Only these apps (optional)</label>
+        <input name="apps" placeholder="{{range $i, $a := .Apps}}{{if $i}}, {{end}}{{$a}}{{end}}" class="{{template "cls_input"}} font-mono">
+        <span class="{{template "cls_hint"}}">Comma-separated. Blank updates every app.</span>
+      </div>
+      <div>
+        <label class="{{template "cls_label"}}">Move to another Frappe branch (optional)</label>
+        <input name="to_branch" placeholder="version-16" class="{{template "cls_input"}} font-mono">
+        <span class="{{template "cls_hint"}}">A major upgrade: rebuilds the image and the virtualenv for the new toolchain.</span>
+      </div>
+      <label class="{{template "cls_check"}}"><input name="no_rollback" type="checkbox" value="1" class="{{template "cls_checkbox"}}">On failure, do not roll back; leave the bench in maintenance mode</label>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <button class="{{template "cls_btn"}}" type="submit" formaction="/admin/benches/{{.Name}}/update/preview">Preview (dry run, job)</button>
+    <button class="{{template "cls_btn_primary"}}" type="submit" data-confirm="Update {{.Name}}? Its site is in maintenance mode while the update runs.">Update now (job)</button>
+  </div>
+</form>
+{{end}}
