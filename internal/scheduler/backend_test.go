@@ -335,9 +335,8 @@ func TestSchtasksInstallUninstall(t *testing.T) {
 }
 
 func TestResolveOrder(t *testing.T) {
-	line := testJob().Line()
 	isolate(t, "linux", []string{"crontab", "systemctl"},
-		fakeexec.Rule{Match: "crontab -l", Stdout: "0 3 * * * x\n" + line + "\n"})
+		fakeexec.Rule{Match: "crontab -l", Stdout: "0 3 * * * x\n" + ownJob().Line() + "\n"})
 
 	// legacy crontab line beats the default (and the default is not even
 	// asked: no cron daemon runs here).
@@ -522,4 +521,34 @@ func TestPrintInstructions(t *testing.T) {
 	if got := (cronBackend{}).Print(j); got != j.Line() {
 		t.Errorf("cron print = %q", got)
 	}
+}
+
+// Another configuration's crontab line is neither a legacy install of this
+// configuration nor its job: status must not report it as installed.
+func TestForeignCronLineIsNotThisJob(t *testing.T) {
+	foreign := testJob()
+	foreign.LogFile = "/elsewhere/backup-scheduler.log"
+	isolate(t, "linux", []string{"crontab", "systemctl"},
+		fakeexec.Rule{Match: "crontab -l", Stdout: foreign.Line() + "\n"})
+	if legacyCronJob() {
+		t.Error("another configuration's line counted as this configuration's legacy install")
+	}
+	if err := SaveState(State{Backend: BackendCron}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := CheckStatus(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Installed || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "/elsewhere/backup-scheduler.log") {
+		t.Errorf("status = %+v", st)
+	}
+}
+
+// ownJob is testJob logging where this (isolated) configuration logs, so its
+// crontab line belongs to this configuration. Call it after isolate.
+func ownJob() Job {
+	j := testJob()
+	j.LogFile = config.BackupSchedulerLogFile()
+	return j
 }

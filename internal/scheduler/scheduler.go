@@ -251,8 +251,19 @@ func (cronBackend) Installed() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	line := Find(current)
+	line := ownLine(current)
 	return line, line != "", nil
+}
+
+// ownLine is ffm's crontab line when it belongs to this configuration: its
+// --log is this configuration's log, or it has none (written before --log
+// existed). Another configuration's line is not this one's job.
+func ownLine(crontab string) string {
+	line := Find(crontab)
+	if owner := LogOf(line); owner != "" && owner != config.BackupSchedulerLogFile() {
+		return ""
+	}
+	return line
 }
 
 // Install adds or updates ffm's line. It reports whether the crontab changed.

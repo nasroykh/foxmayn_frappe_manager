@@ -204,7 +204,7 @@ func legacyCronJob() bool {
 		return false
 	}
 	current, err := ReadCrontab()
-	return err == nil && Find(current) != ""
+	return err == nil && ownLine(current) != ""
 }
 
 // Default is the platform's scheduler: Task Scheduler on Windows, launchd on
@@ -369,6 +369,14 @@ func CheckStatus(want *Job) (Status, error) {
 	}
 	st.Installed, st.Content = ok, content
 	if !ok {
+		if b.Name() == BackendCron {
+			if current, err := ReadCrontab(); err == nil {
+				if owner := LogOf(Find(current)); owner != "" {
+					st.Warnings = append(st.Warnings, fmt.Sprintf(
+						"your crontab holds the ffm line of another configuration (it logs to %s); it is not this configuration's job", owner))
+				}
+			}
+		}
 		return st, nil
 	}
 	if want != nil && b.Render(*want) != content {
