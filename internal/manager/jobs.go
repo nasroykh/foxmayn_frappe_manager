@@ -52,6 +52,17 @@ const (
 	JobCleanLogs  JobType = "clean-logs"
 	JobProxyStart JobType = "proxy-start"
 	JobProxyStop  JobType = "proxy-stop"
+	// The dashboard's parity pages.
+	JobBackup          JobType = "backup"
+	JobPrune           JobType = "prune"
+	JobRestore         JobType = "restore"
+	JobClone           JobType = "clone"
+	JobUpdate          JobType = "update"
+	JobDoctor          JobType = "doctor"
+	JobDomainAdd       JobType = "domain-add"
+	JobDomainRemove    JobType = "domain-remove"
+	JobSnapshotCreate  JobType = "snapshot-create"
+	JobSnapshotRestore JobType = "snapshot-restore"
 )
 
 // ProxyJobKey is the job key of the shared Traefik proxy, which belongs to no

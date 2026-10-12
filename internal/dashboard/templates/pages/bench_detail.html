@@ -48,9 +48,17 @@
       </button>
     </form>
     
-    <form method="post" action="/admin/benches/{{.Bench.Name}}/restart" class="inline">
-      <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
-      <button class="inline-flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold shadow-sm focus:outline-none transition-colors" type="submit">
+    <form method="post" action="/admin/benches/{{.Bench.Name}}/restart" class="inline-flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 shadow-sm">
+      {{template "csrf" .Meta.CSRFToken}}
+      <label class="{{template "cls_check"}}" title="Rebuild the Docker image before starting">
+        <input name="rebuild" type="checkbox" value="1" class="{{template "cls_checkbox"}}">
+        Rebuild
+      </label>
+      <label class="{{template "cls_check"}}" title="Rebuild ignoring the layer cache and re-pull the base image (implies Rebuild)">
+        <input name="fresh" type="checkbox" value="1" class="{{template "cls_checkbox"}}">
+        Fresh
+      </label>
+      <button class="inline-flex items-center justify-center rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-1.5 text-sm font-semibold focus:outline-none transition-colors" type="submit">
         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 15.89M9 11l3-3m0 0l3 3m-3-3v12"></path></svg>
         Restart
       </button>
@@ -192,6 +200,44 @@
             </button>
           </form>
         </div>
+      </div>
+    </div>
+
+    <!-- Manage: pages and read-only checks -->
+    <div class="{{template "cls_card"}}">
+      <div class="{{template "cls_card_head"}}">
+        <h2 class="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">Manage</h2>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-2">
+          <a class="{{template "cls_btn"}}" href="/admin/benches/{{.Bench.Name}}/backups">Backups</a>
+          <a class="{{template "cls_btn"}}" href="/admin/benches/{{.Bench.Name}}/snapshots">Snapshots</a>
+          <a class="{{template "cls_btn"}}" href="/admin/benches/{{.Bench.Name}}/domains">Domains</a>
+          <a class="{{template "cls_btn"}}" href="/admin/benches/{{.Bench.Name}}/update">Update apps</a>
+        </div>
+        <form method="post" action="/admin/benches/{{.Bench.Name}}/doctor" class="border-t border-zinc-100 dark:border-zinc-800/60 pt-4">
+          {{template "csrf" .Meta.CSRFToken}}
+          <h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Health check</h3>
+          <button class="{{template "cls_btn"}} w-full" type="submit">Run doctor (read-only)</button>
+        </form>
+        <form method="post" action="/admin/benches/{{.Bench.Name}}/clone" class="border-t border-zinc-100 dark:border-zinc-800/60 pt-4 space-y-3">
+          {{template "csrf" .Meta.CSRFToken}}
+          <h3 class="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Clone this bench</h3>
+          <div>
+            <label class="{{template "cls_label"}}">New bench name</label>
+            <input name="target" required pattern="[a-z0-9][a-z0-9_-]*" placeholder="{{.Bench.Name}}-copy" class="{{template "cls_input"}}">
+          </div>
+          {{if eq .Bench.Mode "prod"}}
+          <div>
+            <label class="{{template "cls_label"}}">Domain for the clone</label>
+            <input name="domain" required placeholder="staging.example.com" class="{{template "cls_input"}}">
+            <span class="{{template "cls_hint"}}">A production bench cannot be cloned onto its own domain.</span>
+          </div>
+          <label class="{{template "cls_check"}}"><input name="no_ssl" type="checkbox" value="1" class="{{template "cls_checkbox"}}">No SSL</label>
+          {{end}}
+          <label class="{{template "cls_check"}}"><input name="no_files" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Database only (no attachments)</label>
+          <button class="{{template "cls_btn"}} w-full" type="submit">Clone (run as job)</button>
+        </form>
       </div>
     </div>
 

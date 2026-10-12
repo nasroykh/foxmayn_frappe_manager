@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/manager"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
@@ -129,6 +128,25 @@ func (h *Handler) auth(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// pageBase is embedded by every page's data struct. It carries the layout
+// metadata and makes the page a metaHolder, so renderPage needs no per-page
+// case: a new page embeds pageBase and is done.
+type pageBase struct {
+	Meta PageMeta
+}
+
+func (p *pageBase) pageMeta() *PageMeta { return &p.Meta }
+
+// metaHolder is what renderPage needs of a page's data: access to its layout
+// metadata, to set the CSRF token and read the title back.
+type metaHolder interface {
+	pageMeta() *PageMeta
+}
+
+func (h *Handler) base(r *http.Request, title, nav string) pageBase {
+	return pageBase{Meta: h.meta(r, title, nav)}
+}
+
 func flashFromQuery(r *http.Request) (ok, err string) {
 	return flashes.take(r.URL.Query().Get("flash"))
 }
@@ -150,74 +168,33 @@ type pageData struct {
 }
 
 func (h *Handler) renderPage(w http.ResponseWriter, r *http.Request, bodyTpl string, data any) {
+	h.renderPageStatus(w, r, http.StatusOK, bodyTpl, data)
+}
+
+// renderPageStatus is renderPage with a response status, for a form shown
+// again with its error. Headers and the CSRF cookie are set before the status
+// is written.
+func (h *Handler) renderPageStatus(w http.ResponseWriter, r *http.Request, status int, bodyTpl string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	token := h.ensureCSRF(w, r)
-	setCSRF(data, token)
+	var meta PageMeta
+	if m, ok := data.(metaHolder); ok {
+		pm := m.pageMeta()
+		pm.CSRFToken = token
+		meta = *pm
+	}
 	var bodyBuf bytes.Buffer
 	if err := h.tmpl.ExecuteTemplate(&bodyBuf, bodyTpl, data); err != nil {
 		h.Logger.Error("dashboard: render body", "tpl", bodyTpl, "err", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
-	meta := extractMeta(data)
-	meta.CSRFToken = token
 	meta.Version = version.Version
 	pd := pageData{Meta: meta, BodyHTML: template.HTML(bodyBuf.String())}
+	w.WriteHeader(status)
 	if err := h.tmpl.ExecuteTemplate(w, "layout.html", pd); err != nil {
 		h.Logger.Error("dashboard: render layout", "err", err)
-	}
-}
-
-func setCSRF(data any, token string) {
-	switch d := data.(type) {
-	case *dashboardPageData:
-		d.Meta.CSRFToken = token
-	case *benchesListData:
-		d.Meta.CSRFToken = token
-	case *benchDetailData:
-		d.Meta.CSRFToken = token
-	case *benchFormData:
-		d.Meta.CSRFToken = token
-	case *proxyPageData:
-		d.Meta.CSRFToken = token
-	case *tunnelServersData:
-		d.Meta.CSRFToken = token
-	case *jobsListData:
-		d.Meta.CSRFToken = token
-	case *jobDetailData:
-		d.Meta.CSRFToken = token
-	case *logsPageData:
-		d.Meta.CSRFToken = token
-	case *execPageData:
-		d.Meta.CSRFToken = token
-	}
-}
-
-func extractMeta(data any) PageMeta {
-	switch d := data.(type) {
-	case *dashboardPageData:
-		return d.Meta
-	case *benchesListData:
-		return d.Meta
-	case *benchDetailData:
-		return d.Meta
-	case *benchFormData:
-		return d.Meta
-	case *proxyPageData:
-		return d.Meta
-	case *tunnelServersData:
-		return d.Meta
-	case *jobsListData:
-		return d.Meta
-	case *jobDetailData:
-		return d.Meta
-	case *logsPageData:
-		return d.Meta
-	case *execPageData:
-		return d.Meta
-	default:
-		return PageMeta{}
 	}
 }
 
@@ -231,7 +208,7 @@ func (h *Handler) Static(w http.ResponseWriter, r *http.Request) {
 }
 
 type dashboardPageData struct {
-	Meta    PageMeta
+	pageBase
 	Stats   manager.DashboardStats
 	Benches []manager.BenchView
 }
@@ -246,14 +223,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		benches = benches[:10]
 	}
 	h.renderPage(w, r, "dashboard_body", &dashboardPageData{
-		Meta:    h.meta(r, "Dashboard", "dashboard"),
-		Stats:   stats,
-		Benches: benches,
+		pageBase: h.base(r, "Dashboard", "dashboard"),
+		Stats:    stats,
+		Benches:  benches,
 	})
 }
 
 type benchesListData struct {
-	Meta    PageMeta
+	pageBase
 	Benches []manager.BenchView
 }
 
@@ -267,13 +244,13 @@ func (h *Handler) BenchesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "benches_list_body", &benchesListData{
-		Meta:    h.meta(r, "Benches", "benches"),
-		Benches: benches,
+		pageBase: h.base(r, "Benches", "benches"),
+		Benches:  benches,
 	})
 }
 
 type benchDetailData struct {
-	Meta      PageMeta
+	pageBase
 	Bench     manager.BenchDetail
 	AllowExec bool
 }
@@ -293,7 +270,7 @@ func (h *Handler) BenchDetail(w http.ResponseWriter, r *http.Request) {
 	detail.AdminPassword = ""
 	detail.DBPassword = ""
 	h.renderPage(w, r, "bench_detail_body", &benchDetailData{
-		Meta:      h.meta(r, name, "benches"),
+		pageBase:  h.base(r, name, "benches"),
 		Bench:     detail,
 		AllowExec: h.AllowExec,
 	})
@@ -326,29 +303,8 @@ func (h *Handler) BenchReveal(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"value": value})
 }
 
-type benchFormData struct {
-	Meta PageMeta
-	Form manager.CreateInput
-}
-
-func (h *Handler) BenchNew(w http.ResponseWriter, r *http.Request) {
-	if !h.auth(w, r) {
-		return
-	}
-	h.renderPage(w, r, "bench_form_body", &benchFormData{
-		Meta: h.meta(r, "New bench", "benches"),
-		Form: manager.CreateInput{
-			Mode: "dev", FrappeBranch: bench.DefaultFrappeBranch, DBType: "mariadb",
-			AdminPassword: "admin", DBPassword: "ffm123456",
-			MariaDBBufferPool: "1G", GunicornWorkers: 2,
-			WorkerLongCount: 1, WorkerShortCount: 1,
-			RedisCacheMaxmem: "512mb", RedisQueueMaxmem: "512mb",
-		},
-	})
-}
-
 type proxyPageData struct {
-	Meta  PageMeta
+	pageBase
 	Proxy manager.ProxyStatusView
 }
 
@@ -357,13 +313,13 @@ func (h *Handler) ProxyPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "proxy_body", &proxyPageData{
-		Meta:  h.meta(r, "Proxy", "proxy"),
-		Proxy: h.Svc.ProxyStatus(),
+		pageBase: h.base(r, "Proxy", "proxy"),
+		Proxy:    h.Svc.ProxyStatus(),
 	})
 }
 
 type tunnelServersData struct {
-	Meta    PageMeta
+	pageBase
 	Config  tunnel.Config
 	MaskTok bool
 }
@@ -378,14 +334,14 @@ func (h *Handler) TunnelServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "tunnel_servers_body", &tunnelServersData{
-		Meta:    h.meta(r, "Tunnel servers", "tunnels"),
-		Config:  cfg,
-		MaskTok: true,
+		pageBase: h.base(r, "Tunnel servers", "tunnels"),
+		Config:   cfg,
+		MaskTok:  true,
 	})
 }
 
 type jobsListData struct {
-	Meta PageMeta
+	pageBase
 	Jobs []*manager.Job
 }
 
@@ -394,14 +350,14 @@ func (h *Handler) JobsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "jobs_list_body", &jobsListData{
-		Meta: h.meta(r, "Jobs", "jobs"),
-		Jobs: h.Jobs.ListJobs(),
+		pageBase: h.base(r, "Jobs", "jobs"),
+		Jobs:     h.Jobs.ListJobs(),
 	})
 }
 
 type jobDetailData struct {
-	Meta PageMeta
-	Job  *manager.Job
+	pageBase
+	Job *manager.Job
 }
 
 func (h *Handler) JobDetail(w http.ResponseWriter, r *http.Request) {
@@ -415,13 +371,13 @@ func (h *Handler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "job_detail_body", &jobDetailData{
-		Meta: h.meta(r, "Job "+id, "jobs"),
-		Job:  job,
+		pageBase: h.base(r, "Job "+id, "jobs"),
+		Job:      job,
 	})
 }
 
 type logsPageData struct {
-	Meta    PageMeta
+	pageBase
 	Bench   string
 	Service string
 }
@@ -436,9 +392,9 @@ func (h *Handler) BenchLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "logs_body", &logsPageData{
-		Meta:    h.meta(r, "Logs — "+name, "benches"),
-		Bench:   name,
-		Service: service,
+		pageBase: h.base(r, "Logs — "+name, "benches"),
+		Bench:    name,
+		Service:  service,
 	})
 }
 
@@ -466,7 +422,7 @@ func (h *Handler) serviceAllowed(w http.ResponseWriter, bench, service string) b
 }
 
 type execPageData struct {
-	Meta    PageMeta
+	pageBase
 	Bench   string
 	Service string
 	Output  string
@@ -487,9 +443,9 @@ func (h *Handler) BenchExec(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	data := &execPageData{
-		Meta:    h.meta(r, "Exec — "+name, "benches"),
-		Bench:   name,
-		Service: "frappe",
+		pageBase: h.base(r, "Exec — "+name, "benches"),
+		Bench:    name,
+		Service:  "frappe",
 	}
 	if r.Method == http.MethodPost {
 		if !h.validateCSRF(r) {
