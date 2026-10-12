@@ -453,6 +453,12 @@ func (s *Service) applySiteConfig(b state.Bench, m Manifest, in RestoreInput, pw
 		}
 		current[k] = v
 	}
+	// The key that decrypts a GPG-encrypted dump. `bench restore` reads it from
+	// site_config when it is not given with --encryption-key, and the flag would
+	// keep the key on the frappe process's argument list.
+	if key := restoreEncryptionKey(m, in); key != "" {
+		current["backup_encryption_key"] = key
+	}
 	if key := m.Secrets.EncryptionKey; key != "" {
 		current["encryption_key"] = key
 	} else if in.AllowMissingEncryptionKey {
@@ -540,22 +546,25 @@ func (s *Service) runBenchRestore(runner *bench.Runner, b state.Bench, m Manifes
 	//                      restored database already lists frappe as installed,
 	//                      so the hook that would apply it never fires. The
 	//                      password is set explicitly afterwards instead.
-	//   --encryption-key   only when the dump really is encrypted; against a
-	//                      plaintext dump it derails the file restore with
-	//                      "Invalid path".
+	//   --db-root-password and --encryption-key
+	//                      both would stay on the frappe process's argument
+	//                      list. The root password goes in on stdin (Frappe asks
+	//                      with getpass, which reads a line when there is no
+	//                      terminal). The backup key is read from site_config's
+	//                      backup_encryption_key, where applySiteConfig put it
+	//                      — and only when the dump really is encrypted;
+	//                      against a plaintext dump the flag derails the file
+	//                      restore with "Invalid path".
 	q := bench.ShellQuote
 	cmd := fmt.Sprintf("cd /workspace/frappe-bench && bench --site %s restore %s"+
-		" --db-root-username %s --db-root-password %s --force",
-		q(b.SiteName), q(dbRemote), rootUser, q(b.DBPassword))
+		" --db-root-username %s --force",
+		q(b.SiteName), q(dbRemote), rootUser)
 	if withFiles {
 		cmd += fmt.Sprintf(" --with-public-files %s --with-private-files %s", q(publicRemote), q(privateRemote))
 	}
-	if key := restoreEncryptionKey(m, in); key != "" {
-		cmd += " --encryption-key " + q(key)
-	}
 
 	pw.Step("Restoring the database" + filesSuffix(withFiles))
-	if out, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
+	if out, err := runner.ExecStdinOut("frappe", strings.NewReader(b.DBPassword+"\n"), "bash", "-c", cmd); err != nil {
 		return fmt.Errorf("bench restore: %w\n%s", err,
 			scrubSecrets(out, benchSecrets(b, m.Secrets.SiteDBPassword, m.Secrets.EncryptionKey)...))
 	}
@@ -585,10 +594,8 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 	// database already lists frappe, so after_install — which is what applies
 	// the password — never runs. This is the only thing that actually sets it.
 	pw.Step("Setting the Administrator password")
-	if out, err := runner.ExecSilent("frappe", "bash", "-c",
-		sitePrefix+"set-admin-password "+bench.ShellQuote(b.AdminPassword)); err != nil {
-		return fmt.Errorf("set the Administrator password: %w\n%s", err,
-			scrubSecrets(out, benchSecrets(b)...))
+	if err := setAdminPassword(runner, b.SiteName, b.AdminPassword); err != nil {
+		return fmt.Errorf("set the Administrator password: %w", err)
 	}
 
 	// installed_apps in site_config. Frappe v16 mirrors the list there and the

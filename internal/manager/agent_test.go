@@ -32,7 +32,9 @@ func TestCreateAgentRefusals(t *testing.T) {
 }
 
 func TestSetAgentOnAndOff(t *testing.T) {
+	pwIn := filepath.Join(t.TempDir(), "admin-pw-stdin")
 	fake := fakeexec.Install(t,
+		fakeexec.Rule{Match: "set-admin-password", StdinTo: pwIn},
 		fakeexec.Rule{Match: "add_roles", Stdout: `FFM_KEYS={"api_key": "agentkey", "api_secret": "agent-s3cret"}` + "\n"},
 		fakeexec.Rule{Match: "generate_keys --args", Stdout: `{"api_key": "adminkey", "api_secret": "admin-s3cret"}` + "\n"},
 	)
@@ -47,7 +49,10 @@ func TestSetAgentOnAndOff(t *testing.T) {
 	if !rec.Agent || !rec.AgentReadOnly || rec.AdminPassword == "admin" || len(rec.AdminPassword) != 24 {
 		t.Errorf("record after on: agent=%v ro=%v admin=%q", rec.Agent, rec.AgentReadOnly, rec.AdminPassword)
 	}
-	if !fake.Called(`set-admin-password "$p"`) || !fake.Called("'agent@ag.localhost'") ||
+	if got, _ := os.ReadFile(pwIn); string(got) != rec.AdminPassword+"\n" {
+		t.Errorf("set-admin-password stdin = %q, want the new password", got)
+	}
+	if !fake.Called("bench --site 'ag.localhost' set-admin-password") || !fake.Called("'agent@ag.localhost'") ||
 		!fake.Called("ffc site add --force --no-input --name 'ag'", "ffc init --no-input --name 'ag'", "--api-key 'agentkey' --api-secret-stdin") {
 		t.Errorf("calls:\n%s", strings.Join(fake.Calls(), "\n"))
 	}

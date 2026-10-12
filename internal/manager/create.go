@@ -319,6 +319,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 	benchDir := config.BenchDir(name)
 	runner := bench.NewRunner(name, benchDir, s.Verbose)
+	runner.Redact = []string{dbPassword, adminPassword, githubToken}
 	runner.Redact = []string{adminPassword, dbPassword, githubToken}
 
 	// Site name: domain for prod, <name>.localhost for dev
@@ -605,19 +606,26 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 
 	// bench new-site
 	step(fmt.Sprintf("Creating site %q", siteName))
+	// Neither password is a flag: bench execs the frappe interpreter, so a
+	// flag value stays on that process's argument list (readable with ps by
+	// anyone on the host) for the whole run. Frappe asks for both with getpass
+	// when they are not given, and getpass reads a line from stdin when there
+	// is no terminal: the root password first (the database connection), the
+	// Administrator password after the site's tables exist.
 	var newSiteCmd string
 	if dbType == "postgres" {
 		newSiteCmd = fmt.Sprintf(
-			"cd /workspace/frappe-bench && bench new-site %s --db-type postgres --db-root-username postgres --db-root-password %s --admin-password %s",
-			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
+			"cd /workspace/frappe-bench && bench new-site %s --db-type postgres --db-root-username postgres",
+			bench.ShellQuote(siteName),
 		)
 	} else {
 		newSiteCmd = fmt.Sprintf(
-			"cd /workspace/frappe-bench && bench new-site %s --mariadb-root-password %s --admin-password %s --no-mariadb-socket",
-			bench.ShellQuote(siteName), bench.ShellQuote(dbPassword), bench.ShellQuote(adminPassword),
+			"cd /workspace/frappe-bench && bench new-site %s --no-mariadb-socket",
+			bench.ShellQuote(siteName),
 		)
 	}
-	if out, err := runner.ExecSilent("frappe", "bash", "-c", newSiteCmd); err != nil {
+	if out, err := runner.ExecStdinOut("frappe", strings.NewReader(dbPassword+"\n"+adminPassword+"\n"),
+		"bash", "-c", newSiteCmd); err != nil {
 		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}
 
@@ -982,8 +990,16 @@ func (s *Service) benchInit(runner *bench.Runner, mode, branch, repoURL, src str
 	// When a GitHub token is provided and bench init must clone a private HTTPS repo,
 	// inject credentials directly into the one-off run container. ConfigureGitHubToken
 	// uses docker compose exec (needs a running container) so it cannot cover this step.
+	// The token goes in on stdin, never on an argument list.
 	if githubToken != "" {
-		benchInitCmd = bench.GitCredentialsCmd(githubToken) + " && " + benchInitCmd
+		if err := bench.ValidateGitHubToken(githubToken); err != nil {
+			return err
+		}
+		benchInitCmd = bench.GitCredentialsStdinCmd + " && " + benchInitCmd
+		if err := runner.RunStdin("frappe", strings.NewReader(githubToken+"\n"), "bash", "-c", benchInitCmd); err != nil {
+			return fmt.Errorf("bench init: %w", err)
+		}
+		return nil
 	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
 		return fmt.Errorf("bench init: %w", err)

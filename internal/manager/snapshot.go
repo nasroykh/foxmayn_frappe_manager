@@ -253,7 +253,9 @@ func (s *Service) restoreSnapshotLocked(in RestoreSnapshotInput, pw ProgressWrit
 		rootUser = "postgres"
 	}
 	q := bench.ShellQuote
-	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && IFS= read -r p && bench --site %s restore %s/database.sql.gz --db-root-username %s --db-root-password "$p" --force`,
+	// The root password is not a flag: Frappe asks for it with getpass, which
+	// reads it from stdin when there is no terminal, so it is on no argument list.
+	cmd := fmt.Sprintf(`cd /workspace/frappe-bench && bench --site %s restore %s/database.sql.gz --db-root-username %s --force`,
 		q(b.SiteName), remote, rootUser)
 	if snap.Files {
 		cmd += fmt.Sprintf(" --with-public-files %s/public-files.tgz --with-private-files %s/private-files.tgz", remote, remote)

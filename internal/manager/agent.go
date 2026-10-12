@@ -169,8 +169,7 @@ func (s *Service) SetAgent(in SetAgentInput, pw ProgressWriter) error {
 			return err
 		}
 		pw.Step("Replacing the default Administrator password")
-		cmd := "cd /workspace/frappe-bench && IFS= read -r p && bench --site " + bench.ShellQuote(b.SiteName) + ` set-admin-password "$p"`
-		if err := runner.ExecStdin("frappe", strings.NewReader(newPassword+"\n"), "bash", "-c", cmd); err != nil {
+		if err := setAdminPassword(runner, b.SiteName, newPassword); err != nil {
 			return fmt.Errorf("set the admin password: %w", err)
 		}
 		b.AdminPassword = newPassword
