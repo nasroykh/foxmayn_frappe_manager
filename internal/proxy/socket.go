@@ -87,7 +87,10 @@ func checkUnprivilegedPorts(ports ...int) error {
 // portHint recognises the ways a failed `docker run` reports a port problem.
 func portHint(msg string) string {
 	switch {
-	case strings.Contains(msg, "privileged port") || strings.Contains(msg, "permission denied"):
+	// "permission denied" alone also covers a socket ffm may not open, so it
+	// counts only next to a bind.
+	case strings.Contains(msg, "privileged port") ||
+		(strings.Contains(msg, "permission denied") && strings.Contains(msg, "bind")):
 		return "privileged"
 	case strings.Contains(msg, "address already in use") || strings.Contains(msg, "bind:"):
 		return "in use"

@@ -142,15 +142,6 @@ func SaveState(s State) error {
 	return err
 }
 
-// ClearState forgets the recorded backend.
-func ClearState() error {
-	err := os.Remove(config.BackupSchedulerFile())
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
 // writeIfChanged writes content atomically unless the file already holds it.
 func writeIfChanged(path string, content []byte, mode, dirMode os.FileMode) (bool, error) {
 	if old, err := os.ReadFile(path); err == nil && string(old) == string(content) {
@@ -343,13 +334,9 @@ func Uninstall(logFile string, force bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Backend: b.Name(), Where: b.Where(), Changed: changed}
-	if changed {
-		if err := ClearState(); err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("could not remove %s: %v", config.BackupSchedulerFile(), err))
-		}
-	}
-	return res, nil
+	// The state file is kept: a backend the user chose survives the last
+	// schedule being turned off and the next one installing the job again.
+	return Result{Backend: b.Name(), Where: b.Where(), Changed: changed}, nil
 }
 
 // Status is the state of the hourly job.

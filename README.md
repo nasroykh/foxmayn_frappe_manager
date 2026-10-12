@@ -103,7 +103,8 @@ With a rootful daemon the proxy always mounts `/var/run/docker.sock`, whatever t
 - **Traefik lost its network or ports** after a WSL or Docker restart: check
   `docker inspect ffm-proxy --format '{{json .NetworkSettings.Networks}} {{json .HostConfig.PortBindings}}'`,
   then `ffm proxy stop && ffm proxy start`. If the bindings are still wrong, `docker rm ffm-proxy` and
-  `ffm proxy start` recreate it (benches keep their routing labels).
+  `ffm proxy start` recreate it (benches keep their routing labels). Not on a host whose proxy serves
+  HTTPS for a prod bench: `ffm proxy start` recreates only the plain-HTTP proxy.
 - **Keep project checkouts off `/mnt/<drive>`.** `ffm up` warns when the mounted checkout is on a Windows
   drive: the 9p mount is slow, Windows-side edits may not trigger reloads, and file modes are ignored.
   Clone into the Linux filesystem.

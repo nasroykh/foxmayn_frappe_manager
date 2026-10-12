@@ -231,7 +231,7 @@ func TestSystemdInstallUninstall(t *testing.T) {
 		t.Fatalf("second install = %+v, %v, want no change", res, err)
 	}
 	for _, c := range e.fake.Calls()[before:] {
-		if strings.Contains(c, "daemon-reload") || strings.Contains(c, "enable") {
+		if strings.Contains(c, "daemon-reload") {
 			t.Errorf("an unchanged install ran %q", c)
 		}
 	}
@@ -250,10 +250,13 @@ func TestSystemdInstallUninstall(t *testing.T) {
 	if err != nil || !res.Changed {
 		t.Fatalf("uninstall = %+v, %v", res, err)
 	}
-	for _, p := range []string{timer, service, config.BackupSchedulerFile()} {
+	for _, p := range []string{timer, service} {
 		if _, err := os.Stat(p); err == nil {
 			t.Errorf("%s survived uninstall", p)
 		}
+	}
+	if st, ok, _ := LoadState(); !ok || st.Backend != BackendSystemd {
+		t.Errorf("uninstall forgot the chosen backend: %+v %v", st, ok)
 	}
 	if e.callIndex("systemctl --user disable --now "+JobName()+".timer") < 0 {
 		t.Errorf("calls: %v", e.fake.Calls())

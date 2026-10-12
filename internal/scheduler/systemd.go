@@ -137,16 +137,18 @@ func (b systemdBackend) Install(j Job, force bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !c1 && !c2 {
-		return false, nil
+	changed := c1 || c2
+	if changed {
+		if _, stderr, err := run("systemctl", "--user", "daemon-reload"); err != nil {
+			return true, fmt.Errorf("systemctl --user daemon-reload: %w: %s", err, stderr)
+		}
 	}
-	if _, stderr, err := run("systemctl", "--user", "daemon-reload"); err != nil {
-		return true, fmt.Errorf("systemctl --user daemon-reload: %w: %s", err, stderr)
-	}
+	// Always enable: it is idempotent, and it repairs a timer left disabled by
+	// an earlier install that failed after writing the units.
 	if _, stderr, err := run("systemctl", "--user", "enable", "--now", JobName()+".timer"); err != nil {
-		return true, fmt.Errorf("systemctl --user enable --now %s.timer: %w: %s", JobName(), err, stderr)
+		return changed, fmt.Errorf("systemctl --user enable --now %s.timer: %w: %s", JobName(), err, stderr)
 	}
-	return true, nil
+	return changed, nil
 }
 
 // Uninstall needs no ownership check: the unit name carries a hash of the
