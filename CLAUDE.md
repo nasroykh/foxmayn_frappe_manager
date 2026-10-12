@@ -317,7 +317,8 @@ internal/
                             marks a complete snapshot. Restore is IN PLACE (bench restore with
                             the root password on stdin) — the one exception to create-only
                             restore, see the vault's ADR-005. afterDatabaseSwap (optional
-                            migrate, then clear-cache) is shared with DBImport
+                            migrate, the recorded Administrator password re-applied, then
+                            clear-cache) is shared with DBImport
     clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, PinApps,
                             ReallocatePorts)
     seed.go               → seeds: a finished frappe-bench minus sites/<site>, logs, skills,
@@ -697,7 +698,9 @@ internal/
   traceback's final line. It never prints the frames by default: `frappe.get_traceback` runs
   `with_context=True`, so each frame dumps its locals, which includes the site's database
   password in clear. `ffm --verbose backup` shows the whole traceback, with the credentials
-  redacted either way.
+  redacted either way. version-16 heads the dump "Traceback with variables (most recent call
+  last)"; the marker matches both forms, and `user:password@` in URLs (Frappe's postgres pg_dump
+  argument) is redacted too.
 
 - **A published port that accepts is not a running server.** `docker-proxy` holds the host-side
   listener for every published port for as long as the container exists, so a TCP dial to
@@ -747,11 +750,12 @@ internal/
   `$MYSQL_ROOT_PASSWORD` as the fallback for older benches. Not live-verified here: userns-remap hosts (the entrypoint
   and healthcheck read it as root). Everything else goes through stdin, because `bench` execs the frappe interpreter
   and an argument stays on that process's argv: `bench new-site` (no `--*-root-password`, no `--admin-password`; stdin
-  `<root>\n<admin>\n`), `bench restore` (stdin `<root>\n`), `set-admin-password` (no positional), the GitHub token
+  `<root>\n<admin>\n<admin>\n`: version-15's `get_admin_password` asks twice, to confirm, and a missing
+  second line aborts new-site; v16 asks once), `bench restore` (stdin `<root>\n`), `set-admin-password` (no positional), the GitHub token
   (`ExecStdin`, and `Runner.RunStdin` for bench init), and the backup encryption key (written to site_config as
   `backup_encryption_key`; `bench restore` reads it when `--encryption-key` is absent). Frappe asks with `getpass`
-  when a value is missing and `getpass` reads a line from stdin without a terminal (v16 source: `get_root_connection`,
-  `get_admin_password`, `set_user_password`); root is asked first, so a swapped order fails at the root connect, not
+  when a value is missing and `getpass` reads a line from stdin without a terminal (v15 and v16 source: `get_root_connection`,
+  `get_admin_password`, `set_user_password`; live-verified on both); root is asked first, so a swapped order fails at the root connect, not
   silently. Values must be one line. `TestCreateKeepsSecretsOffArgv` and its siblings assert on every recorded fakeexec
   argv, keep them passing when adding a command that touches a credential.
 

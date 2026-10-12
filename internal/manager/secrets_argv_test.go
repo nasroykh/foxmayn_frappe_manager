@@ -51,8 +51,9 @@ func TestCreateKeepsSecretsOffArgv(t *testing.T) {
 		t.Fatalf("Create: %v\ncalls:\n%s", err, strings.Join(r.fake.Calls(), "\n"))
 	}
 	noSecretOnArgv(t, r.fake, secAdmin, secDB, secToken)
-	// Root password first (the database connection), Administrator after.
-	if got := readFile(t, siteIn); got != secDB+"\n"+secAdmin+"\n" {
+	// Root password first (the database connection), Administrator after,
+	// twice: version-15 asks for a confirmation.
+	if got := readFile(t, siteIn); got != secDB+"\n"+secAdmin+"\n"+secAdmin+"\n" {
 		t.Errorf("new-site stdin = %q", got)
 	}
 	if !r.fake.Called("new-site 'sec.localhost' --no-mariadb-socket") || !r.fake.Called(" run --rm -T frappe") {
@@ -78,7 +79,7 @@ func TestCreatePostgresKeepsSecretsOffArgv(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	noSecretOnArgv(t, r.fake, secAdmin, secDB)
-	if !r.fake.Called("--db-type postgres --db-root-username postgres") || readFile(t, siteIn) != secDB+"\n"+secAdmin+"\n" {
+	if !r.fake.Called("--db-type postgres --db-root-username postgres") || readFile(t, siteIn) != secDB+"\n"+secAdmin+"\n"+secAdmin+"\n" {
 		t.Errorf("postgres new-site: stdin %q\n%s", readFile(t, siteIn), strings.Join(r.fake.Calls(), "\n"))
 	}
 }

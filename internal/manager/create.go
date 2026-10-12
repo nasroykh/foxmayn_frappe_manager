@@ -611,7 +611,9 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	// anyone on the host) for the whole run. Frappe asks for both with getpass
 	// when they are not given, and getpass reads a line from stdin when there
 	// is no terminal: the root password first (the database connection), the
-	// Administrator password after the site's tables exist.
+	// Administrator password after the site's tables exist. version-15 asks
+	// for the Administrator password twice (a confirmation); version-16 once
+	// and leaves the second line unread.
 	var newSiteCmd string
 	if dbType == "postgres" {
 		newSiteCmd = fmt.Sprintf(
@@ -624,7 +626,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			bench.ShellQuote(siteName),
 		)
 	}
-	if out, err := runner.ExecStdinOut("frappe", strings.NewReader(dbPassword+"\n"+adminPassword+"\n"),
+	if out, err := runner.ExecStdinOut("frappe", strings.NewReader(dbPassword+"\n"+adminPassword+"\n"+adminPassword+"\n"),
 		"bash", "-c", newSiteCmd); err != nil {
 		return fmt.Errorf("bench new-site: %w\n%s", err, out)
 	}

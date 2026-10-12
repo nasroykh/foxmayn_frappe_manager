@@ -286,6 +286,14 @@ func afterDatabaseSwap(runner *bench.Runner, b state.Bench, migrate bool, pw Pro
 			return fmt.Errorf("bench migrate: %w\n%s", err, lastLines(out, 15))
 		}
 	}
+	// The swapped-in database carries its own Administrator hash: a snapshot
+	// from before a rotation, or another site's dump. ffm's record is the only
+	// place the password is known, so the site is put back on it.
+	if b.AdminPassword != "" {
+		if err := setAdminPassword(runner, b.SiteName, b.AdminPassword); err != nil {
+			return fmt.Errorf("re-apply the recorded Administrator password: %w", err)
+		}
+	}
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", site+" clear-cache"); err != nil {
 		return fmt.Errorf("bench clear-cache: %w\n%s", err, lastLines(out, 5))
 	}

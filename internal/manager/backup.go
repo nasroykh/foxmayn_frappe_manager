@@ -457,7 +457,10 @@ func runBenchBackup(runner *bench.Runner, siteName, staging string, withFiles bo
 	return dumpSet{}, fmt.Errorf("bench backup: %w\n%s", err, benchBackupFailure(out, runner.Verbose))
 }
 
-const tracebackMarker = "Traceback (most recent call last)"
+// tracebackMarker starts a Python traceback. Frappe version-16 prints its
+// frame dumps as "Traceback with variables (most recent call last):"; matching
+// only the plain form let every v16 failure through whole, locals included.
+var tracebackMarker = regexp.MustCompile(`Traceback(?: with variables)? \(most recent call last\)`)
 
 // exceptionLine matches the last line of a Python traceback: the exception's
 // dotted type followed by its message.
@@ -470,6 +473,10 @@ var exceptionLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception
 var secretAssignment = regexp.MustCompile(
 	`(?i)(['"]?[a-z_]*(?:password|passwd|secret|token|encryption_key)['"]?\s*[=:]\s*)('[^']*'|"[^"]*")`)
 
+// urlCredentials matches the password of a user:password@host URL, the form
+// Frappe's postgres backup passes to pg_dump.
+var urlCredentials = regexp.MustCompile(`(://[^:/@\s'"]+:)[^@\s'"]+@`)
+
 // benchBackupFailure turns `bench backup --verbose` output into an error body.
 //
 // The traceback cannot be shown as-is. frappe.get_traceback runs with
@@ -480,13 +487,15 @@ var secretAssignment = regexp.MustCompile(
 // --verbose opts into the whole thing, still with the passwords removed.
 func benchBackupFailure(out string, verbose bool) string {
 	out = secretAssignment.ReplaceAllString(out, "${1}'[redacted]'")
-	head, traceback, found := strings.Cut(out, tracebackMarker)
-	if !found {
+	out = urlCredentials.ReplaceAllString(out, "${1}[redacted]@")
+	loc := tracebackMarker.FindStringIndex(out)
+	if loc == nil {
 		return strings.TrimSpace(out)
 	}
+	head, traceback := out[:loc[0]], out[loc[0]:]
 	parts := []string{strings.TrimSpace(head)}
 	if verbose {
-		parts = append(parts, tracebackMarker+traceback)
+		parts = append(parts, traceback)
 	} else if cause := lastExceptionLine(traceback); cause != "" {
 		parts = append(parts, cause,
 			"(run ffm --verbose backup for Frappe's full traceback)")
