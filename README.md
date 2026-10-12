@@ -200,6 +200,23 @@ ffm dashboard logs -f
   its output streams live, including the stderr a failed image build prints. Job output keeps the
   last 5000 lines and has the bench's passwords masked. A bench (or the proxy) runs one job at a time;
   a second action on it is refused with a message. Quick edits (tunnel servers) stay synchronous.
+- Pages beyond start/stop: the bench page has **Restart** with *Rebuild* and *Fresh* (no layer cache,
+  re-pulled base image) options; the **create form** has every `ffm create` option except
+  `--keep-on-failure` and `--agent-read-only` (custom Frappe repo, Python/Node, fixed ports,
+  domain aliases, LAN, SSH agent, match host user, agent, no seed) and the pipeline's own checks fail
+  the job with the CLI's message; **Backups** (`/admin/backups`: archives per bench, deleted benches
+  included; back up now; schedule; prune with a dry-run preview you confirm); **Restore**
+  (`/admin/restore`); per bench **Domains**, **Update apps** (dry-run preview, then run),
+  **Snapshots** (create, restore, delete), **Run doctor** and **Clone**. Everything that touches
+  Docker is a job; listing pages and snapshot delete are synchronous. Doctor is a job because its
+  probes can take tens of seconds and take no context to cancel.
+- Restore only offers archives found under the backups directory (`ffm backup list` shows the same
+  set), always into a **new** bench name; there is no upload or free path. The admin password and
+  private-app token options stay CLI-only (`ffm restore`), as do encryption keys and upload targets.
+- The backup schedule page saves the policy only, like `ffm backup schedule --no-install`: the dashboard
+  never installs or removes the hourly system job. It shows whether the job is installed and
+  tells you to run `ffm backup scheduler install` when it is not. An app update from the dashboard
+  does not run the project's `ffm.yaml` post-update hooks (they need the trust prompt).
 - The bench list and home page read every bench's status with one `docker ps` (cached for 2 s).
 - Interactive shell: use `ffm shell <name>` in the terminal; the dashboard has no shell
 - The UI loads nothing from another origin (no CDN, no web fonts) and sets a strict

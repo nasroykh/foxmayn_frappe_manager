@@ -31,6 +31,13 @@ func newTestHandler(t *testing.T, rules ...fakeexec.Rule) (*Handler, *fakeexec.F
 	t.Helper()
 	isolate(t)
 	fake := fakeexec.Install(t, rules...)
+	// The scheduler status reads the host's crontab or systemd units; no test
+	// may depend on, or touch, those.
+	prev := schedulerStatus
+	schedulerStatus = func() schedulerInfo {
+		return schedulerInfo{Known: true, Backend: "cron", Where: "your crontab"}
+	}
+	t.Cleanup(func() { schedulerStatus = prev })
 	h, err := NewHandler("secret", nil)
 	if err != nil {
 		t.Fatal(err)
