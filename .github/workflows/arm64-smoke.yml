@@ -52,7 +52,10 @@ jobs:
       # of after the image build.
       - name: Every pinned image has an arm64 manifest
         run: |
-          images=$(grep -rhoE 'image: docker\.io/[^ ]+' internal/bench/templates | awk '{print $2}' | sort -u)
+          # The postgres tag is templated from bench.PostgresMajor.
+          pg=$(grep -oE 'PostgresMajor += "[^"]+"' internal/bench/compose.go | cut -d'"' -f2)
+          test -n "$pg"
+          images=$(grep -rhoE 'image: docker\.io/[^ ]+' internal/bench/templates | awk '{print $2}' | sed "s/{{\.PostgresMajor}}/$pg/" | sort -u)
           tag=$(grep -oE 'BenchImageTag = "[^"]+"' internal/bench/compose.go | cut -d'"' -f2)
           images="$images docker.io/frappe/bench:$tag $(grep -oE 'Image += "[^"]+"' internal/proxy/proxy.go | cut -d'"' -f2)"
           for img in $images; do
