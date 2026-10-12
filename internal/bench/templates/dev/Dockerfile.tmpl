@@ -31,6 +31,24 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends zsh curl \
     && rm -rf /var/lib/apt/lists/*
 
+{{- if eq .DBType "postgres"}}
+
+# PostgreSQL {{.PostgresMajor}} client. The base image ships an older pg_dump, which refuses to
+# dump a newer server ("aborting because of server version mismatch"), so
+# backup, snapshot, clone and update's pre-backup all fail. The PGDG repo is
+# set up by postgresql-common's own script (keyring bundled in the package, no
+# key download). Frappe runs /usr/bin/pg_dump, Debian's pg_wrapper, which with
+# no cluster selected picks the newest installed client; the check fails the
+# build if it does not resolve to {{.PostgresMajor}}.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates postgresql-common \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-{{.PostgresMajor}} \
+    && rm -rf /var/lib/apt/lists/* \
+    && pg_dump --version | grep -q ' {{.PostgresMajor}}\.' \
+    && psql --version | grep -q ' {{.PostgresMajor}}\.'
+{{- end}}
+
 # Consistent UTF-8 for ZLE + Starship width math (docker exec TTY + emoji prompts desync otherwise)
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 

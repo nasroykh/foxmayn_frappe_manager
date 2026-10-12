@@ -13,7 +13,7 @@ x-security: &default-security
 services:
 {{- if eq .DBType "postgres"}}
   postgres:
-    image: docker.io/postgres:18
+    image: docker.io/postgres:{{.PostgresMajor}}
     environment:
       # The password is a compose secret (./secrets/db_root_password), not an
       # inline value: it would otherwise show in 'docker inspect' and in this file.

@@ -339,6 +339,11 @@ Each bench gets the Python and Node its Frappe branch is built for. Both come wi
 
 PostgreSQL stays experimental, as Frappe itself labels it.
 
+A PostgreSQL bench's image carries the PostgreSQL 18 client (`pg_dump`, `psql`), installed from the
+official PGDG apt repository: the `frappe/bench` base image ships an older one, and `pg_dump`
+refuses to dump a newer server, which broke backup, snapshot, clone, update and delete's pre-backup.
+A postgres bench created before ffm added this needs `ffm restart <bench> --rebuild` once.
+
 `ffm status` shows a bench's toolchain. Benches created before ffm v0.11.0 keep running on the
 image defaults (Python 3.14 and Node 24 for every branch); `ffm recreate` rebuilds them with the
 branch's toolchain. uv's package cache lives in the `pip-cache` volume, so a replaced container

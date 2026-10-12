@@ -20,6 +20,23 @@ RUN set -eu; \
         chown -R {{.HostUID}}:{{.HostGID}} /home/frappe; \
     fi
 {{- end}}
+{{- if eq .DBType "postgres"}}
+
+# PostgreSQL {{.PostgresMajor}} client. The base image ships an older pg_dump, which refuses to
+# dump a newer server ("aborting because of server version mismatch"), so
+# backup, snapshot, clone and update's pre-backup all fail. The PGDG repo is
+# set up by postgresql-common's own script (keyring bundled in the package, no
+# key download). Frappe runs /usr/bin/pg_dump, Debian's pg_wrapper, which with
+# no cluster selected picks the newest installed client; the check fails the
+# build if it does not resolve to {{.PostgresMajor}}.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates postgresql-common \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-{{.PostgresMajor}} \
+    && rm -rf /var/lib/apt/lists/* \
+    && pg_dump --version | grep -q ' {{.PostgresMajor}}\.' \
+    && psql --version | grep -q ' {{.PostgresMajor}}\.'
+{{- end}}
 {{- if .NodeMajor}}
 
 # Node {{.NodeMajor}} for this bench's Frappe branch. PATH reaches node through

@@ -24,6 +24,9 @@ var templatesAtVersion = map[int]string{
 	// 7: compose: the database root password is a file secret
 	// (./secrets/db_root_password), not an inline environment variable.
 	7: "08d110b360d18fff78807fb64c3173f58971a1395b108883f0413f168840dbfb",
+	// 8: postgres benches: both Dockerfiles install the PGDG PostgreSQL client
+	// of bench.PostgresMajor; compose image tag comes from the same constant.
+	8: "a72e5b2928e1166c84da7b78a4b9530a62a3e6d914e194d2fcc9892d24ce53f1",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {
