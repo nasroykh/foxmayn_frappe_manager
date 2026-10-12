@@ -14,6 +14,13 @@ type Service struct {
 	Verbose bool
 	mu      sync.Mutex
 
+	// StatusTTL, when positive, lets StatusAll reuse one `docker ps` answer
+	// for that long. The dashboard sets it; the CLI and MCP leave it zero so
+	// a listing never shows a state older than the command that changed it.
+	StatusTTL  time.Duration
+	statusMu   sync.Mutex
+	statusSnap statusSnapshot
+
 	// now overrides the clock in tests; nil means time.Now.
 	now func() time.Time
 }

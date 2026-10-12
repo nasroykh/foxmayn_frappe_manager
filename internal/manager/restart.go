@@ -47,6 +47,7 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
 		}
 		runner := s.runnerFor(b)
+		runner.ErrOut = pw.Stderr()
 		pw.Printf("Rebuilding image for bench %q...\n", in.Name)
 		var extra []string
 		if in.Fresh {

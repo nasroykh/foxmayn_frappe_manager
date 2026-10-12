@@ -2,9 +2,14 @@ package manager
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
@@ -49,20 +54,122 @@ func benchStatus(ps string) string {
 	return StatusStopped
 }
 
-// ListBenchViews returns all benches with live docker status.
-func (s *Service) ListBenchViews() ([]BenchView, error) {
+// psFormat prints one line per container: compose project, service, state.
+const psFormat = `{{.Label "com.docker.compose.project"}} {{.Label "com.docker.compose.service"}} {{.State}}`
+
+// statusSnapshot is one `docker ps -a` answer, grouped by compose project in
+// the "<service> <state>" form benchStatus reads.
+type statusSnapshot struct {
+	at       time.Time
+	byProj   map[string]string
+	err      error
+	hasFresh bool
+}
+
+// StatusAll classifies every bench with ONE docker call, where LiveStatus runs
+// one `docker compose ps` per bench. The result is keyed by bench name and
+// uses the same classification as LiveStatus: running, partial, stopped, or
+// unknown (docker unreachable, or the bench's compose file is missing).
+//
+// When StatusTTL is set the answer is reused for that long, so a page that
+// asks twice, or two browser tabs polling, share one call. It is for display
+// paths only: anything that decides what to do with a bench (backup, update,
+// app add) keeps calling LiveStatus for a fresh answer.
+func (s *Service) StatusAll() (map[string]string, error) {
 	benches, err := s.LoadBenches()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]BenchView, 0, len(benches))
+	snap := s.psSnapshot()
+	out := make(map[string]string, len(benches))
 	for _, b := range benches {
-		out = append(out, s.benchToView(b))
+		out[b.Name] = snap.statusOf(b)
 	}
 	return out, nil
 }
 
+func (sn statusSnapshot) statusOf(b state.Bench) string {
+	if sn.err != nil {
+		return StatusUnknown
+	}
+	// LiveStatus runs compose against the bench's file and fails without it.
+	if _, err := os.Stat(filepath.Join(b.Dir, "docker-compose.yml")); err != nil {
+		return StatusUnknown
+	}
+	return benchStatus(sn.byProj[bench.ProjectName(b.Name)])
+}
+
+// InvalidateStatus drops the cached StatusAll answer. Jobs call it when they
+// finish, so the page they redirect to is not stale.
+func (s *Service) InvalidateStatus() {
+	s.statusMu.Lock()
+	s.statusSnap = statusSnapshot{}
+	s.statusMu.Unlock()
+}
+
+func (s *Service) psSnapshot() statusSnapshot {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	if s.StatusTTL > 0 && s.statusSnap.hasFresh && s.clock().Sub(s.statusSnap.at) < s.StatusTTL {
+		return s.statusSnap
+	}
+	sn := statusSnapshot{at: s.clock(), hasFresh: true, byProj: map[string]string{}}
+	out, err := execx.Command("docker", "ps", "-a",
+		"--filter", "label=com.docker.compose.project", "--format", psFormat).Output()
+	if err != nil {
+		sn.err = err
+	} else {
+		for _, line := range strings.Split(string(out), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 3 {
+				continue
+			}
+			sn.byProj[f[0]] += f[1] + " " + f[2] + "\n"
+		}
+	}
+	// A failure is not cached: the next call should try docker again.
+	if s.StatusTTL > 0 && err == nil {
+		s.statusSnap = sn
+	}
+	return sn
+}
+
+// ListBenchViews returns all benches with live docker status, from one docker
+// call (StatusAll) and at most one proxy check.
+func (s *Service) ListBenchViews() ([]BenchView, error) {
+	views, _, err := s.listBenchViews()
+	return views, err
+}
+
+// listBenchViews also returns the proxy check, memoized, so DashboardOverview
+// does not ask docker about the proxy a second time.
+func (s *Service) listBenchViews() ([]BenchView, func() bool, error) {
+	benches, err := s.LoadBenches()
+	if err != nil {
+		return nil, nil, err
+	}
+	statuses, err := s.StatusAll()
+	if err != nil {
+		return nil, nil, err
+	}
+	var once sync.Once
+	var up bool
+	proxyUp := func() bool {
+		once.Do(func() { up = proxy.IsRunning() })
+		return up
+	}
+	out := make([]BenchView, 0, len(benches))
+	for _, b := range benches {
+		out = append(out, s.viewOf(b, statuses[b.Name], proxyUp))
+	}
+	return out, proxyUp, nil
+}
+
 func (s *Service) benchToView(b state.Bench) BenchView {
+	return s.viewOf(b, s.LiveStatus(b), proxy.IsRunning)
+}
+
+func (s *Service) viewOf(b state.Bench, status string, proxyUp func() bool) BenchView {
 	mode := "dev"
 	if b.IsProd() {
 		mode = "prod"
@@ -76,14 +183,14 @@ func (s *Service) benchToView(b state.Bench) BenchView {
 		Name:              b.Name,
 		Mode:              mode,
 		DBEngine:          db,
-		Status:            s.LiveStatus(b),
+		Status:            status,
 		WebPort:           b.WebPort,
 		SocketIOPort:      b.SocketIOPort,
 		SiteName:          b.SiteName,
 		Domain:            b.Domain,
 		ProxyHost:         b.ProxyHost,
 		FrappeBranch:      b.FrappeBranch,
-		URL:               s.siteURL(b),
+		URL:               viewSiteURL(b, proxyUp),
 		TemplatesOutdated: b.TemplateVersion < bench.TemplateVersion,
 		TunnelOn:          tunnelOn,
 	}
@@ -121,6 +228,12 @@ func (s *Service) GetBenchDetail(name string) (BenchDetail, error) {
 }
 
 func (s *Service) siteURL(b state.Bench) string {
+	return viewSiteURL(b, proxy.IsRunning)
+}
+
+// viewSiteURL is the URL shown for a bench. proxyUp is asked only for a dev
+// bench without a proxy host, the one case that depends on it.
+func viewSiteURL(b state.Bench, proxyUp func() bool) string {
 	if b.IsProd() {
 		if b.ProxyHost != "" {
 			return b.ProxyHost
@@ -133,7 +246,7 @@ func (s *Service) siteURL(b state.Bench) string {
 	if b.ProxyHost != "" {
 		return b.ProxyHost
 	}
-	if proxy.IsRunning() {
+	if proxyUp() {
 		return "http://" + b.SiteName
 	}
 	return fmt.Sprintf("http://localhost:%d", b.WebPort)
@@ -141,17 +254,25 @@ func (s *Service) siteURL(b state.Bench) string {
 
 // DashboardOverview returns stats for the admin home page.
 func (s *Service) DashboardOverview(failedJobs int) (DashboardStats, error) {
-	views, err := s.ListBenchViews()
+	stats, _, err := s.DashboardOverviewViews(failedJobs)
+	return stats, err
+}
+
+// DashboardOverviewViews returns the home page's stats together with the
+// bench views they were counted from: one status query and one proxy check
+// for the whole page.
+func (s *Service) DashboardOverviewViews(failedJobs int) (DashboardStats, []BenchView, error) {
+	views, proxyUp, err := s.listBenchViews()
 	if err != nil {
-		return DashboardStats{}, err
+		return DashboardStats{}, nil, err
 	}
 	stats := DashboardStats{
 		TotalBenches: len(views),
-		ProxyRunning: proxy.IsRunning(),
+		ProxyRunning: proxyUp(),
 		FailedJobs:   failedJobs,
 	}
 	for _, v := range views {
-		if v.Status == "running" {
+		if v.Status == StatusRunning {
 			stats.RunningBenches++
 		} else {
 			stats.StoppedBenches++
@@ -160,5 +281,5 @@ func (s *Service) DashboardOverview(failedJobs int) (DashboardStats, error) {
 			stats.TunnelsActive++
 		}
 	}
-	return stats, nil
+	return stats, views, nil
 }
