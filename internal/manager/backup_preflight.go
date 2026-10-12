@@ -364,8 +364,9 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 //
 // An age-encrypted archive yields nothing: its manifest is inside the
 // ciphertext and decrypting it just to read the secrets would put plaintext on
-// disk outside the restore. Only the target-independent values a caller adds
-// itself can be masked for such an archive. Any read problem also yields
+// disk outside the restore. Restore covers that case itself: it registers the
+// manifest's secrets with its ProgressWriter (addSecrets) once it has parsed
+// the manifest. Any read problem also yields
 // nothing, because the restore itself then fails with the real reason.
 func ArchiveSecrets(path string) []string {
 	if agecrypt.IsEncrypted(path) {
@@ -379,6 +380,11 @@ func ArchiveSecrets(path string) []string {
 	if err != nil {
 		return nil
 	}
+	return manifestSecrets(m)
+}
+
+// manifestSecrets lists the non-empty credentials a manifest carries.
+func manifestSecrets(m Manifest) []string {
 	var out []string
 	for _, v := range benchSecrets(m.Bench, m.Secrets.AdminPassword, m.Secrets.DBRootPassword,
 		m.Secrets.SiteDBPassword, m.Secrets.EncryptionKey, m.Secrets.BackupEncryptionKey) {

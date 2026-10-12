@@ -2,8 +2,10 @@ package manager
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -128,5 +130,36 @@ func TestPersistCapsFinishedJobs(t *testing.T) {
 	js.mu.Unlock()
 	if n != maxFinishedJobs {
 		t.Fatalf("kept %d finished jobs, want %d", n, maxFinishedJobs)
+	}
+}
+
+// A secret learned mid-job (an encrypted archive's manifest) is masked in
+// everything recorded after it is registered: lines, steps, error, jobs.json.
+func TestAddSecretsMasksLateSecrets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	js := newJobStoreAt(path)
+	s := &Service{}
+	id, err := s.startJobSecrets(js, JobRestore, "late", []string{"early-secret"}, func(pw ProgressWriter) error {
+		addSecrets(pw, "", "late-secret")
+		pw.Step("step late-secret")
+		pw.Printf("line late-secret and early-secret\n")
+		pw.Println("println late-secret")
+		_, _ = pw.Stderr().Write([]byte("stderr late-secret\n"))
+		addSecrets(DiscardProgress{}, "ignored")
+		return errors.New("failed with late-secret")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := waitFinished(t, js, id)
+	raw, _ := os.ReadFile(path)
+	all := j.Error + "\n" + strings.Join(j.Lines, "\n") + "\n" + strings.Join(j.Steps, "\n") + "\n" + string(raw)
+	for _, secret := range []string{"late-secret", "early-secret"} {
+		if strings.Contains(all, secret) {
+			t.Errorf("job record contains %q: %q", secret, all)
+		}
+	}
+	if !strings.Contains(j.Error, "failed with") {
+		t.Errorf("error lost: %q", j.Error)
 	}
 }

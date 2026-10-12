@@ -200,10 +200,11 @@ internal/
 
   manager/                → the shared service layer. All bench operations live here. Output goes
                             through ProgressWriter, so the CLI and the dashboard's job runner share
-                            one pipeline. Create's rollback dump and warnings, Start's warnings and the Build/Run
-                            failure dumps go to pw.Stderr() (Runner.ErrOut), so a dashboard job carries them.
-                            Still on os.Stderr (so in dashboard.log): restart/domains/tunnel_ops warnings,
-                            afterBenchInit's, TeardownBenchFiles'.
+                            one pipeline. Warnings and failure dumps (create, start, restart, domains, tunnel,
+                            TeardownBenchFiles, the Build/Run dump via Runner.ErrOut) go to pw.Stderr(), so a
+                            dashboard job carries them. The one deliberate os.Stderr write left is rotate.go's
+                            tellNewValue: a freshly generated password that exists nowhere else, which a masked
+                            job record would destroy.
     service.go            → Service{Store, Verbose, mu, now}; serialises all store
                             access behind a mutex because the dashboard is concurrent; clock()
                             is the test-overridable time source
@@ -383,7 +384,10 @@ internal/
     progress.go           → ProgressWriter + CLIProgress{Reveal} / DiscardProgress / BufferProgress; SecretFor
                             (ProgressWriter) and Secret (plain CLI output) mask a secret as
                             "******** (hint)" unless stdout is a terminal or Reveal (--show-secrets).
-                            Job, MCP, hook and log writers never reveal. New secret-bearing prints use these
+                            Job, MCP, hook and log writers never reveal. New secret-bearing prints use these.
+                            secretAdder / addSecrets(pw, vals...): a writer that masks (jobProgress) takes secrets
+                            learned late; Restore registers the parsed manifest's secrets this way, which is how an
+                            age-encrypted archive's are masked (ArchiveSecrets cannot read those)
 
   archive/                → the ffm backup archive format. Plain tar; members compressed
                             individually. Header FIRST (cheap preflight), manifest LAST (its

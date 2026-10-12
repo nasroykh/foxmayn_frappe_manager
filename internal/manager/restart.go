@@ -2,7 +2,6 @@ package manager
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 )
@@ -41,10 +40,10 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 			}
 		}
 		if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not patch authenticate.js: %v\n", err)
 		}
 		if err := bench.PatchUtilsJs(b.Dir); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 		}
 		runner := s.runnerFor(b)
 		runner.ErrOut = pw.Stderr()

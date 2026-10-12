@@ -44,7 +44,7 @@ func TestPoweroffStopsPartialBenches(t *testing.T) {
 func TestTeardownRemovesVolumesTheTemplateDropped(t *testing.T) {
 	fake := fakeexec.Install(t, fakeexec.Rule{Match: "volume ls -q --filter label=com.docker.compose.project=ffm-td", Stdout: "ffm-td_mariadb-data\nffm-td_yarn-cache\n"})
 	s, b := newTestBench(t, state.Bench{Name: "td", Mode: "dev", SiteName: "td.localhost", WebPort: 8000, SocketIOPort: 9000})
-	s.TeardownBenchFiles(b)
+	s.TeardownBenchFiles(b, DiscardProgress{})
 	if !fake.Called("volume rm ffm-td_yarn-cache") {
 		t.Errorf("leftover volume kept; calls:\n%s", strings.Join(fake.Calls(), "\n"))
 	}
