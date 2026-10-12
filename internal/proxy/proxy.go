@@ -194,14 +194,14 @@ func Status() string {
 	i := inspectContainer()
 	switch i.Status {
 	case "running":
-		st := "running"
 		if p := i.problem(); p != "" {
-			st = fmt.Sprintf("running but broken: %s (run 'ffm proxy start' to recreate it)", p)
+			// 'ffm proxy start' recreates it on the pinned image as well.
+			return fmt.Sprintf("running but broken: %s (run 'ffm proxy start' to recreate it)", p)
 		}
 		if i.Image != Image {
-			st += fmt.Sprintf(" (image %s, ffm pins %s: 'ffm proxy stop && ffm proxy start' updates it)", i.Image, Image)
+			return fmt.Sprintf("running (image %s, ffm pins %s: 'ffm proxy stop && ffm proxy start' updates it)", i.Image, Image)
 		}
-		return st
+		return "running"
 	case "exited":
 		return "stopped (run 'ffm proxy start' to resume)"
 	case "created":
