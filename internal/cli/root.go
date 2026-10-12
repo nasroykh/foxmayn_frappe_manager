@@ -101,6 +101,7 @@ func Execute() error {
 	if maybeRunDashboardDaemon() {
 		return nil
 	}
+	removeStaleBinary()
 	root := NewRootCmd()
 	markUsageErrors(root)
 	err := root.Execute()

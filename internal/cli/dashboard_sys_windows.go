@@ -7,8 +7,15 @@ import (
 	"syscall"
 )
 
+// detachedProcess is the Win32 DETACHED_PROCESS creation flag; package syscall
+// does not export it.
+const detachedProcess = 0x00000008
+
 func configureSysProcAttr(sys *syscall.SysProcAttr) {
 	sys.HideWindow = true
+	// Without these the daemon shares the launching console and can die with
+	// it (Ctrl+C, closing the window).
+	sys.CreationFlags = detachedProcess | syscall.CREATE_NEW_PROCESS_GROUP
 }
 
 // processAlive reports whether pid is a running process. On Windows
