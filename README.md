@@ -346,6 +346,27 @@ ffm trust             # review and allow the file's commands; --revoke forgets i
 - `post_update` hooks run after a successful `ffm app update` of the bench.
 - `$SITE` and `$BENCH` are set for hooks and tooling.
 
+### `ffm worktree` — a bench per git worktree
+
+For a project bench (made by `ffm up` inside an app repository):
+
+```bash
+ffm worktree add feat/login            # clone the bench, add a git worktree, mount it
+ffm worktree list --json               # ffm.worktrees/v1
+ffm worktree remove feat/login --delete-branch
+ffm worktree hook print                # Claude Code WorktreeCreate/WorktreeRemove hooks
+```
+
+`add` backs the source up and restores it as `<source>-<branch-slug>` (own database and ports), adds
+the worktree at `<repo-parent>/<repo>.worktrees/<slug>` (`--path` overrides) and mounts it as the app.
+The bench answers on `<slug>.<source>.localhost` as well as its own host. Untracked files matching
+the repository's `.worktreeinclude` are copied in. Your checkout is never deleted or reset by ffm:
+`remove` runs `git worktree remove` without `--force` (git refuses uncommitted or untracked files;
+pass `--force` to discard them), and deletes a branch only with `git branch -d`, only if ffm created
+it and only with `--delete-branch`. If `add` fails after the worktree exists, the bench is removed,
+the worktree is kept and the commands that remove it are printed. Claude Code does not process
+`.worktreeinclude` when a WorktreeCreate hook exists; ffm's hook copies those files itself.
+
 ### `ffm list` / `ffm ls`
 
 Lists all managed benches with their live status, mode (dev/prod), DB engine (maria/pg), port, domain URL, and Frappe branch.

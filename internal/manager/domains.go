@@ -44,6 +44,20 @@ func primaryHostOf(b state.Bench) string {
 	return b.Name + ".localhost"
 }
 
+// aliasesNeedLAN reports whether a dev bench must publish its ports on the LAN
+// to serve these aliases: the browser reaches socket.io on the published port
+// of the page's own host. A *.localhost name resolves to the loopback address
+// in the browser, so the 127.0.0.1 bind is reachable and needs no LAN.
+func aliasesNeedLAN(aliases []string) bool {
+	for _, a := range aliases {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a != "" && !strings.HasSuffix(a, ".localhost") {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeAliases validates, lower-cases, and de-duplicates a list of alias
 // hostnames, rejecting any that collides with the bench's own primary host.
 func normalizeAliases(raw []string, primaryHost string) ([]string, error) {
@@ -176,7 +190,7 @@ func (s *Service) DomainAdd(in DomainInput, pw ProgressWriter) error {
 	if d == primaryHostOf(b) {
 		return fmt.Errorf("domain %q is already this bench's primary host", d)
 	}
-	if b.IsDev() && b.PublishHost() != "" {
+	if b.IsDev() && b.PublishHost() != "" && aliasesNeedLAN([]string{d}) {
 		return fmt.Errorf("bench %q publishes its ports on 127.0.0.1 only; a dev alias needs them on the LAN (the browser reaches socket.io on the published port) — run 'ffm reconcile %s --lan' first", b.Name, b.Name)
 	}
 	aliasTLS := b.AliasTLS || in.TLS

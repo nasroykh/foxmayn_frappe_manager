@@ -12,6 +12,11 @@ type CreateInput struct {
 	// by restore.
 	ProjectApp     string
 	ProjectAppPath string
+	// WorktreeOf, WorktreeBranch and WorktreeCreatedBranch carry a worktree
+	// bench's record through a recreate; see state.Bench.
+	WorktreeOf            string
+	WorktreeBranch        string
+	WorktreeCreatedBranch bool
 
 	Name         string
 	FrappeBranch string

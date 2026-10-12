@@ -122,6 +122,14 @@ type Bench struct {
 	// every other bench, and ignored in a restored archive's record.
 	ProjectApp     string `json:"project_app,omitempty"`
 	ProjectAppPath string `json:"project_app_path,omitempty"`
+	// WorktreeOf is the bench this one was made from by `ffm worktree add`; its
+	// project checkout (ProjectAppPath) is a git worktree of the source's
+	// checkout, on WorktreeBranch. WorktreeCreatedBranch records that ffm
+	// created that branch, the only one `ffm worktree remove --delete-branch`
+	// may delete (with git branch -d). All empty on every other bench.
+	WorktreeOf            string `json:"worktree_of,omitempty"`
+	WorktreeBranch        string `json:"worktree_branch,omitempty"`
+	WorktreeCreatedBranch bool   `json:"worktree_created_branch,omitempty"`
 	// MatchHostUser records that the image was built with the in-container
 	// `frappe` user remapped onto the host user's uid/gid (--match-host-user).
 	// Absent in records written before this option existed, which is correct —

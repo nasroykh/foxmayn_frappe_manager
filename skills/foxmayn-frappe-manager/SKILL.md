@@ -282,6 +282,19 @@ hooks.post_create/post_update, tooling) brings up its bench with `ffm up`. Hooks
 run only after `ffm trust` approved the file's exact content; any edit needs trust again. Never
 trust a file on the user's behalf without showing them its commands.
 
+### Worktree benches
+
+```bash
+ffm worktree add feat/x [--from bench] [--base ref] [--path dir] [--no-files] --json   # ffm.worktree/v1
+ffm worktree list --json                                                              # ffm.worktrees/v1
+ffm worktree remove feat/x [--delete-branch]        # never --force unless the user says so
+```
+
+Needs a project bench (`ffm up`). Minutes long (backup + restore). ffm never deletes or resets the
+user's checkout: `remove` is `git worktree remove` without `--force`; do not pass `--force` or
+`--keep-worktree` on your own to get past a refusal, report it. On a failed add the worktree stays and
+the error prints the git commands that remove it.
+
 ### Apps, updates and site operations
 
 ```bash
