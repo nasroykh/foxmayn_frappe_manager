@@ -864,6 +864,17 @@ internal/
   image default so a rebuild never swaps Node under existing node_modules. Restore reuses the
   archived pair only when the frappe branch is unchanged. The default branch is
   `bench.DefaultFrappeBranch` (`version-16`).
+- **Postgres benches carry the matching client.** The compose templates run
+  `docker.io/postgres:{{.PostgresMajor}}` and `frappe/bench` ships an older `pg_dump` (17 on Debian trixie), which
+  refuses a newer server ("aborting because of server version mismatch"): backup, snapshot, clone,
+  worktree add, update's and delete's pre-backup all failed on every postgres bench. Both Dockerfiles
+  therefore install `postgresql-client-<PostgresMajor>` from PGDG when `DBType` is postgres
+  (postgresql-common's `apt.postgresql.org.sh -y`, keyring bundled in the package) and fail the build
+  unless `pg_dump`/`psql --version` say that major. `/usr/bin/pg_dump` is Debian's `pg_wrapper`, which
+  with no cluster selected runs the newest installed client: verified with 17 and 18 installed. One
+  constant, `bench.PostgresMajor`, feeds the image tag and the client;
+  `TestPostgresClientMatchesServerImage` guards it. Existing postgres benches get the client through
+  `ffm restart --rebuild` (template 7); `backup-roundtrip.yml` has a postgres job.
 - **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
   image), `FrappeSkillsCommit` (skill pack) and `FfcRef` (ffc: the binary AND its skills). The dev Dockerfile
   installs ffc, then `ffc update --version <FfcRef> --yes` and a `ffc --version` grep fail the build if

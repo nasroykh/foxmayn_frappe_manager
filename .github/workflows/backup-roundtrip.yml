@@ -291,3 +291,129 @@ jobs:
             fi
           done
           rm -rf "$FFM_BENCHES_DIR"
+
+  # The same proof on PostgreSQL. A postgres bench cannot back up when the
+  # image's pg_dump is older than the server (frappe/bench shipped 17 against
+  # postgres:18: "aborting because of server version mismatch"), and that broke
+  # backup, snapshot, clone, update's pre-backup and delete's pre-backup at once.
+  # Frappe alone and no extra apps: this job is about the database client, the
+  # app-source paths are covered by the MariaDB job above.
+  roundtrip-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: "true"
+
+    steps:
+      - name: Resolve bench paths
+        run: |
+          echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
+          echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+          echo "FFM_BACKUPS_DIR=$RUNNER_TEMP/ffm-backups" >> "$GITHUB_ENV"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build ffm
+        run: go build -o "$RUNNER_TEMP/ffm" ./cmd/ffm
+
+      - name: Create the source bench
+        run: |
+          mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          "$RUNNER_TEMP/ffm" create src --mode dev --db-type postgres --verbose --match-host-user
+
+      # The failure this job exists for: the client in the image must be the
+      # server's major, or every dump below is refused.
+      - name: Assert the image carries the PostgreSQL 18 client
+        run: |
+          VERSION=$(docker compose -p ffm-src -f "$FFM_BENCHES_DIR/src/docker-compose.yml" \
+            exec -T frappe pg_dump --version)
+          echo "$VERSION"
+          echo "$VERSION" | grep -q ' 18\.' || { echo "::error::pg_dump in the image is not version 18"; exit 1; }
+
+      - name: Plant a marker the restore must bring back
+        run: |
+          sql() { docker compose -p "ffm-$1" -f "$FFM_BENCHES_DIR/$1/docker-compose.yml" \
+            exec -T postgres psql -U postgres \
+            -d "$(python3 -c "import json;print(json.load(open('$FFM_BENCHES_DIR/$1/workspace/frappe-bench/sites/$1.localhost/site_config.json'))['db_name'])")" \
+            -At -c "$2"; }
+          sql src "INSERT INTO \"tabToDo\" (name, description, status, owner, creation, modified, modified_by, docstatus, idx) VALUES ('ffm-ci-marker', 'FFM-ROUNDTRIP-MARKER', 'Open', 'Administrator', NOW(), NOW(), 'Administrator', 0, 1);"
+          test "$(sql src "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'FFM-ROUNDTRIP-MARKER';")" = 1
+
+      # Snapshot create runs pg_dump; restore must drop the row added after it.
+      - name: Snapshot, change, roll back
+        run: |
+          sql() { docker compose -p "ffm-$1" -f "$FFM_BENCHES_DIR/$1/docker-compose.yml" \
+            exec -T postgres psql -U postgres \
+            -d "$(python3 -c "import json;print(json.load(open('$FFM_BENCHES_DIR/$1/workspace/frappe-bench/sites/$1.localhost/site_config.json'))['db_name'])")" \
+            -At -c "$2"; }
+          "$RUNNER_TEMP/ffm" snapshot create src --name ci
+          sql src "INSERT INTO \"tabToDo\" (name, description, status, creation, modified) VALUES ('ffm-ci-snap', 'AFTER-SNAPSHOT', 'Open', NOW(), NOW());"
+          test "$(sql src "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'AFTER-SNAPSHOT';")" = 1
+          "$RUNNER_TEMP/ffm" snapshot restore src --name ci --yes
+          ROWS=$(sql src "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'AFTER-SNAPSHOT';")
+          MARKER=$(sql src "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'FFM-ROUNDTRIP-MARKER';")
+          echo "after rollback: rows=$ROWS marker=$MARKER"
+          if [ "$ROWS" != "0" ] || [ "$MARKER" != "1" ]; then
+            echo "::error::the snapshot rollback did not restore the database as it was"
+            exit 1
+          fi
+
+      - name: Clone it
+        run: |
+          sql() { docker compose -p "ffm-$1" -f "$FFM_BENCHES_DIR/$1/docker-compose.yml" \
+            exec -T postgres psql -U postgres \
+            -d "$(python3 -c "import json;print(json.load(open('$FFM_BENCHES_DIR/$1/workspace/frappe-bench/sites/$1.localhost/site_config.json'))['db_name'])")" \
+            -At -c "$2"; }
+          "$RUNNER_TEMP/ffm" clone src cln --no-files
+          COUNT=$(sql cln "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'FFM-ROUNDTRIP-MARKER';")
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::the clone lacks the marker (found $COUNT rows)"
+            exit 1
+          fi
+          "$RUNNER_TEMP/ffm" delete cln --force --no-backup
+
+      - name: Back it up
+        run: |
+          "$RUNNER_TEMP/ffm" backup src --label ci-roundtrip-postgres
+          ARCHIVE=$(ls "$FFM_BACKUPS_DIR"/src/*.ffm.tar | head -1)
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --dry-run
+
+      - name: Delete the source bench
+        run: |
+          "$RUNNER_TEMP/ffm" delete src --force
+
+      - name: Restore into a new bench
+        run: |
+          "$RUNNER_TEMP/ffm" restore "$ARCHIVE" dst --verbose
+
+      - name: Assert the marker survived
+        run: |
+          DB=$(python3 -c "import json;print(json.load(open('$FFM_BENCHES_DIR/dst/workspace/frappe-bench/sites/dst.localhost/site_config.json'))['db_name'])")
+          COUNT=$(docker compose -p ffm-dst -f "$FFM_BENCHES_DIR/dst/docker-compose.yml" \
+            exec -T postgres psql -U postgres -d "$DB" -At \
+            -c "SELECT COUNT(*) FROM \"tabToDo\" WHERE description = 'FFM-ROUNDTRIP-MARKER';")
+          echo "marker rows in the restored site: $COUNT"
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::the planted marker did not survive the round trip (found $COUNT rows)"
+            exit 1
+          fi
+
+      - name: Teardown
+        if: always()
+        run: |
+          for b in src dst cln; do
+            if [ -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" ]; then
+              docker compose -p "ffm-$b" -f "$FFM_BENCHES_DIR/$b/docker-compose.yml" down -v || true
+            fi
+          done
+          rm -rf "$FFM_BENCHES_DIR"

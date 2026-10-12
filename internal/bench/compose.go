@@ -141,6 +141,11 @@ const (
 	// FrappeSkillsCommit is the commit of the Frappe Claude skill pack
 	// (OpenAEC-Foundation/Frappe_Claude_Skill_Package) baked into the dev image.
 	FrappeSkillsCommit = "36cfa807518f48e4210fac2a5afc6adafad4c53e"
+	// PostgresMajor is the PostgreSQL major of both the database image
+	// (docker.io/postgres:<major> in the compose templates) and the client the
+	// Dockerfiles install for a postgres bench. They must match: pg_dump refuses
+	// a server newer than itself, and the base image ships an older client.
+	PostgresMajor = "18"
 )
 
 // MailPort is the host port of a dev bench's Mailpit web UI.
@@ -148,6 +153,9 @@ func (d ComposeData) MailPort() int { return d.WebPort + MailPortOffset }
 
 // BenchImageTag exposes the pinned base image tag to the Dockerfile templates.
 func (ComposeData) BenchImageTag() string { return BenchImageTag }
+
+// PostgresMajor exposes the pinned PostgreSQL major to the templates.
+func (ComposeData) PostgresMajor() string { return PostgresMajor }
 
 // FrappeSkillsCommit exposes the pinned skill pack commit to the dev Dockerfile.
 func (ComposeData) FrappeSkillsCommit() string { return FrappeSkillsCommit }
@@ -413,7 +421,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 7
+const TemplateVersion = 8
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {
