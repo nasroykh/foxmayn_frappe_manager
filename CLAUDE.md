@@ -200,9 +200,10 @@ internal/
 
   manager/                → the shared service layer. All bench operations live here. Output goes
                             through ProgressWriter, so the CLI and the dashboard's job runner share
-                            one pipeline. Warnings and failure dumps still go straight to os.Stderr
-                            (create, lifecycle, bench/docker.go), so in the dashboard they land in
-                            dashboard.log, not in the job.
+                            one pipeline. Create's rollback dump and warnings, Start's warnings and the Build/Run
+                            failure dumps go to pw.Stderr() (Runner.ErrOut), so a dashboard job carries them.
+                            Still on os.Stderr (so in dashboard.log): restart/domains/tunnel_ops warnings,
+                            afterBenchInit's, TeardownBenchFiles'.
     service.go            → Service{Store, Verbose, mu, now}; serialises all store
                             access behind a mutex because the dashboard is concurrent; clock()
                             is the test-overridable time source
@@ -294,7 +295,12 @@ internal/
                             rewrites wsgi.py for prod, re-applies the JS patches, rebuilds
     benches.go            → LiveStatus (running = the frappe container runs; partial = only other
                             containers do; stopped; unknown = docker unreachable) / ListBenchViews /
-                            GetBenchDetail / DashboardOverview
+                            GetBenchDetail / DashboardOverview(Views). StatusAll: one `docker ps -a
+                            --filter label=com.docker.compose.project` for all benches, same
+                            classification (benchStatus), unknown also when the compose file is gone.
+                            Used ONLY by the view paths (list, home, MCP list); StatusTTL (dashboard sets
+                            2 s, CLI/MCP leave 0) caches it, jobs invalidate it. Gating callers (backup,
+                            update, apps…) keep LiveStatus. One proxy check per page
     setproxy.go           → SetProxy, mode-aware reset defaults, Caddy/Nginx snippets
     domains.go            → DomainList/Add/Remove + composeDataFor (rebuilds ComposeData from
                             state) + applyDomainChange (re-render compose, `up -d`, no data loss).
@@ -367,7 +373,13 @@ internal/
                             (projectmount.go) mounts the worktree into the restored clone;
                             bench/worktree.go has the slug / bench name / alias rules
     hostuser.go           → hostUserIDs() / composeUserIDs() backing --match-host-user
-    jobs.go               → JobStore: async create/recreate/restart jobs persisted to jobs.json
+    jobs.go               → JobStore: async jobs persisted to jobs.json. StartAction(js, JobType, key, fn)
+                            runs any dashboard action as a job (key = bench name or ProxyJobKey "_proxy";
+                            a held key → ErrBenchBusy). jobProgress appends only the new line, keeps the
+                            last maxJobLines (5000, Job.LinesDropped counts the cut ones) and scrubs every
+                            step/line/error with the bench's benchSecrets (+ create/recreate inputs):
+                            jobs.json is plain text. SSE (handler_jobs) sends the log once, then only
+                            lines past an absolute offset
     progress.go           → ProgressWriter + CLIProgress{Reveal} / DiscardProgress / BufferProgress; SecretFor
                             (ProgressWriter) and Secret (plain CLI output) mask a secret as
                             "******** (hint)" unless stdout is a terminal or Reveal (--show-secrets).
@@ -429,7 +441,9 @@ internal/
     docker.go             → Runner: build/up/down/exec/logs/ps, UpServices, RestartService,
                             ExecDetached, LogsString, WaitForMariaDB/WaitForPostgres, WaitForHTTP,
                             ConfigureGitHubToken/CleanupGitHubToken, ExecStream (unbuffered
-                            stdout — never ExecSilent for a multi-GB dump), CopyTo
+                            stdout — never ExecSilent for a multi-GB dump), CopyTo.
+                            Runner.ErrOut (nil = os.Stderr) receives Build/Run's failure dump; the
+                            manager sets it from pw.Stderr()
     frappe_api.go         → Runner.GenerateAdminAPIKeys(siteName)
     port.go               → AllocatePorts (web 8000 / socketio 9000, +10 per bench, max 50) plus
                             ValidBenchPortPair / CheckTCPPortsFree for --web-port/--socketio-port,
@@ -526,7 +540,8 @@ internal/
 ### Key patterns
 
 - **`manager.Service` is the seam.** New behaviour goes in `internal/manager/`, not `internal/cli/`.
-  The CLI passes `CLIProgress{}`; the dashboard passes a `BufferProgress` so the same pipeline can
+  The CLI passes `CLIProgress{}`; the dashboard runs the action through `Service.StartAction`, whose
+  job ProgressWriter (stdout lines, `Stderr()` lines) streams into the job so the same pipeline can
   stream into an async job. `Service` serialises state-store access within a process behind a
   mutex; across processes, `state.Store`'s Add/Remove/Update hold `benches.json.lock` for their
   read-modify-write (`lock.Acquire`, 10 s), and `tunnel.json` goes through `tunnel.Update`.

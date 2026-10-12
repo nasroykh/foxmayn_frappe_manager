@@ -47,10 +47,10 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 	// as much as dev — the alias socket.io router strips Origin, which upstream
 	// authenticate.js rejects.
 	if err := bench.PatchAuthenticateJs(b.Dir); err != nil && s.Verbose {
-		fmt.Fprintf(os.Stderr, "warning: could not patch authenticate.js: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch authenticate.js: %v\n", err)
 	}
 	if err := bench.PatchUtilsJs(b.Dir); err != nil && s.Verbose {
-		fmt.Fprintf(os.Stderr, "warning: could not patch utils.js: %v\n", err)
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 	}
 
 	if b.IsDev() {
@@ -64,17 +64,17 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		}
 
 		if err := ensureDevMail(b); err != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not point outgoing mail at Mailpit: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not point outgoing mail at Mailpit: %v\n", err)
 		}
 		frappeBench := filepath.Join(b.Dir, "workspace", "frappe-bench")
 		if err := ensureClaudeMcpConfigHost(frappeBench, b.Name, b.Agent && b.AgentReadOnly); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not ensure Claude Code .mcp.json (ffc MCP): %v\n", err)
 		}
 		// Self-restarting worker: stops an idle-Redis-timeout worker exit (rc=0)
 		// from making honcho SIGTERM the whole stack (502 Bad Gateway). Must run
 		// before bench start so honcho reads the patched Procfile.
 		if err := bench.PatchProcfileWorker(b.Dir); err != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not patch Procfile worker: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not patch Procfile worker: %v\n", err)
 		}
 
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
@@ -91,7 +91,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 			return webServerUnreachable(runner, b.IsDev(), err)
 		}
 		if err := writeAgentsMD(b); err != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "warning: could not write AGENTS.md: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not write AGENTS.md: %v\n", err)
 		}
 		// ffc's config lives in ./home/ffc. When it is missing (a bench that
 		// predates the bind mount, or a deleted file), set ffc up again.
@@ -100,9 +100,9 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 
 	if b.Tunnel != nil && b.Tunnel.Enabled {
 		if _, err := tunnel.Lookup(b.Tunnel.Server); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: tunnel server %q not found — skipping frpc start (%v)\n", b.Tunnel.Server, err)
+			fmt.Fprintf(pw.Stderr(), "warning: tunnel server %q not found — skipping frpc start (%v)\n", b.Tunnel.Server, err)
 		} else if err := tunnel.Start(b.Dir, b.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not start frpc tunnel: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not start frpc tunnel: %v\n", err)
 		}
 	}
 

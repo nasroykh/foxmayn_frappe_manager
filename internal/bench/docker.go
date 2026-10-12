@@ -28,6 +28,10 @@ type Runner struct {
 	// dashboard job records and URLs, and the commands that produce it carry
 	// these values as arguments.
 	Redact []string
+	// ErrOut receives the output Build and Run dump when they fail without
+	// --verbose. Nil means os.Stderr; the manager sets it from the
+	// ProgressWriter so a dashboard job carries the dump.
+	ErrOut io.Writer
 }
 
 // Scrub replaces every secret of at least 6 characters in s with ***. Shorter
@@ -44,6 +48,15 @@ func Scrub(s string, secrets ...string) string {
 }
 
 func (r *Runner) scrub(s string) string { return Scrub(s, r.Redact...) }
+
+// dumpFailure writes captured output of a failed command to ErrOut, scrubbed.
+func (r *Runner) dumpFailure(out []byte) {
+	w := r.ErrOut
+	if w == nil {
+		w = os.Stderr
+	}
+	_, _ = io.WriteString(w, r.scrub(string(out)))
+}
 
 func NewRunner(benchName, composeDir string, verbose bool) *Runner {
 	return &Runner{
@@ -121,7 +134,7 @@ func (r *Runner) Build(extra ...string) error {
 		return cmd.Run()
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Stderr.WriteString(r.scrub(string(out)))
+		r.dumpFailure(out)
 		return err
 	}
 	return nil
@@ -140,7 +153,7 @@ func (r *Runner) Run(service string, args ...string) error {
 		return cmd.Run()
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Stderr.WriteString(r.scrub(string(out)))
+		r.dumpFailure(out)
 		return err
 	}
 	return nil
@@ -602,7 +615,7 @@ func (r *Runner) RunStdin(service string, in io.Reader, args ...string) error {
 		return cmd.Run()
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.Stderr.WriteString(r.scrub(string(out)))
+		r.dumpFailure(out)
 		return err
 	}
 	return nil

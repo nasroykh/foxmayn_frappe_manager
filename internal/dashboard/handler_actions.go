@@ -24,17 +24,26 @@ func (h *Handler) requirePOST(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// runJob starts fn as a background job keyed by key and redirects (303) to the
+// job page, where its output streams. A refusal (the key already has a job)
+// goes back to failPath with the reason.
+func (h *Handler) runJob(w http.ResponseWriter, r *http.Request, typ manager.JobType, key, failPath string, fn func(manager.ProgressWriter) error) {
+	id, err := h.Svc.StartAction(h.Jobs, typ, key, fn)
+	if err != nil {
+		redirectWithFlash(w, r, failPath, "", err.Error())
+		return
+	}
+	http.Redirect(w, r, "/admin/jobs/"+id, http.StatusSeeOther)
+}
+
 func (h *Handler) BenchStart(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.Start(name, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, benchPath(name), "Bench started", "")
+	h.runJob(w, r, manager.JobStart, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.Start(name, pw)
+	})
 }
 
 func (h *Handler) BenchStop(w http.ResponseWriter, r *http.Request) {
@@ -42,12 +51,9 @@ func (h *Handler) BenchStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.Stop(name, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, benchPath(name), "Bench stopped", "")
+	h.runJob(w, r, manager.JobStop, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.Stop(name, pw)
+	})
 }
 
 func (h *Handler) BenchRestart(w http.ResponseWriter, r *http.Request) {
@@ -56,12 +62,9 @@ func (h *Handler) BenchRestart(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	rebuild := r.FormValue("rebuild") == "1"
-	err := h.Svc.Restart(manager.RestartInput{Name: name, Rebuild: rebuild}, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, benchPath(name), "Bench restarted", "")
+	h.runJob(w, r, manager.JobRestart, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.Restart(manager.RestartInput{Name: name, Rebuild: rebuild}, pw)
+	})
 }
 
 func (h *Handler) BenchDelete(w http.ResponseWriter, r *http.Request) {
@@ -69,12 +72,10 @@ func (h *Handler) BenchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.Delete(manager.DeleteInput{Name: name, NoBackup: r.FormValue("no_backup") == "1"}, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, "/admin/benches", "Bench deleted", "")
+	noBackup := r.FormValue("no_backup") == "1"
+	h.runJob(w, r, manager.JobDelete, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.Delete(manager.DeleteInput{Name: name, NoBackup: noBackup}, pw)
+	})
 }
 
 func (h *Handler) BenchRecreate(w http.ResponseWriter, r *http.Request) {
@@ -100,12 +101,9 @@ func (h *Handler) BenchFFC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.SetupFFC(name, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, benchPath(name), "ffc configured", "")
+	h.runJob(w, r, manager.JobFFC, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.SetupFFC(name, pw)
+	})
 }
 
 func (h *Handler) BenchSetProxy(w http.ResponseWriter, r *http.Request) {
@@ -117,18 +115,16 @@ func (h *Handler) BenchSetProxy(w http.ResponseWriter, r *http.Request) {
 	if port == 0 {
 		port = 443
 	}
-	err := h.Svc.SetProxy(manager.SetProxyInput{
+	in := manager.SetProxyInput{
 		Name:  name,
 		Port:  port,
 		Host:  r.FormValue("host"),
 		NoSSL: r.FormValue("no_ssl") == "1",
 		Reset: r.FormValue("reset") == "1",
-	}, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
 	}
-	redirectWithFlash(w, r, benchPath(name), "Proxy settings updated", "")
+	h.runJob(w, r, manager.JobSetProxy, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.SetProxy(in, pw)
+	})
 }
 
 func (h *Handler) BenchTunnelEnable(w http.ResponseWriter, r *http.Request) {
@@ -136,16 +132,14 @@ func (h *Handler) BenchTunnelEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.TunnelEnable(manager.TunnelEnableInput{
+	in := manager.TunnelEnableInput{
 		BenchName:  name,
 		ServerName: r.FormValue("server"),
 		Subdomain:  r.FormValue("subdomain"),
-	}, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
 	}
-	redirectWithFlash(w, r, benchPath(name), "Tunnel enabled", "")
+	h.runJob(w, r, manager.JobTunnelOn, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.TunnelEnable(in, pw)
+	})
 }
 
 func (h *Handler) BenchTunnelDisable(w http.ResponseWriter, r *http.Request) {
@@ -153,12 +147,9 @@ func (h *Handler) BenchTunnelDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	err := h.Svc.TunnelDisable(name, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, benchPath(name), "Tunnel disabled", "")
+	h.runJob(w, r, manager.JobTunnelOff, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.TunnelDisable(name, pw)
+	})
 }
 
 func (h *Handler) BenchCleanLogs(w http.ResponseWriter, r *http.Request) {
@@ -170,38 +161,32 @@ func (h *Handler) BenchCleanLogs(w http.ResponseWriter, r *http.Request) {
 	if days <= 0 {
 		days = 30
 	}
-	err := h.Svc.CleanLogs(manager.CleanLogsInput{
+	in := manager.CleanLogsInput{
 		BenchName: name,
 		Days:      days,
 		DryRun:    r.FormValue("dry_run") == "1",
-	}, &manager.BufferProgress{})
-	if err != nil {
-		redirectWithFlash(w, r, benchPath(name), "", err.Error())
-		return
 	}
-	redirectWithFlash(w, r, benchPath(name), "Log cleanup finished", "")
+	h.runJob(w, r, manager.JobCleanLogs, name, benchPath(name), func(pw manager.ProgressWriter) error {
+		return h.Svc.CleanLogs(in, pw)
+	})
 }
 
 func (h *Handler) ProxyStart(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
 	}
-	if err := h.Svc.ProxyStart(&manager.BufferProgress{}); err != nil {
-		redirectWithFlash(w, r, "/admin/proxy", "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, "/admin/proxy", "Proxy started", "")
+	h.runJob(w, r, manager.JobProxyStart, manager.ProxyJobKey, "/admin/proxy", func(pw manager.ProgressWriter) error {
+		return h.Svc.ProxyStart(pw)
+	})
 }
 
 func (h *Handler) ProxyStop(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) || !h.requirePOST(w, r) {
 		return
 	}
-	if err := h.Svc.ProxyStop(&manager.BufferProgress{}); err != nil {
-		redirectWithFlash(w, r, "/admin/proxy", "", err.Error())
-		return
-	}
-	redirectWithFlash(w, r, "/admin/proxy", "Proxy stopped", "")
+	h.runJob(w, r, manager.JobProxyStop, manager.ProxyJobKey, "/admin/proxy", func(pw manager.ProgressWriter) error {
+		return h.Svc.ProxyStop(pw)
+	})
 }
 
 func (h *Handler) BenchCreate(w http.ResponseWriter, r *http.Request) {

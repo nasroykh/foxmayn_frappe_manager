@@ -81,8 +81,12 @@ func NewHandler(password string, logger *slog.Logger) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	svc := manager.New(false)
+	// Two tabs polling, or a page that asks for the statuses twice, share one
+	// `docker ps`.
+	svc.StatusTTL = 2 * time.Second
 	return &Handler{
-		Svc:      manager.New(false),
+		Svc:      svc,
 		Jobs:     manager.NewJobStore(),
 		Password: password,
 		Logger:   logger,
@@ -237,8 +241,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	if !h.auth(w, r) {
 		return
 	}
-	stats, _ := h.Svc.DashboardOverview(h.Jobs.FailedCount())
-	benches, _ := h.Svc.ListBenchViews()
+	stats, benches, _ := h.Svc.DashboardOverviewViews(h.Jobs.FailedCount())
 	if len(benches) > 10 {
 		benches = benches[:10]
 	}

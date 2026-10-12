@@ -32,7 +32,7 @@
     <p class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
       Operation type: <span class="font-semibold text-zinc-800 dark:text-zinc-200 uppercase tracking-wider text-xs bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{{.Job.Type}}</span> 
       <span class="text-zinc-300 dark:text-zinc-700 px-1.5">|</span>
-      Target Bench: <a href="/admin/benches/{{.Job.BenchName}}" class="font-mono text-zinc-800 dark:text-zinc-200 hover:underline">{{.Job.BenchName}}</a>
+      {{if eq .Job.BenchName "_proxy"}}Target: <a href="/admin/proxy" class="font-mono text-zinc-800 dark:text-zinc-200 hover:underline">proxy</a>{{else}}Target Bench: <a href="/admin/benches/{{.Job.BenchName}}" class="font-mono text-zinc-800 dark:text-zinc-200 hover:underline">{{.Job.BenchName}}</a>{{end}}
     </p>
   </div>
   <div id="live-indicator" class="flex items-center gap-2 text-xs font-semibold text-zinc-400 dark:text-zinc-500">

@@ -433,6 +433,7 @@ func (s *Service) changeToolchain(b *state.Bench, tc bench.Toolchain, branch str
 		return fmt.Errorf("write Dockerfile: %w", err)
 	}
 	runner := s.runnerFor(*b)
+	runner.ErrOut = pw.Stderr()
 	pw.Step("Rebuilding the image for Node " + tc.Node)
 	if err := runner.Build(); err != nil {
 		return fmt.Errorf("docker compose build: %w", err)

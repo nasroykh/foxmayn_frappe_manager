@@ -1,9 +1,12 @@
 package manager
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/mattn/go-isatty"
 )
@@ -90,10 +93,56 @@ func (DiscardProgress) Printf(string, ...any) {}
 func (DiscardProgress) Println(...any)        {}
 func (DiscardProgress) Stderr() io.Writer     { return io.Discard }
 
-// BufferProgress captures steps and lines for jobs / SSE.
+// maxPartialLine bounds the bytes a lineWriter holds waiting for a newline.
+const maxPartialLine = 64 << 10
+
+// lineWriter turns a byte stream into lines. It backs Stderr() for the
+// ProgressWriters that keep their output as lines (BufferProgress, jobs), so
+// what bench.Runner prints to stderr on a failed build, and the warnings, land
+// in the job instead of in the dashboard's log file.
+type lineWriter struct {
+	mu   sync.Mutex
+	buf  []byte
+	emit func(line string)
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		w.emit(strings.TrimSuffix(string(w.buf[:i]), "\r"))
+		w.buf = w.buf[i+1:]
+	}
+	if len(w.buf) > maxPartialLine {
+		w.emit(string(w.buf))
+		w.buf = nil
+	}
+	return len(p), nil
+}
+
+// Flush emits a final line that had no newline.
+func (w *lineWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.buf) > 0 {
+		w.emit(strings.TrimSuffix(string(w.buf), "\r"))
+		w.buf = nil
+	}
+}
+
+// BufferProgress captures steps and lines for callers that read them
+// afterwards. Its Stderr writes lines into Lines. It is not safe for
+// concurrent use; jobs use jobProgress instead.
 type BufferProgress struct {
 	Steps []string
 	Lines []string
+
+	errw *lineWriter
 }
 
 func (b *BufferProgress) Step(msg string) {
@@ -109,4 +158,9 @@ func (b *BufferProgress) Println(args ...any) {
 	b.Lines = append(b.Lines, fmt.Sprint(args...))
 }
 
-func (b *BufferProgress) Stderr() io.Writer { return io.Discard }
+func (b *BufferProgress) Stderr() io.Writer {
+	if b.errw == nil {
+		b.errw = &lineWriter{emit: func(line string) { b.Lines = append(b.Lines, line) }}
+	}
+	return b.errw
+}

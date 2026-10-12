@@ -321,6 +321,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	runner := bench.NewRunner(name, benchDir, s.Verbose)
 	runner.Redact = []string{dbPassword, adminPassword, githubToken}
 	runner.Redact = []string{adminPassword, dbPassword, githubToken}
+	runner.ErrOut = pw.Stderr()
 
 	// Site name: domain for prod, <name>.localhost for dev
 	siteName := name + ".localhost"
@@ -345,31 +346,31 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 				dbService = "postgres"
 			}
 			for _, svc := range []string{dbService, "frappe"} {
-				fmt.Fprintf(os.Stderr, "\n--- %s container logs ---\n", svc)
-				fmt.Fprintln(os.Stderr, runner.LogsString(svc))
-				fmt.Fprintln(os.Stderr, "--- end logs ---")
+				fmt.Fprintf(pw.Stderr(), "\n--- %s container logs ---\n", svc)
+				fmt.Fprintln(pw.Stderr(), runner.LogsString(svc))
+				fmt.Fprintln(pw.Stderr(), "--- end logs ---")
 			}
 		}
 
 		if keepOnFailure {
 			// State is only saved on success, so this bench is not tracked and
 			// `ffm delete` cannot find it. Print the literal teardown command.
-			fmt.Fprintf(os.Stderr, "\nCreate failed — leaving containers and %s in place (--keep-on-failure).\n", benchDir)
-			fmt.Fprintf(os.Stderr, "Clean up with:\n  docker compose -p %s -f %s/docker-compose.yml down -v && rm -rf %s\n",
+			fmt.Fprintf(pw.Stderr(), "\nCreate failed — leaving containers and %s in place (--keep-on-failure).\n", benchDir)
+			fmt.Fprintf(pw.Stderr(), "Clean up with:\n  docker compose -p %s -f %s/docker-compose.yml down -v && rm -rf %s\n",
 				bench.ProjectName(name), benchDir, benchDir)
 			return
 		}
 
-		fmt.Fprintln(os.Stderr, "\nCreate failed — cleaning up...")
+		fmt.Fprintln(pw.Stderr(), "\nCreate failed — cleaning up...")
 		if _, statErr := os.Stat(composePath); statErr == nil {
 			if downErr := runner.Down(true); downErr != nil && s.Verbose {
-				fmt.Fprintf(os.Stderr, "  cleanup: docker compose down: %v\n", downErr)
+				fmt.Fprintf(pw.Stderr(), "  cleanup: docker compose down: %v\n", downErr)
 			}
 		}
 		// A mounted project checkout is safe here: the mount lives only in the
 		// container's mount namespace, so this sees an empty mountpoint.
 		if rmErr := os.RemoveAll(benchDir); rmErr != nil && s.Verbose {
-			fmt.Fprintf(os.Stderr, "  cleanup: remove bench dir: %v\n", rmErr)
+			fmt.Fprintf(pw.Stderr(), "  cleanup: remove bench dir: %v\n", rmErr)
 		}
 	}()
 
@@ -559,7 +560,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 	} else {
 		step("Waiting for MariaDB to be ready...")
 	}
-	if err := waitForDBReady(runner, dbType == "postgres", dbPassword, os.Stderr); err != nil {
+	if err := waitForDBReady(runner, dbType == "postgres", dbPassword, pw.Stderr()); err != nil {
 		return err
 	}
 	pw.Println()
@@ -658,7 +659,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		}
 		if err := ensureDevMail(state.Bench{Mode: mode, Dir: benchDir, SiteName: siteName,
 			TemplateVersion: bench.TemplateVersion}); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not point outgoing mail at Mailpit: %v\n", err)
+			fmt.Fprintf(pw.Stderr(), "warning: could not point outgoing mail at Mailpit: %v\n", err)
 		}
 	}
 
@@ -799,7 +800,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			// Not fatal: the bench itself is built and the rollback defer would
 			// destroy it over a web server that may still be coming up. Say why
 			// rather than leaving the user to go looking.
-			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", webServerUnreachable(runner, false, err))
+			fmt.Fprintf(pw.Stderr(), "\nwarning: %v\n", webServerUnreachable(runner, false, err))
 		}
 	}
 
@@ -825,7 +826,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		step("Waiting for web server to respond...")
 		url := fmt.Sprintf("http://localhost:%d", webPort)
 		if err := bench.WaitForHTTP(url, createWebWait); err != nil {
-			fmt.Fprintf(os.Stderr, "\nwarning: %v\n", webServerUnreachable(runner, true, err))
+			fmt.Fprintf(pw.Stderr(), "\nwarning: %v\n", webServerUnreachable(runner, true, err))
 		}
 
 		step("Generating API keys and configuring ffc")
@@ -834,7 +835,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			FrappeBranch: frappeBranch, Python: toolchain.Python, Node: toolchain.Node,
 			Agent: agent, AgentReadOnly: agentReadOnly, ProjectApp: projectApp, ProjectAppPath: projectPath}
 		if _, err := setupBenchAccess(runner, access); err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: %v\n  (run 'ffm ffc %s' once the bench is up)\n", err, name)
+			fmt.Fprintf(pw.Stderr(), "  warning: %v\n  (run 'ffm ffc %s' once the bench is up)\n", err, name)
 			ffcConfigured = false
 		}
 	}

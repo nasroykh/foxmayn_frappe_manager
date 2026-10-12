@@ -17,9 +17,17 @@
   es.onmessage = function (ev) {
     try {
       var d = JSON.parse(ev.data);
-      if (d.lines) {
-        el.textContent = d.lines.join('\n');
+      // The first event carries every line (reset); later ones only the new
+      // lines, which are appended.
+      if (d.lines && d.lines.length) {
+        if (d.reset) {
+          el.textContent = d.lines.join('\n');
+        } else {
+          el.textContent += '\n' + d.lines.join('\n');
+        }
         scrollToBottom();
+      } else if (d.reset) {
+        el.textContent = '';
       }
 
       if (d.status === 'succeeded' || d.status === 'failed' || d.status === 'interrupted') {

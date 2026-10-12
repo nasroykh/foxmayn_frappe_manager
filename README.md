@@ -195,7 +195,12 @@ ffm dashboard logs -f
 ```
 
 - Default URL: **http://127.0.0.1:8787/admin** (HTTP Basic auth; any user name, the admin password)
-- Long operations (`create`, `recreate`) run as **background jobs** with live log streaming
+- Every long action (`create`, `recreate`, start, stop, restart, delete, ffc, set-proxy, tunnel on/off,
+  clean-logs, proxy start/stop) runs as a **background job**: the click redirects to the job page and
+  its output streams live, including the stderr a failed image build prints. Job output keeps the
+  last 5000 lines and has the bench's passwords masked. A bench (or the proxy) runs one job at a time;
+  a second action on it is refused with a message. Quick edits (tunnel servers) stay synchronous.
+- The bench list and home page read every bench's status with one `docker ps` (cached for 2 s).
 - Interactive shell: use `ffm shell <name>` in the terminal; the dashboard has no shell
 - The UI loads nothing from another origin (no CDN, no web fonts) and sets a strict
   Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
 )
 
@@ -39,7 +41,26 @@ const (
 	JobCreate   JobType = "create"
 	JobRecreate JobType = "recreate"
 	JobRestart  JobType = "restart"
+	JobStart    JobType = "start"
+	JobStop     JobType = "stop"
+	JobDelete   JobType = "delete"
+	JobFFC      JobType = "ffc"
+	JobSetProxy JobType = "set-proxy"
+	// JobTunnelOn / JobTunnelOff enable and disable a bench's VPS tunnel.
+	JobTunnelOn   JobType = "tunnel-on"
+	JobTunnelOff  JobType = "tunnel-off"
+	JobCleanLogs  JobType = "clean-logs"
+	JobProxyStart JobType = "proxy-start"
+	JobProxyStop  JobType = "proxy-stop"
 )
+
+// ProxyJobKey is the job key of the shared Traefik proxy, which belongs to no
+// bench. It starts with an underscore, which no bench name can.
+const ProxyJobKey = "_proxy"
+
+// maxJobLines bounds Job.Lines: a long build is tens of thousands of lines,
+// and jobs.json holds up to 100 jobs.
+const maxJobLines = 5000
 
 // Job holds async operation state.
 type Job struct {
@@ -52,6 +73,10 @@ type Job struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Steps     []string  `json:"steps,omitempty"`
 	Lines     []string  `json:"lines,omitempty"`
+	// LinesDropped counts the oldest lines cut to stay within maxJobLines.
+	// The absolute number of a line is LinesDropped plus its index in Lines,
+	// which is how the SSE stream tells a client what is new.
+	LinesDropped int `json:"lines_dropped,omitempty"`
 }
 
 // snapshot returns a copy that is safe to read without the store's lock.
@@ -163,41 +188,68 @@ func (js *JobStore) sortedLocked() []*Job {
 
 // StartCreate enqueues a create job.
 func (s *Service) StartCreate(ctx context.Context, js *JobStore, in CreateInput) (string, error) {
-	return s.startJob(ctx, js, JobCreate, in.Name, func(pw ProgressWriter) error {
+	return s.startJobSecrets(js, JobCreate, in.Name, []string{in.AdminPassword, in.DBPassword, in.GithubToken}, func(pw ProgressWriter) error {
 		return s.Create(in, pw)
 	})
 }
 
 // StartRecreate enqueues a recreate job.
 func (s *Service) StartRecreate(ctx context.Context, js *JobStore, in RecreateInput) (string, error) {
-	return s.startJob(ctx, js, JobRecreate, in.Name, func(pw ProgressWriter) error {
+	secrets := []string{in.GithubToken}
+	if s.Store != nil {
+		if b, err := s.GetBench(in.Name); err == nil {
+			secrets = benchSecrets(b, in.GithubToken)
+		}
+	}
+	return s.startJobSecrets(js, JobRecreate, in.Name, secrets, func(pw ProgressWriter) error {
 		return s.Recreate(in, pw)
 	})
 }
 
+// StartAction runs fn as a background job keyed by key: a bench name, or
+// ProxyJobKey for the shared proxy. It refuses while another job holds the
+// key, with ErrBenchBusy like lockBench does for an operation in another
+// process. Output of fn reaches the job through the ProgressWriter, with the
+// key bench's passwords masked.
+func (s *Service) StartAction(js *JobStore, typ JobType, key string, fn func(ProgressWriter) error) (string, error) {
+	var secrets []string
+	if s.Store != nil && key != "" && key != ProxyJobKey {
+		if b, err := s.GetBench(key); err == nil {
+			secrets = benchSecrets(b)
+		}
+	}
+	return s.startJobSecrets(js, typ, key, secrets, fn)
+}
+
 func (s *Service) startJob(_ context.Context, js *JobStore, typ JobType, benchName string, fn func(ProgressWriter) error) (string, error) {
+	return s.startJobSecrets(js, typ, benchName, nil, fn)
+}
+
+// startJobSecrets is startJob that also masks secrets in everything the job
+// records (steps, lines, the error), because jobs.json is plain text.
+func (s *Service) startJobSecrets(js *JobStore, typ JobType, key string, secrets []string, fn func(ProgressWriter) error) (string, error) {
 	js.mu.Lock()
-	if _, ok := js.byBench[benchName]; ok {
+	if _, ok := js.byBench[key]; ok {
 		js.mu.Unlock()
-		return "", fmt.Errorf("a job is already running for bench %q", benchName)
+		return "", fmt.Errorf("%w: a job is already running for %q", ErrBenchBusy, key)
 	}
 	now := time.Now()
 	id := fmt.Sprintf("%d", now.UnixNano())
 	j := &Job{
 		ID:        id,
 		Type:      typ,
-		BenchName: benchName,
+		BenchName: key,
 		Status:    JobPending,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	js.jobs[id] = j
-	js.byBench[benchName] = id
+	js.byBench[key] = id
 	js.persistLocked()
 	js.mu.Unlock()
 
 	go func() {
-		pw := &jobProgress{job: j, store: js}
+		pw := newJobProgress(js, j, secrets)
 		js.mu.Lock()
 		j.Status = JobRunning
 		j.UpdatedAt = time.Now()
@@ -205,17 +257,19 @@ func (s *Service) startJob(_ context.Context, js *JobStore, typ JobType, benchNa
 		js.mu.Unlock()
 
 		err := fn(pw)
+		pw.errw.Flush()
+		s.InvalidateStatus()
 
 		js.mu.Lock()
 		defer js.mu.Unlock()
 		j.UpdatedAt = time.Now()
 		if err != nil {
 			j.Status = JobFailed
-			j.Error = err.Error()
+			j.Error = bench.Scrub(err.Error(), secrets...)
 		} else {
 			j.Status = JobSucceeded
 		}
-		delete(js.byBench, benchName)
+		delete(js.byBench, key)
 		js.persistLocked()
 	}()
 
@@ -258,38 +312,51 @@ func (js *JobStore) FailedCount() int {
 }
 
 // jobProgress writes steps and output lines into the job record as they
-// happen, so SSE consumers see them live.
+// happen, so SSE consumers see them live. Only the new line is appended each
+// time; the record keeps the last maxJobLines.
 type jobProgress struct {
-	job   *Job
-	store *JobStore
-	BufferProgress
+	job     *Job
+	store   *JobStore
+	secrets []string
+	errw    *lineWriter
 }
 
-// sync copies the buffered output into the job. Steps are persisted, so a
-// crash leaves a record of how far the job got; plain lines are not, to keep
-// chatty output from rewriting jobs.json on every line.
-func (p *jobProgress) sync(persist bool) {
+func newJobProgress(js *JobStore, j *Job, secrets []string) *jobProgress {
+	p := &jobProgress{job: j, store: js, secrets: secrets}
+	p.errw = &lineWriter{emit: func(line string) { p.add("", line, false) }}
+	return p
+}
+
+// add appends one line (and, when step is not empty, a step) to the job.
+// Steps are persisted, so a crash leaves a record of how far the job got;
+// plain lines are not, to keep chatty output from rewriting jobs.json on
+// every line.
+func (p *jobProgress) add(step, line string, persist bool) {
+	line = bench.Scrub(line, p.secrets...)
+	step = bench.Scrub(step, p.secrets...)
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()
-	p.job.Steps = append([]string(nil), p.BufferProgress.Steps...)
-	p.job.Lines = append([]string(nil), p.BufferProgress.Lines...)
-	p.job.UpdatedAt = time.Now()
+	j := p.job
+	if step != "" {
+		j.Steps = append(j.Steps, step)
+	}
+	j.Lines = append(j.Lines, line)
+	if over := len(j.Lines) - maxJobLines; over > 0 {
+		j.Lines = j.Lines[:copy(j.Lines, j.Lines[over:])]
+		j.LinesDropped += over
+	}
+	j.UpdatedAt = time.Now()
 	if persist {
 		p.store.persistLocked()
 	}
 }
 
-func (p *jobProgress) Step(msg string) {
-	p.BufferProgress.Step(msg)
-	p.sync(true)
-}
+func (p *jobProgress) Step(msg string) { p.add(msg, "→ "+msg, true) }
 
 func (p *jobProgress) Printf(format string, args ...any) {
-	p.BufferProgress.Printf(format, args...)
-	p.sync(false)
+	p.add("", fmt.Sprintf(format, args...), false)
 }
 
-func (p *jobProgress) Println(args ...any) {
-	p.BufferProgress.Println(args...)
-	p.sync(false)
-}
+func (p *jobProgress) Println(args ...any) { p.add("", fmt.Sprint(args...), false) }
+
+func (p *jobProgress) Stderr() io.Writer { return p.errw }

@@ -198,7 +198,9 @@ func (s *Service) MyCommand(in MyCommandInput, pw ProgressWriter) error {
 
 Never write output with `fmt.Printf` in `internal/manager` — everything goes through
 `ProgressWriter`, or the dashboard's job runner cannot capture it. The CLI passes
-`CLIProgress{}`; the dashboard passes `&BufferProgress{}`.
+`CLIProgress{}`; the dashboard runs the action as a job (`Service.StartAction`), whose writer keeps
+stdout and `Stderr()` lines (secrets masked). Write warnings and failure dumps to `pw.Stderr()`, not
+`os.Stderr`, or they land in the dashboard's log instead of the job.
 
 ### 3. Register in root.go
 

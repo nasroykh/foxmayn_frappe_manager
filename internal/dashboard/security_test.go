@@ -428,7 +428,9 @@ func TestLogsRejectUnknownService(t *testing.T) {
 // --- audit of every POST ---
 
 func TestEveryPostIsAudited(t *testing.T) {
-	h, _ := newTestHandler(t)
+	// docker fails fast: the accepted POST starts a proxy job that would
+	// otherwise try to bring the proxy up.
+	h, _ := newTestHandler(t, fakeexec.Rule{Match: "docker", Exit: 1})
 	// Refused (no CSRF token) and accepted requests both leave a line.
 	postForm(h, h.Audited(h.ProxyStart), "/admin/proxy/start", "", url.Values{}, false)
 	postForm(h, h.Audited(h.ProxyStart), "/admin/proxy/start", "", url.Values{}, true)

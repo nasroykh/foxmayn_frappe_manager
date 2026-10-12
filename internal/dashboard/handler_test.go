@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx/fakeexec"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
@@ -34,6 +35,21 @@ func newTestHandler(t *testing.T, rules ...fakeexec.Rule) (*Handler, *fakeexec.F
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A job a test started may still be writing jobs.json into the temp dir;
+	// wait for it before the directory is removed (cleanups run last-in first).
+	t.Cleanup(func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			busy := false
+			for _, j := range h.Jobs.ListJobs() {
+				busy = busy || !j.Status.Finished()
+			}
+			if !busy {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
 	return h, fake
 }
 

@@ -455,6 +455,7 @@ ffm dashboard start -d --allow-exec --admin-password '…'   # enable the one-sh
 - A non-loopback `--listen` is **refused** unless `--tls-cert` + `--tls-key` (HTTPS) or `--insecure-http` is given; the daemon is checked too. The flags are saved in `dashboard.json`.
 - The exec page is **off by default** (`404`); `--allow-exec` turns it on. The service must be one of the bench's compose services.
 - Wrong passwords are throttled per client address (5/min, then `429` with `Retry-After`). Behind a reverse proxy all clients share one address, so one typo-prone user can lock out everyone.
+- Heavy actions (start, stop, restart, delete, set-proxy, tunnel, ffc, clean-logs, proxy) run as jobs: the click redirects to `/admin/jobs/<id>` and the output streams there. One job per bench at a time.
 - Every dashboard POST goes to `~/.config/ffm/dashboard-audit.jsonl` (0600), exec commands verbatim. Passwords are fetched on demand (Reveal/Copy), not rendered in the bench page.
 
 ## Container Logs
