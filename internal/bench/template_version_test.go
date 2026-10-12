@@ -21,6 +21,9 @@ var templatesAtVersion = map[int]string{
 	5: "c09db983a04ca5383a2e18b49165998de5274944d6b0b6035bee0e65deeaec16",
 	// 6: dev Dockerfile: ffc pinned to bench.FfcRef (binary and skills).
 	6: "3471151b74a4fc5e6eacae93627bd83859c000cf282b49d18c8fdc582f89568f",
+	// 7: compose: the database root password is a file secret
+	// (./secrets/db_root_password), not an inline environment variable.
+	7: "08d110b360d18fff78807fb64c3173f58971a1395b108883f0413f168840dbfb",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

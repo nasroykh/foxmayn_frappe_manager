@@ -67,11 +67,12 @@ func TestCommandsQuoteHostileValues(t *testing.T) {
 	marker := t.TempDir() + "/pwned"
 	payload := "x';touch " + marker + ";'%s$(touch " + marker + ")"
 
-	// The credentials command, with printf and git swapped for echo-safe stubs.
-	cmd := GitCredentialsCmd(payload)
-	cmd = strings.Replace(cmd, " > /tmp/.git-credentials", " > "+t.TempDir()+"/creds", 1)
+	// The credentials command, with the store path and git swapped for harmless stubs.
+	cmd := strings.Replace(GitCredentialsStdinCmd, " > /tmp/.git-credentials", " > "+t.TempDir()+"/creds", 1)
 	cmd = strings.Replace(cmd, "git config --global", "true", 1)
-	if out, err := exec.Command(sh, "-c", cmd).CombinedOutput(); err != nil {
+	c := exec.Command(sh, "-c", cmd)
+	c.Stdin = strings.NewReader(payload + "\n")
+	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("credentials command failed: %v\n%s", err, out)
 	}
 	// The app command, with bench stubbed to print its arguments.
@@ -99,9 +100,14 @@ func TestGitCredentialsWritesTokenVerbatim(t *testing.T) {
 	}
 	dir := t.TempDir()
 	tok := "ghp_a'b%sc$(x)\\d"
-	cmd := strings.Replace(GitCredentialsCmd(tok), "/tmp/.git-credentials", dir+"/c", 1)
+	cmd := strings.Replace(GitCredentialsStdinCmd, "/tmp/.git-credentials", dir+"/c", 1)
 	cmd = strings.Replace(cmd, "git config --global", "true", 1)
-	if out, err := exec.Command(sh, "-c", cmd).CombinedOutput(); err != nil {
+	c := exec.Command(sh, "-c", cmd)
+	c.Stdin = strings.NewReader(tok + "\n")
+	if strings.Contains(cmd, tok) {
+		t.Fatal("the token is part of the command line")
+	}
+	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	got, _ := os.ReadFile(dir + "/c")

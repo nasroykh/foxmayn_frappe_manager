@@ -38,7 +38,10 @@ type ComposeData struct {
 	SocketIOPort    int
 	SocketIOPortEnd int // dev only: upper end of port range
 	// DBType is "mariadb" or "postgres". Controls which database service is rendered.
-	DBType         string
+	DBType string
+	// DBRootPassword is the database root password. It is NOT rendered into the
+	// compose file: WriteCompose writes it to <benchDir>/secrets/db_root_password
+	// and the file references that as a compose secret.
 	DBRootPassword string
 	// ForwardSSHAgent, when true, mounts the host SSH agent socket into the
 	// frappe container so that SSH-URL private repos work during bench get-app.
@@ -283,6 +286,14 @@ func WriteCompose(benchDir string, data ComposeData) error {
 	if err != nil {
 		return err
 	}
+	// The compose file references the secret file, so it must exist before
+	// compose ever reads that file. An empty password (a render with no
+	// credentials) leaves an existing secret untouched.
+	if data.DBRootPassword != "" {
+		if err := WriteDBRootSecret(benchDir, data.DBRootPassword); err != nil {
+			return err
+		}
+	}
 	dest := filepath.Join(benchDir, "docker-compose.yml")
 	// Keep the previous file when the content changes. ffm owns this file and
 	// regenerates it (reconcile, domain changes), so a hand edit made here is
@@ -292,13 +303,58 @@ func WriteCompose(benchDir string, data ComposeData) error {
 			return fmt.Errorf("back up docker-compose.yml: %w", err)
 		}
 	}
-	// 0600: the file carries the database root password. WriteFile only applies
-	// the mode when it creates the file, so files written by older versions
-	// (0644) are tightened explicitly.
+	// 0600: the file carries the bench's settings and, on benches older than
+	// template 7, the database root password. WriteFile only applies the mode
+	// when it creates the file, so files written by older versions (0644) are
+	// tightened explicitly.
 	if err := os.WriteFile(dest, out, 0o600); err != nil {
 		return err
 	}
 	return os.Chmod(dest, 0o600)
+}
+
+// SecretsDir is the bench directory holding the files compose mounts as
+// secrets. It sits next to docker-compose.yml, outside ./workspace, so it is
+// never bind-mounted into the frappe container.
+const SecretsDir = "secrets"
+
+// DBRootPasswordFile is the database root password inside SecretsDir.
+const DBRootPasswordFile = "db_root_password"
+
+// DBRootSecretPath returns the host path of a bench's database root password.
+func DBRootSecretPath(benchDir string) string {
+	return filepath.Join(benchDir, SecretsDir, DBRootPasswordFile)
+}
+
+// WriteDBRootSecret stores the database root password in the bench's secrets
+// directory (0700, file 0600).
+//
+// The file is rewritten IN PLACE: a compose file secret is a bind mount of the
+// host file, which pins its inode, so a temp file plus rename would leave the
+// running database container reading the unlinked old file. The same reason
+// keeps rotation from using it.
+func WriteDBRootSecret(benchDir, password string) error {
+	dir := filepath.Join(benchDir, SecretsDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create the secrets directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(DBRootSecretPath(benchDir), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("write the database root password: %w", err)
+	}
+	// No trailing newline: the database entrypoints strip one anyway, and a
+	// reader that does not would see it as part of the password.
+	if _, err := f.WriteString(password); err != nil {
+		f.Close()
+		return fmt.Errorf("write the database root password: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(DBRootSecretPath(benchDir), 0o600)
 }
 
 // RenderCompose returns the docker-compose.yml for data without writing it.
@@ -357,7 +413,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 6
+const TemplateVersion = 7
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {
