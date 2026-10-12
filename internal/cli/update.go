@@ -318,6 +318,24 @@ func swapExecutable(current, replacement string) error {
 	return nil
 }
 
+// removeStaleBinary deletes the ffm.exe.old an earlier Windows update left
+// beside the running binary. It could not be deleted then (the old image was
+// still running), and nothing else removed it until the next update. Best
+// effort: it fails quietly while another ffm, such as the dashboard daemon,
+// still runs from it.
+func removeStaleBinary() {
+	if exe, err := os.Executable(); err == nil {
+		removeStaleBinaryOf(runtime.GOOS, exe)
+	}
+}
+
+func removeStaleBinaryOf(goos, exe string) bool {
+	if goos != "windows" {
+		return false
+	}
+	return os.Remove(exe+".old") == nil
+}
+
 // releaseAssetName returns the GoReleaser archive filename for the current
 // platform. GoReleaser strips the leading "v" from the tag for .Version.
 //

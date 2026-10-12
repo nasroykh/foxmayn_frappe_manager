@@ -1,0 +1,100 @@
+# Does ffm still work on arm64 Linux?
+#
+# Everything ffm builds runs inside images it pulls: frappe/bench, MariaDB,
+# Redis, Mailpit, Traefik. The unit tests run on amd64 only, and the dev image
+# downloads installers (ffc, Claude Code, starship, zinit) that could stop
+# shipping an arm64 build without anything noticing. This creates one dev bench
+# on a native arm64 runner and checks that it comes up and passes `ffm doctor`.
+#
+# Monthly and on demand: a dev create builds the image from scratch (20-30
+# minutes on a fresh runner). --match-host-user is mandatory, since GitHub
+# runners are uid 1001 while the frappe/bench image is uid 1000 (see
+# uid-probe.yml).
+name: arm64-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 1 * *" # the 1st of each month, 04:41 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      CI: "true"
+
+    steps:
+      - name: Resolve bench paths
+        run: |
+          echo "FFM_BENCHES_DIR=$RUNNER_TEMP/frappe" >> "$GITHUB_ENV"
+          echo "FFM_CONFIG_DIR=$RUNNER_TEMP/ffm-config" >> "$GITHUB_ENV"
+          echo "FFM_BACKUPS_DIR=$RUNNER_TEMP/ffm-backups" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Unit tests
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build ffm
+        run: go build -o "$RUNNER_TEMP/ffm" ./cmd/ffm
+
+      # Cheap and early: a missing arm64 manifest fails here in seconds instead
+      # of after the image build.
+      - name: Every pinned image has an arm64 manifest
+        run: |
+          images=$(grep -rhoE 'image: docker\.io/[^ ]+' internal/bench/templates | awk '{print $2}' | sort -u)
+          tag=$(grep -oE 'BenchImageTag = "[^"]+"' internal/bench/compose.go | cut -d'"' -f2)
+          images="$images docker.io/frappe/bench:$tag $(grep -oE 'Image += "[^"]+"' internal/proxy/proxy.go | cut -d'"' -f2)"
+          for img in $images; do
+            if docker manifest inspect "$img" | grep -q '"architecture": "arm64"'; then
+              echo "ok   $img"
+            else
+              echo "::error::$img has no arm64 manifest"
+              missing=1
+            fi
+          done
+          test -z "${missing:-}"
+
+      - name: Create a dev bench
+        run: |
+          mkdir -p "$FFM_BENCHES_DIR" "$FFM_CONFIG_DIR"
+          "$RUNNER_TEMP/ffm" create smoke --mode dev --verbose --match-host-user
+
+      - name: The bench runs on arm64
+        run: |
+          ARCH=$(docker compose -p ffm-smoke -f "$FFM_BENCHES_DIR/smoke/docker-compose.yml" \
+            exec -T frappe uname -m | tr -d '[:space:]')
+          echo "frappe container architecture: $ARCH"
+          if [ "$ARCH" != "aarch64" ]; then
+            echo "::error::the frappe container is $ARCH, not aarch64 (an emulated image?)"
+            exit 1
+          fi
+
+      # doctor exits 1 on any failing check.
+      - name: ffm doctor
+        run: |
+          "$RUNNER_TEMP/ffm" doctor smoke
+          "$RUNNER_TEMP/ffm" doctor smoke --json > doctor.json
+          if grep -q '"status": *"fail"' doctor.json; then
+            echo "::error::ffm doctor reported a failing check"
+            cat doctor.json
+            exit 1
+          fi
+
+      - name: Teardown
+        if: always()
+        run: |
+          if [ -f "$FFM_BENCHES_DIR/smoke/docker-compose.yml" ]; then
+            docker compose -p ffm-smoke -f "$FFM_BENCHES_DIR/smoke/docker-compose.yml" down -v || true
+          fi
+          rm -rf "$FFM_BENCHES_DIR"

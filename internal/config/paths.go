@@ -124,6 +124,12 @@ func BackupSchedulerLogFile() string {
 	return filepath.Join(ConfigDir(), "backup-scheduler.log")
 }
 
+// BackupSchedulerFile records which scheduler backend (cron, systemd,
+// launchd, schtasks) holds the hourly job of this configuration.
+func BackupSchedulerFile() string {
+	return filepath.Join(ConfigDir(), "backup-scheduler.json")
+}
+
 // BackupRunStateFile records the last scheduled attempt for one bench. It
 // lives beside the archives, not in benches.json, so the hourly job never
 // writes the state file every other ffm command reads and rewrites.

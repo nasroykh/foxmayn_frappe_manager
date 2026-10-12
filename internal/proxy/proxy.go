@@ -222,6 +222,13 @@ func EnsureHTTPS(acmeEmail string) error {
 // createContainer runs a brand-new Traefik container attached to ffm-proxy.
 // All Traefik configuration is passed as CLI flags — no file is written.
 func createContainer() error {
+	if err := checkUnprivilegedPorts(WebPort); err != nil {
+		return err
+	}
+	sock, err := dockerSocket()
+	if err != nil {
+		return err
+	}
 	args := []string{
 		"run", "-d",
 		"--name", ContainerName,
@@ -234,8 +241,9 @@ func createContainer() error {
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", DashboardPort, DashboardPort),
 		// Attach to the shared network so Traefik can reach bench containers.
 		"--network", NetworkName,
-		// Mount Docker socket read-only for service discovery.
-		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
+		// Mount Docker socket read-only for service discovery (the rootless
+		// daemon's own socket when there is one).
+		"-v", sock + ":" + defaultSocket + ":ro",
 		// Prevent Traefik from routing to itself.
 		"--label", "traefik.enable=false",
 		Image,
@@ -256,8 +264,13 @@ func createContainer() error {
 	out, err := execx.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
+		if portHint(msg) == "privileged" {
+			return fmt.Errorf("start Traefik: Docker may not publish port %d (a rootless daemon needs "+
+				"net.ipv4.ip_unprivileged_port_start <= %d: 'sudo sysctl -w net.ipv4.ip_unprivileged_port_start=%d').\n"+
+				"Original error: %w\n%s", WebPort, WebPort, WebPort, err, msg)
+		}
 		// Provide an actionable hint for the most common failure: port 80 in use.
-		if strings.Contains(msg, "address already in use") || strings.Contains(msg, "bind:") {
+		if portHint(msg) == "in use" {
 			return fmt.Errorf(
 				"start Traefik: port %d is already in use on this host.\n"+
 					"Stop the process occupying port %d and try again.\n"+
@@ -279,6 +292,13 @@ func createContainer() error {
 // handled via compose labels so no global redirect is configured here (which
 // would break dev benches).
 func createContainerHTTPS(acmeEmail string) error {
+	if err := checkUnprivilegedPorts(WebPort, HTTPSPort); err != nil {
+		return err
+	}
+	sock, err := dockerSocket()
+	if err != nil {
+		return err
+	}
 	args := []string{
 		"run", "-d",
 		"--name", ContainerName,
@@ -287,7 +307,7 @@ func createContainerHTTPS(acmeEmail string) error {
 		"-p", fmt.Sprintf("0.0.0.0:%d:443", HTTPSPort),
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", DashboardPort, DashboardPort),
 		"--network", NetworkName,
-		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
+		"-v", sock + ":" + defaultSocket + ":ro",
 		"-v", fmt.Sprintf("%s:/letsencrypt", LetsEncryptVolume),
 		"--label", "traefik.enable=false",
 		Image,
@@ -308,7 +328,12 @@ func createContainerHTTPS(acmeEmail string) error {
 	out, err := execx.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
-		if strings.Contains(msg, "address already in use") || strings.Contains(msg, "bind:") {
+		if portHint(msg) == "privileged" {
+			return fmt.Errorf("start Traefik (HTTPS): Docker may not publish port %d or %d (a rootless daemon needs "+
+				"net.ipv4.ip_unprivileged_port_start <= %d: 'sudo sysctl -w net.ipv4.ip_unprivileged_port_start=%d').\n"+
+				"Original error: %w\n%s", WebPort, HTTPSPort, WebPort, WebPort, err, msg)
+		}
+		if portHint(msg) == "in use" {
 			return fmt.Errorf(
 				"start Traefik (HTTPS): port 80 or 443 is already in use on this host.\n"+
 					"Stop the conflicting process and try again.\n"+

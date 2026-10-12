@@ -3,9 +3,35 @@ package cli
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestRemoveStaleBinary(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ffm.exe")
+	old := exe + ".old"
+	if err := os.WriteFile(old, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if removeStaleBinaryOf("linux", exe) {
+		t.Fatal("removed a file off Windows")
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatal("the file is gone off Windows")
+	}
+	if !removeStaleBinaryOf("windows", exe) {
+		t.Fatal("did not remove ffm.exe.old")
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Fatal("ffm.exe.old survived")
+	}
+	if removeStaleBinaryOf("windows", exe) {
+		t.Fatal("reported a removal when nothing was there")
+	}
+}
 
 func TestVerifyChecksum(t *testing.T) {
 	data := []byte("archive bytes")

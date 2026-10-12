@@ -205,11 +205,17 @@ ffm backup scheduler status                            # is the hourly job insta
 
 Retention keeps the newest scheduled archive per hour/day/week tier plus the newest 3 always.
 Only archives made by the schedule are ever deleted — manual `ffm backup` archives never are.
-A scheduled run **skips** a stopped bench instead of starting it. One tagged crontab line runs
-`ffm backup run-due` hourly for all benches; it is installed with the first schedule and
+A scheduled run **skips** a stopped bench instead of starting it. One hourly job runs
+`ffm backup run-due` for all benches; it is installed with the first schedule and
 removed with the last, and its results go to `~/.config/ffm/backup-scheduler.log`. After
 moving the ffm binary or changing `FFM_*` variables, run `ffm backup scheduler install` again.
-On Windows, `ffm backup scheduler print` gives the Task Scheduler command.
+The job lives in cron, a systemd user timer, a launchd agent or a Task Scheduler task:
+`ffm backup scheduler install|print --backend cron|systemd|launchd|schtasks`. Without the flag
+ffm uses the backend recorded in `~/.config/ffm/backup-scheduler.json`, else cron when the
+crontab already has an ffm line, else the platform default (Windows schtasks, macOS launchd,
+Linux cron if `crontab` exists and a cron daemon runs, otherwise systemd --user). A systemd
+user timer stops at logout unless linger is on: ffm warns and prints
+`sudo loginctl enable-linger $USER`; never run it for the user.
 
 **What a restore cannot bring back** (it says so when it applies): uncommitted changes in an
 app's working tree; the VPS tunnel, whose token lives in this host's `tunnel.json` rather than

@@ -62,6 +62,53 @@ cd foxmayn_frappe_manager
 make install
 ```
 
+## Platforms
+
+| Platform | Status | Notes |
+|--|--|--|
+| Linux amd64 / arm64 | supported | release binaries, `.deb`, `.rpm`; the `arm64-smoke` workflow creates a dev bench on a native arm64 runner every month |
+| macOS (Intel, Apple silicon) | supported | Docker Desktop; scheduled backups use launchd |
+| Windows | supported | Docker Desktop; scheduled backups use Task Scheduler; no seeds yet |
+| WSL2 | supported | see below |
+
+**Rootless Docker.** ffm mounts the daemon's own socket into the proxy when `docker info` reports a
+rootless daemon (taken from `DOCKER_HOST`, else the current docker context), and fails before
+`docker run` when `net.ipv4.ip_unprivileged_port_start` is above 80, because the proxy publishes
+port 80 (and 443 for a prod bench with SSL). To allow it:
+
+```bash
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-ffm-rootless.conf
+```
+
+With a rootful daemon the proxy always mounts `/var/run/docker.sock`, whatever the context says
+(Docker Desktop's context socket cannot be bind-mounted).
+
+### WSL2
+
+- **Docker.** Docker Engine installed natively inside the distribution works; so does Docker Desktop's
+  WSL integration. ffm needs `docker compose` on the PATH either way.
+- **Scheduled backups need a scheduler that runs.** A WSL2 distribution without systemd starts no cron
+  daemon, so a crontab line never fires. Set `systemd=true` under `[boot]` in `/etc/wsl.conf` and run
+  `wsl --shutdown`, or start cron by hand (`sudo service cron start`). `ffm backup scheduler install`
+  picks cron only when `crontab` exists and a cron daemon is running, and otherwise a systemd user
+  timer; with neither it stops with that explanation. A systemd user timer stops when your last
+  session ends unless linger is on — ffm warns and prints `sudo loginctl enable-linger $USER`, and
+  never runs it.
+- **Install location.** `install.sh` puts ffm in `~/.local/bin` when `/usr/local/bin` is not writable,
+  `go install` puts it in `~/go/bin`. Make sure the one you want comes first on the PATH, or an old
+  copy shadows the new one (`which -a ffm`).
+- **Stopping the dev server by hand.** ffm stops `bench start` with `pkill -f '[h]oncho start'`. The
+  brackets matter: inside a `bash -c` the plain pattern also matches the shell itself and kills it.
+- **Traefik lost its network or ports** after a WSL or Docker restart: check
+  `docker inspect ffm-proxy --format '{{json .NetworkSettings.Networks}} {{json .HostConfig.PortBindings}}'`,
+  then `ffm proxy stop && ffm proxy start`. If the bindings are still wrong, `docker rm ffm-proxy` and
+  `ffm proxy start` recreate it (benches keep their routing labels). Not on a host whose proxy serves
+  HTTPS for a prod bench: `ffm proxy start` recreates only the plain-HTTP proxy.
+- **Keep project checkouts off `/mnt/<drive>`.** `ffm up` warns when the mounted checkout is on a Windows
+  drive: the 9p mount is slow, Windows-side edits may not trigger reloads, and file modes are ignored.
+  Clone into the Linux filesystem.
+
 ## Modes
 
 | | Development (`--mode dev`) | Production (`--mode prod`) |
@@ -888,15 +935,34 @@ Flags:  --every <interval>      1h, 6h, 24h, 168h (whole hours), or hourly/daily
 - **A stopped bench is skipped**, not started: it has not changed since its last backup.
 - **Attachments are usually most of an archive's size.** `--files daily` or `weekly` keeps
   frequent runs small; a database-only archive restores without attachments.
-- **One hourly job runs everything.** The first schedule installs a single tagged line in your
-  crontab running `ffm backup run-due`; the last `--off` removes it. `ffm backup scheduler
-  status` checks it. The line carries the ffm path, a `PATH` that reaches docker and any
-  `FFM_*` settings — re-run `ffm backup scheduler install` after moving ffm or changing them.
-  There is one such job per user, and it belongs to one configuration. ffm leaves a job another
-  `FFM_CONFIG_DIR` installed alone (warning that this schedule's job was not installed), and
+- **One hourly job runs everything.** The first schedule installs a single job running
+  `ffm backup run-due`; the last `--off` removes it. `ffm backup scheduler status` checks it
+  (backend, drift from what this ffm would install, a missing binary). The job carries the ffm
+  path, a `PATH` that reaches docker and any `FFM_*` settings — re-run `ffm backup scheduler
+  install` after moving ffm or changing them.
+- **Four schedulers, one choice.** `ffm backup scheduler install|print --backend
+  cron|systemd|launchd|schtasks`:
+
+  | Backend | Where the job lives |
+  |--|--|
+  | `cron` | one line tagged `# ffm-backup-tick` in your crontab |
+  | `systemd` | `ffm-backup.timer` + `ffm-backup.service` in `~/.config/systemd/user` (`$XDG_CONFIG_HOME`), enabled with `systemctl --user` |
+  | `launchd` | `dev.foxmayn.ffm.backup.plist` in `~/Library/LaunchAgents`, loaded into `gui/<uid>` |
+  | `schtasks` | task `\ffm\backup` running `backup-run-due.cmd` in the config directory |
+
+  Without `--backend` ffm uses, in order: the backend recorded in `~/.config/ffm/backup-scheduler.json`;
+  cron when your crontab already holds an ffm line (installs from before backends existed stay
+  on cron); the platform default — Task Scheduler on Windows, launchd on macOS, and on Linux cron
+  when `crontab` exists and a cron daemon is running, otherwise a systemd user timer. Installing
+  with another backend moves the job: the new one is installed first, then the old one removed.
+  A systemd user timer only runs while you are logged in unless linger is on; `install` and
+  `status` warn and print `sudo loginctl enable-linger $USER`, which ffm never runs for you.
+- **One job per configuration.** With `FFM_CONFIG_DIR` set, the job name carries a hash of that
+  directory (`ffm-backup-<hash>`, `dev.foxmayn.ffm.backup.<hash>`, `\ffm\backup-<hash>`), so two
+  configurations do not replace each other. cron has one tagged line per user: ffm leaves a line
+  another configuration installed alone (warning that this schedule's job was not installed), and
   `ffm backup scheduler install --force` takes it over.
-  Runs are logged to `~/.config/ffm/backup-scheduler.log`. On Windows, `ffm backup scheduler
-  print` gives the Task Scheduler command to run once.
+  Runs are logged to `~/.config/ffm/backup-scheduler.log`.
 - Archives stay on this machine. They protect against a broken site, not a lost disk — copy
   them off the host if that matters.
 
@@ -1125,6 +1191,8 @@ Prints the build version, commit hash, and build date.
   benches.json           # state file tracking all managed benches (0600: holds passwords)
   benches.json.bak       # the previous version, kept on every save (0600)
   backup-scheduler.log   # one line per bench per scheduled run
+  backup-scheduler.json  # which scheduler backend holds the hourly job
+  backup-run-due.cmd     # Windows only: what the Task Scheduler task runs
   locks/                 # per-bench and run-due lock files
   .update_check.json     # cached latest release tag (refreshed every 24 h)
   .acme_email            # saved Let's Encrypt email (auto-used on subsequent prod benches)

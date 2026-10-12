@@ -1,22 +1,19 @@
 // Package scheduler installs the single hourly system job that runs
 // `ffm backup run-due`.
 //
-// There is one job for the whole host, not one per bench: run-due reads every
-// bench's policy and decides what is due. On Linux and macOS the job is a
-// line in the user's crontab, tagged so ffm can find, update and remove it
-// without touching anything else in the file. Windows is not installed
-// automatically; WindowsCommand prints the Task Scheduler equivalent.
+// There is one job per ffm configuration, not one per bench: run-due reads
+// every bench's policy and decides what is due. Where the job lives is a
+// Backend (backend.go): a tagged crontab line, a systemd user timer, a launchd
+// agent or a Task Scheduler task. cron's line is tagged so ffm can find,
+// update and remove it without touching anything else in the file.
 package scheduler
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/config"
@@ -57,7 +54,7 @@ func CurrentJob() (Job, error) {
 		return Job{}, fmt.Errorf("ffm is running from %s, a temporary build (go run?) — "+
 			"install ffm first so the hourly job has a binary that stays put", exe)
 	}
-	docker, err := exec.LookPath("docker")
+	docker, err := lookPath("docker")
 	if err != nil {
 		return Job{}, fmt.Errorf("docker is not on PATH, so the hourly job could not find it either: %w", err)
 	}
@@ -85,7 +82,11 @@ func minuteFor(host string) int {
 }
 
 // jobPath puts docker's directory first, then the usual system directories.
+// On Windows it is only docker's directory: the task keeps the user's PATH.
 func jobPath(dockerDir string) string {
+	if goos == "windows" {
+		return dockerDir
+	}
 	parts := []string{dockerDir}
 	for _, p := range []string{"/usr/local/bin", "/usr/bin", "/bin"} {
 		if p != dockerDir {
@@ -151,16 +152,10 @@ func Find(crontab string) string {
 	return ""
 }
 
-// ErrUnsupported is returned where ffm does not install the job itself.
-var ErrUnsupported = errors.New("automatic installation of the hourly job is not supported on this platform")
-
 func supported() error {
-	if runtime.GOOS == "windows" {
-		return ErrUnsupported
-	}
-	if _, err := exec.LookPath("crontab"); err != nil {
+	if _, err := lookPath("crontab"); err != nil {
 		return fmt.Errorf("crontab is not installed: %w — add the line from "+
-			"'ffm backup scheduler print' to your system's scheduler instead", err)
+			"'ffm backup scheduler print --backend cron' to your system's scheduler instead", err)
 	}
 	return nil
 }
@@ -238,9 +233,42 @@ func checkOwner(current, logFile string, force bool) error {
 	return nil
 }
 
+// cronBackend keeps the job as one tagged line in the user's crontab.
+type cronBackend struct{}
+
+func (cronBackend) Name() string { return BackendCron }
+
+func (cronBackend) Available() error { return supported() }
+
+func (cronBackend) Where() string { return "your crontab" }
+
+func (cronBackend) Render(j Job) string { return j.Line() }
+
+func (cronBackend) Print(j Job) string { return j.Line() }
+
+func (cronBackend) Installed() (string, bool, error) {
+	current, err := ReadCrontab()
+	if err != nil {
+		return "", false, err
+	}
+	line := ownLine(current)
+	return line, line != "", nil
+}
+
+// ownLine is ffm's crontab line when it belongs to this configuration: its
+// --log is this configuration's log, or it has none (written before --log
+// existed). Another configuration's line is not this one's job.
+func ownLine(crontab string) string {
+	line := Find(crontab)
+	if owner := LogOf(line); owner != "" && owner != config.BackupSchedulerLogFile() {
+		return ""
+	}
+	return line
+}
+
 // Install adds or updates ffm's line. It reports whether the crontab changed.
 // A line of another configuration is left alone unless force.
-func Install(j Job, force bool) (bool, error) {
+func (cronBackend) Install(j Job, force bool) (bool, error) {
 	current, err := ReadCrontab()
 	if err != nil {
 		return false, err
@@ -257,7 +285,7 @@ func Install(j Job, force bool) (bool, error) {
 
 // Uninstall removes ffm's line, if it is this configuration's (logFile) or
 // force is set. It reports whether the crontab changed.
-func Uninstall(logFile string, force bool) (bool, error) {
+func (cronBackend) Uninstall(logFile string, force bool) (bool, error) {
 	current, err := ReadCrontab()
 	if err != nil {
 		return false, err
@@ -269,10 +297,4 @@ func Uninstall(logFile string, force bool) (bool, error) {
 		return false, err
 	}
 	return true, writeCrontab(Remove(current))
-}
-
-// WindowsCommand is the Task Scheduler equivalent of the crontab line.
-func WindowsCommand(j Job) string {
-	return fmt.Sprintf(`schtasks /Create /TN "ffm backup run-due" /SC HOURLY /ST 00:%02d /F /TR "\"%s\" backup run-due --non-interactive --log \"%s\""`,
-		j.Minute, j.FFM, j.LogFile)
 }

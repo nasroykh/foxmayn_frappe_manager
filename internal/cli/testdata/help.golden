@@ -354,7 +354,8 @@ Usage:
   ffm backup scheduler install [flags]
 
 Flags:
-      --force   Take over a job installed for another ffm configuration
+      --backend string   Scheduler to use: cron, systemd, launchd, schtasks (default: the recorded one, else the platform's)
+      --force            Take over a job installed for another ffm configuration
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -363,6 +364,9 @@ Global Flags:
 === ffm backup scheduler print
 Usage:
   ffm backup scheduler print [flags]
+
+Flags:
+      --backend string   Scheduler to print for: cron, systemd, launchd, schtasks (default: the recorded one, else the platform's)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
