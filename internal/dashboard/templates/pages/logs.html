@@ -45,7 +45,7 @@
       <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="clear-log-btn">
         Clear Output
       </button>
-      <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="copy-log-btn">
+      <button class="text-xs text-zinc-400 hover:text-zinc-100 font-medium font-mono border border-zinc-800 hover:border-zinc-700 px-2 py-0.5 rounded transition-colors focus:outline-none" id="copy-log-btn" data-copy-from="log-stream">
         Copy Viewport
       </button>
     </div>
@@ -53,70 +53,9 @@
   
   <!-- Pre Container -->
   <div class="p-5 overflow-auto h-[60vh] md:h-[65vh]" id="logs-scroll">
-    <pre id="log-stream" class="text-zinc-300 font-mono text-xs md:text-sm leading-relaxed whitespace-pre-wrap select-text">Connecting to Docker Compose service logger…</pre>
+    <pre id="log-stream" data-bench="{{.Bench}}" data-service="{{.Service}}" class="text-zinc-300 font-mono text-xs md:text-sm leading-relaxed whitespace-pre-wrap select-text">Connecting to Docker Compose service logger…</pre>
   </div>
 </div>
 
-<script>
-(function(){
-  var bench = {{printf "%q" .Bench}};
-  var svc = {{printf "%q" .Service}};
-  var url = '/admin/benches/' + encodeURIComponent(bench) + '/logs/stream?service=' + encodeURIComponent(svc);
-  var el = document.getElementById('log-stream');
-  var scrollContainer = document.getElementById('logs-scroll');
-  var indicator = document.getElementById('logs-live-indicator');
-  
-  function scrollToBottom() {
-    if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
-  }
-
-  // Clear handler
-  var clearBtn = document.getElementById('clear-log-btn');
-  if (clearBtn && el) {
-    clearBtn.addEventListener('click', function() {
-      el.textContent = '';
-    });
-  }
-
-  // Copy logs handler
-  var copyBtn = document.getElementById('copy-log-btn');
-  if (copyBtn && el) {
-    copyBtn.addEventListener('click', function() {
-      navigator.clipboard.writeText(el.innerText).then(function() {
-        var orig = copyBtn.textContent;
-        copyBtn.textContent = 'Copied!';
-        setTimeout(function() { copyBtn.textContent = orig; }, 1500);
-      });
-    });
-  }
-
-  if (!window.EventSource) { 
-    el.textContent = 'Error: EventSource is not supported by this browser.'; 
-    return; 
-  }
-  
-  var es = new EventSource(url);
-  
-  // Connection established
-  es.onopen = function() {
-    el.textContent = '[Docker Compose Log Stream Connected]\n\n';
-  };
-
-  es.onmessage = function(ev) { 
-    el.textContent += ev.data + '\n'; 
-    scrollToBottom(); 
-  };
-  
-  es.onerror = function() { 
-    el.textContent += '\n\n[Log stream connection closed or timed out]\n'; 
-    scrollToBottom();
-    es.close(); 
-    if (indicator) {
-      indicator.innerHTML = '<svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg><span class="text-zinc-500 font-semibold">Disconnected</span>';
-    }
-  };
-})();
-</script>
+<script src="/admin/static/logs.js" defer></script>
 {{end}}

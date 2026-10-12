@@ -61,6 +61,12 @@ func DashboardLogFile() string {
 	return filepath.Join(ConfigDir(), "dashboard.log")
 }
 
+// DashboardAuditFile is the append-only JSONL log of every dashboard POST
+// (mode 0600): who, what, and the verbatim exec command.
+func DashboardAuditFile() string {
+	return filepath.Join(ConfigDir(), "dashboard-audit.jsonl")
+}
+
 // JobsFile persists async job state for the dashboard.
 func JobsFile() string {
 	return filepath.Join(ConfigDir(), "jobs.json")

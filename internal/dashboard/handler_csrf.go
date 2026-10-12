@@ -32,6 +32,7 @@ func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
 		Value:    cookieVal,
 		Path:     "/admin",
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(csrfMaxAge.Seconds()),
 	})

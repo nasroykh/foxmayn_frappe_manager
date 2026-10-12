@@ -11,6 +11,16 @@ import (
 type Config struct {
 	ListenAddr    string `json:"listen_addr"`
 	AdminPassword string `json:"admin_password,omitempty"`
+	// TLSCert and TLSKey are PEM file paths; with both set the dashboard
+	// serves HTTPS itself.
+	TLSCert string `json:"tls_cert,omitempty"`
+	TLSKey  string `json:"tls_key,omitempty"`
+	// InsecureHTTP allows a non-loopback listen address without TLS (the
+	// password and session cookie then cross the network in clear).
+	InsecureHTTP bool `json:"insecure_http,omitempty"`
+	// AllowExec enables the one-shot command page. Off by default: it is
+	// remote code execution in a container behind one shared password.
+	AllowExec bool `json:"allow_exec,omitempty"`
 }
 
 // DefaultListenAddr is the default bind address (localhost only).

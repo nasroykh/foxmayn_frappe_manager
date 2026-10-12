@@ -5,23 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Meta.Title}} — ffm admin</title>
   
-  <!-- Tailwind CSS & Fonts -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="csrf-token" content="{{.Meta.CSRFToken}}">
+  <link rel="stylesheet" href="/admin/static/tailwind.css">
   <link rel="stylesheet" href="/admin/static/admin.css">
-  
-  <script>
-    tailwind.config = {
-      darkMode: 'media',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
-          },
-        }
-      }
-    }
-  </script>
 </head>
 <body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 antialiased min-h-screen flex flex-col transition-colors duration-200">
 
@@ -100,15 +86,5 @@
   </footer>
 
   <script src="/admin/static/admin.js" defer></script>
-  <script>
-    // Toggle Mobile Navigation Menu
-    const btn = document.getElementById('mobile-menu-btn');
-    const menu = document.getElementById('mobile-menu');
-    if (btn && menu) {
-      btn.addEventListener('click', () => {
-        menu.classList.toggle('hidden');
-      });
-    }
-  </script>
 </body>
 </html>{{end}}

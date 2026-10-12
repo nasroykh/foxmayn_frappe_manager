@@ -61,10 +61,12 @@
       Logs
     </a>
 
+    {{if .AllowExec}}
     <a class="inline-flex items-center justify-center rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 px-3.5 py-2 text-sm font-semibold transition-colors" href="/admin/benches/{{.Bench.Name}}/exec">
       <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
       Run Command
     </a>
+    {{end}}
   </div>
 </div>
 
@@ -104,20 +106,20 @@
           <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
             <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Admin Credentials</dt>
             <dd class="text-zinc-900 dark:text-zinc-50 flex items-center justify-between">
-              <span>administrator / <code class="blur-[4px] select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono transition-all duration-200" id="pw-admin">{{.Bench.AdminPassword}}</code></span>
+              <span>administrator / <code class="select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono" id="pw-admin">••••••••</code></span>
               <div class="flex gap-2">
-                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-admin">Reveal</button>
-                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy="{{.Bench.AdminPassword}}">Copy</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-admin" data-reveal-url="/admin/benches/{{.Bench.Name}}/reveal" data-reveal-field="admin">Reveal</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy-reveal="/admin/benches/{{.Bench.Name}}/reveal" data-reveal-field="admin">Copy</button>
               </div>
             </dd>
           </div>
           <div class="border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
             <dt class="text-zinc-400 dark:text-zinc-500 font-medium text-xs uppercase tracking-wider mb-0.5">Database Details</dt>
             <dd class="text-zinc-900 dark:text-zinc-50 flex items-center justify-between">
-              <span><span class="uppercase text-xs font-bold mr-1.5 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{{.Bench.DBEngine}}</span> root / <code class="blur-[4px] select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono transition-all duration-200" id="pw-db">{{.Bench.DBPassword}}</code></span>
+              <span><span class="uppercase text-xs font-bold mr-1.5 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-700 dark:text-zinc-300">{{.Bench.DBEngine}}</span> root / <code class="select-none bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono" id="pw-db">••••••••</code></span>
               <div class="flex gap-2">
-                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-db">Reveal</button>
-                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy="{{.Bench.DBPassword}}">Copy</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-reveal="pw-db" data-reveal-url="/admin/benches/{{.Bench.Name}}/reveal" data-reveal-field="db">Reveal</button>
+                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-semibold focus:outline-none" data-copy-reveal="/admin/benches/{{.Bench.Name}}/reveal" data-reveal-field="db">Copy</button>
               </div>
             </dd>
           </div>
@@ -273,7 +275,7 @@
         <div>
           <h3 class="text-xs font-bold text-rose-800/80 dark:text-rose-400/80 uppercase tracking-wider mb-1">Recreate Bench</h3>
           <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-2">Rebuilds Dockerfiles, wipes all bench data (including DB and uploads), and executes bench initialization from scratch.</p>
-          <form method="post" action="/admin/benches/{{.Bench.Name}}/recreate" onsubmit="return confirm('Recreate destroys all database structures and files permanently. This is non-reversible. Continue?')">
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/recreate" data-confirm="Recreate destroys all database structures and files permanently. This is non-reversible. Continue?">
             <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
             <button class="w-full inline-flex items-center justify-center rounded-lg bg-rose-500 hover:bg-rose-600 text-white py-2 text-sm font-semibold transition-colors shadow-sm focus:outline-none" type="submit">
               Recreate Bench (Wipe State)
@@ -285,7 +287,7 @@
         <div class="border-t border-rose-500/10 dark:border-rose-900/10 pt-4">
           <h3 class="text-xs font-bold text-rose-800/80 dark:text-rose-400/80 uppercase tracking-wider mb-1">Delete Bench</h3>
           <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-2">Completely and permanently deletes the bench folder and halts all linked container microservices.</p>
-          <form method="post" action="/admin/benches/{{.Bench.Name}}/delete" onsubmit="return confirm('Delete this bench permanently? All volume data, configuration files, and directories will be deleted. Continue?')">
+          <form method="post" action="/admin/benches/{{.Bench.Name}}/delete" data-confirm="Delete this bench permanently? All volume data, configuration files, and directories will be deleted. Continue?">
             <input type="hidden" name="csrf_token" value="{{.Meta.CSRFToken}}">
             <button class="w-full inline-flex items-center justify-center rounded-lg border border-rose-500/50 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 dark:hover:text-white py-2 text-sm font-semibold transition-colors focus:outline-none" type="submit">
               Delete Bench Permanently
