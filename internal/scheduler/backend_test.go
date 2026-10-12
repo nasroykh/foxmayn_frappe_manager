@@ -335,8 +335,14 @@ func TestSchtasksInstallUninstall(t *testing.T) {
 }
 
 func TestResolveOrder(t *testing.T) {
+	// The line must log where this configuration logs, so the directory is
+	// fixed before the rule is built.
+	t.Setenv("FFM_CONFIG_DIR", t.TempDir())
+	line := ownJob().Line()
+	cfg := os.Getenv("FFM_CONFIG_DIR")
 	isolate(t, "linux", []string{"crontab", "systemctl"},
-		fakeexec.Rule{Match: "crontab -l", Stdout: "0 3 * * * x\n" + ownJob().Line() + "\n"})
+		fakeexec.Rule{Match: "crontab -l", Stdout: "0 3 * * * x\n" + line + "\n"})
+	t.Setenv("FFM_CONFIG_DIR", cfg)
 
 	// legacy crontab line beats the default (and the default is not even
 	// asked: no cron daemon runs here).
@@ -546,7 +552,7 @@ func TestForeignCronLineIsNotThisJob(t *testing.T) {
 }
 
 // ownJob is testJob logging where this (isolated) configuration logs, so its
-// crontab line belongs to this configuration. Call it after isolate.
+// crontab line belongs to this configuration.
 func ownJob() Job {
 	j := testJob()
 	j.LogFile = config.BackupSchedulerLogFile()
