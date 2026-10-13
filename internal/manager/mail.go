@@ -40,8 +40,7 @@ func DefaultSMTPPort(tls string) int {
 // mailScript creates, updates, reads and disables the Email Account that
 // carries a site's outgoing mail. The request, SMTP password included, arrives
 // on stdin; the password is never printed back.
-const mailScript = `import json, sys
-import frappe
+const mailScript = `import frappe
 req = json.load(sys.stdin)
 frappe.init(site=sys.argv[1], sites_path=".")
 frappe.connect()
@@ -54,6 +53,7 @@ FIELDS = ["name", "email_id", "smtp_server", "smtp_port", "use_tls", "use_ssl_fo
 def describe(name):
     d = frappe.get_doc("Email Account", name)
     out = {f: d.get(f) for f in FIELDS}
+    out["smtp_port"] = int(out.get("smtp_port") or 0)
     out["has_password"] = bool(d.get_password("password", raise_exception=False))
     return out
 
@@ -64,8 +64,21 @@ if op == "show":
         if frappe.conf.get(k) is not None}
 elif op == "set":
     name = req["account_name"]
-    doc = frappe.get_doc("Email Account", name) if frappe.db.exists("Email Account", name) else frappe.new_doc("Email Account")
-    doc.update({"email_account_name": name, "email_id": req["email_id"], "smtp_server": req["smtp_server"],
+    doc = None
+    if frappe.db.exists("Email Account", name):
+        doc = frappe.get_doc("Email Account", name)
+    else:
+        # An outgoing-only account is unique per address and on/off state
+        # (unique_email_account_type), so an existing one is updated, enabled or
+        # not, rather than a second one made.
+        other = frappe.get_all("Email Account", filters={"email_id": req["email_id"], "enable_incoming": 0},
+            order_by="enable_outgoing desc", pluck="name", limit=1)
+        if other:
+            doc = frappe.get_doc("Email Account", other[0])
+    if doc is None:
+        doc = frappe.new_doc("Email Account")
+        doc.email_account_name = name
+    doc.update({"email_id": req["email_id"], "smtp_server": req["smtp_server"],
         "smtp_port": req["smtp_port"], "use_tls": 1 if req["tls"] == "starttls" else 0,
         "use_ssl_for_outgoing": 1 if req["tls"] == "ssl" else 0,
         "enable_outgoing": 1, "default_outgoing": 1, "enable_incoming": 0})
@@ -75,12 +88,16 @@ elif op == "set":
         doc.update({"login_id_is_different": 1 if req["login"] != req["email_id"] else 0, "login_id": req["login"],
             "no_smtp_authentication": 0})
     elif not req.get("password"):
-        doc.update({"login_id_is_different": 0, "login_id": None, "no_smtp_authentication": 1})
+        # No authentication: forget any login and stored password an earlier set left behind.
+        doc.update({"login_id_is_different": 0, "login_id": None, "no_smtp_authentication": 1, "password": None})
+        if not doc.is_new():
+            from frappe.utils.password import remove_encrypted_password
+            remove_encrypted_password("Email Account", doc.name, "password")
     if req.get("password"):
         doc.update({"password": req["password"], "no_smtp_authentication": 0})
     if not req.get("verify", True):
-        doc.flags.ignore_smtp_check = True
-        frappe.flags.in_test = True
+        # Email Account.validate stops before it connects to SMTP/IMAP while this is set.
+        frappe.local.flags.in_patch = True
     doc.save(ignore_permissions=True)
     frappe.db.commit()
     res["account"] = describe(doc.name)
@@ -284,7 +301,9 @@ func (s *Service) MailSet(in MailSetInput) (*MailAccount, error) {
 	if err := s.dropDevMailpit(b); err != nil {
 		return acct, fmt.Errorf("the Email Account is saved, but Mailpit's settings could not be removed from site_config: %w", err)
 	}
-	if _, err := s.configCall(b, configRequest{Op: "set", Key: mailMarkerKey, Value: name}); err != nil {
+	// The marker names the account Frappe really holds: an existing one for the
+	// same address is reused whatever name was asked for.
+	if _, err := s.configCall(b, configRequest{Op: "set", Key: mailMarkerKey, Value: acct.Name}); err != nil {
 		return acct, fmt.Errorf("the Email Account is saved, but the marker could not be written to site_config: %w", err)
 	}
 	return acct, nil
