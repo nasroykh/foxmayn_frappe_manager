@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -333,6 +334,28 @@ func pruneRemote(ctx context.Context, targetName, bench string, p state.BackupPo
 // PullArchive downloads an archive (the newest when file is empty) and its
 // sidecar from a target into the bench's local backups directory.
 func PullArchive(ctx context.Context, targetName, bench, file string, pw ProgressWriter) (string, error) {
+	return pullArchiveTo(ctx, targetName, bench, file, pullOptions{
+		dir:          func() (string, error) { return config.EnsureBenchBackupsDir(bench) },
+		failIfExists: true,
+	}, pw)
+}
+
+// pullOptions tune where and how much pullArchiveTo downloads.
+type pullOptions struct {
+	// dir is called once an archive has been picked, so nothing is created
+	// when there is none.
+	dir func() (string, error)
+	// failIfExists refuses to overwrite a local file of the same name.
+	failIfExists bool
+	// maxBytes refuses a larger archive, and stops a download that outgrows
+	// it. Zero means no cap.
+	maxBytes int64
+	// space is asked whether size bytes fit before the download starts.
+	space func(size int64) error
+}
+
+// pullArchiveTo is PullArchive with its destination and limits injectable.
+func pullArchiveTo(ctx context.Context, targetName, bench, file string, opt pullOptions, pw ProgressWriter) (string, error) {
 	if pw == nil {
 		pw = CLIProgress{}
 	}
@@ -362,17 +385,32 @@ func PullArchive(ctx context.Context, targetName, bench, file string, pw Progres
 		}
 		return "", fmt.Errorf("no archive %q of %q on %s", file, bench, targetName)
 	}
-	dir, err := config.EnsureBenchBackupsDir(bench)
+	if opt.maxBytes > 0 && pick.Size > opt.maxBytes {
+		return "", fmt.Errorf("%s is %s, over the %s download limit", path.Base(pick.Key),
+			humanBytes(pick.Size), humanBytes(opt.maxBytes))
+	}
+	if opt.space != nil {
+		if err := opt.space(pick.Size); err != nil {
+			return "", err
+		}
+	}
+	dir, err := opt.dir()
 	if err != nil {
 		return "", err
 	}
 	local := filepath.Join(dir, path.Base(pick.Key))
-	if _, err := os.Stat(local); err == nil {
-		return "", fmt.Errorf("%s already exists locally", local)
+	if opt.failIfExists {
+		if _, err := os.Stat(local); err == nil {
+			return "", fmt.Errorf("%s already exists locally", local)
+		}
 	}
 	pw.Step(fmt.Sprintf("Downloading %s (%s)", path.Base(pick.Key), humanBytes(pick.Size)))
-	for _, pair := range [][2]string{{pick.Key, local}, {sidecarPath(pick.Key), sidecarPath(local)}} {
-		if err := download(ctx, d, pair[0], pair[1]); err != nil {
+	for i, pair := range [][2]string{{pick.Key, local}, {sidecarPath(pick.Key), sidecarPath(local)}} {
+		limit := opt.maxBytes
+		if i == 1 {
+			limit = maxHeaderBytes
+		}
+		if err := download(ctx, d, pair[0], pair[1], limit); err != nil {
 			os.Remove(local)
 			return "", err
 		}
@@ -385,13 +423,38 @@ func PullArchive(ctx context.Context, targetName, bench, file string, pw Progres
 	return local, nil
 }
 
-func download(ctx context.Context, d backuptarget.Destination, key, dst string) error {
+// maxHeaderBytes caps a header sidecar, which is a few hundred bytes of JSON.
+const maxHeaderBytes = 1 << 20
+
+// limitedWriter fails once more than max bytes have been written.
+type limitedWriter struct {
+	w   io.Writer
+	max int64
+	n   int64
+}
+
+func (l *limitedWriter) Write(p []byte) (int, error) {
+	if l.max > 0 && l.n+int64(len(p)) > l.max {
+		return 0, fmt.Errorf("download is larger than the %s limit", humanBytes(l.max))
+	}
+	n, err := l.w.Write(p)
+	l.n += int64(n)
+	return n, err
+}
+
+// download fetches key into dst through a .partial file. limit > 0 stops it at
+// that many bytes.
+func download(ctx context.Context, d backuptarget.Destination, key, dst string, limit int64) error {
 	tmp := dst + ".partial"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	if err := d.Get(ctx, key, f); err != nil {
+	var w io.Writer = f
+	if limit > 0 {
+		w = &limitedWriter{w: f, max: limit}
+	}
+	if err := d.Get(ctx, key, w); err != nil {
 		f.Close()
 		os.Remove(tmp)
 		return fmt.Errorf("download %s: %w", path.Base(key), err)

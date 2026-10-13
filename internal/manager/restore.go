@@ -19,6 +19,10 @@ import (
 // restoreStaging is where the archive is unpacked inside the container.
 const restoreStaging = "/tmp/ffm-restore"
 
+// restoreWebWait is how long a restore waits for the restored dev server; a
+// variable so the pipeline tests do not wait a minute for a fake.
+var restoreWebWait = 60 * time.Second
+
 // benchOverhead is the disk a freshly provisioned bench needs on top of the
 // archive: the app sources, the Python virtualenv and node_modules. Measured at
 // roughly 1.7 GiB on a frappe+erpnext dev bench; rounded up.
@@ -47,13 +51,14 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if pw == nil {
 		pw = CLIProgress{}
 	}
-	archivePath, err := filepath.Abs(in.Archive)
+	if in.Frappe != nil {
+		return s.restoreFrappeBackup(in, pw)
+	}
+	archivePath, cleanupSource, err := s.resolveRestoreSource(in, pw)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(archivePath); err != nil {
-		return fmt.Errorf("archive %s: %w", in.Archive, err)
-	}
+	defer cleanupSource()
 	if agecrypt.IsEncrypted(archivePath) {
 		pw.Step("Decrypting the archive")
 		plain, cleanup, err := decryptForRestore(archivePath, in.Identity)
@@ -145,6 +150,45 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 		fmt.Fprintln(pw.Stderr(),
 			"note: this archive was taken with --no-files, so the restored site has no attachments")
 	}
+	members := restoreMembers{DB: archive.Prefix + "/db/database.sql.gz"}
+	if withFiles {
+		members.Public = archive.Prefix + "/files/public-files.tgz"
+		members.Private = archive.Prefix + "/files/private-files.tgz"
+	}
+	return s.restoreCore(in, pw, restoreRun{
+		m: m, staging: staging, totalBytes: res.TotalBytes, label: sourceLabel(in, archivePath), members: members,
+	}, target, overrides)
+}
+
+// restoreMembers names the files, relative to the staging directory, that
+// `bench restore` is handed. An empty Public or Private means that half of the
+// attachments is not restored. For an ffm archive they are archive members; for
+// Frappe's own backup files they are the copies placed in staging.
+type restoreMembers struct {
+	DB, Public, Private string
+}
+
+// restoreRun is everything restoreCore needs once the source (an ffm archive
+// unpacked into staging, or Frappe's own backup files laid out in staging with
+// a manifest built for them) has been prepared.
+type restoreRun struct {
+	m          Manifest
+	staging    string
+	totalBytes int64
+	// label names the source in the plan and the progress lines.
+	label   string
+	members restoreMembers
+	// frappe marks an import from Frappe's own backup files.
+	frappe bool
+}
+
+// restoreCore is the part of a restore that does not care where the data came
+// from: the gates, the plan, Create, and the data and reconcile steps.
+func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun, target string,
+	overrides map[string]string) (restoreErr error) {
+
+	m, staging, archivePath := run.m, run.staging, run.label
+	withFiles := run.members.Public != "" || run.members.Private != ""
 	problems := checkArchive(m, target, in)
 	problems = append(problems, s.nameCollisions(target)...)
 	plan := planRestoreApps(m, overrides)
@@ -171,12 +215,16 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if err != nil {
 		return err
 	}
-	if err := checkRestoreSpace(in, res.TotalBytes); err != nil {
+	if err := checkRestoreSpace(in, run.totalBytes); err != nil {
 		return err
 	}
 
 	if in.DryRun {
-		printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath)
+		if run.frappe {
+			printFrappeRestorePlan(pw, m, plan, target, in, webPort, socketIOPort, run)
+		} else {
+			printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath)
+		}
 		return nil
 	}
 
@@ -243,7 +291,7 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	if err := s.applySiteConfig(b, m, in, pw); err != nil {
 		return err
 	}
-	if err := s.runBenchRestore(runner, b, m, in, staging, withFiles, pw); err != nil {
+	if err := s.runBenchRestore(runner, b, m, in, staging, run.members, pw); err != nil {
 		return err
 	}
 	if err := s.reconcileAfterRestore(runner, b, m, plan, in, pw); err != nil {
@@ -251,6 +299,9 @@ func (s *Service) Restore(in RestoreInput, pw ProgressWriter) (restoreErr error)
 	}
 
 	printRestoreSummary(pw, b, m, target, withFiles)
+	if run.frappe {
+		printFrappeRestoreNotes(pw, b)
+	}
 	return nil
 }
 
@@ -462,6 +513,11 @@ func (s *Service) applySiteConfig(b state.Bench, m Manifest, in RestoreInput, pw
 	if key := restoreEncryptionKey(m, in); key != "" {
 		current["backup_encryption_key"] = key
 	}
+	// A Frappe import carries the key only so the restored site can keep
+	// encrypting its own backups the way the old one did.
+	if in.Frappe != nil && m.Secrets.BackupEncryptionKey != "" {
+		current["backup_encryption_key"] = m.Secrets.BackupEncryptionKey
+	}
 	if key := m.Secrets.EncryptionKey; key != "" {
 		current["encryption_key"] = key
 	} else if in.AllowMissingEncryptionKey {
@@ -492,8 +548,9 @@ func writeSiteConfig(path string, cfg map[string]any) error {
 
 // runBenchRestore hands the dump and file tarballs to Frappe.
 func (s *Service) runBenchRestore(runner *bench.Runner, b state.Bench, m Manifest, in RestoreInput,
-	staging string, withFiles bool, pw ProgressWriter) error {
+	staging string, members restoreMembers, pw ProgressWriter) error {
 
+	withFiles := members.Public != "" || members.Private != ""
 	remote := fmt.Sprintf("%s-%d", restoreStaging, time.Now().UnixNano())
 	if out, err := runner.ExecSilent("frappe", "mkdir", "-p", remote); err != nil {
 		return fmt.Errorf("prepare the restore directory in the container: %w\n%s", err, out)
@@ -520,16 +577,18 @@ func (s *Service) runBenchRestore(runner *bench.Runner, b state.Bench, m Manifes
 	}
 
 	pw.Step("Copying the archive into the container")
-	dbRemote, err := copyIn(archive.Prefix + "/db/database.sql.gz")
+	dbRemote, err := copyIn(members.DB)
 	if err != nil {
 		return err
 	}
 	var publicRemote, privateRemote string
-	if withFiles {
-		if publicRemote, err = copyIn(archive.Prefix + "/files/public-files.tgz"); err != nil {
+	if members.Public != "" {
+		if publicRemote, err = copyIn(members.Public); err != nil {
 			return err
 		}
-		if privateRemote, err = copyIn(archive.Prefix + "/files/private-files.tgz"); err != nil {
+	}
+	if members.Private != "" {
+		if privateRemote, err = copyIn(members.Private); err != nil {
 			return err
 		}
 	}
@@ -562,8 +621,11 @@ func (s *Service) runBenchRestore(runner *bench.Runner, b state.Bench, m Manifes
 	cmd := fmt.Sprintf("cd /workspace/frappe-bench && bench --site %s restore %s"+
 		" --db-root-username %s --force",
 		q(b.SiteName), q(dbRemote), rootUser)
-	if withFiles {
-		cmd += fmt.Sprintf(" --with-public-files %s --with-private-files %s", q(publicRemote), q(privateRemote))
+	if publicRemote != "" {
+		cmd += " --with-public-files " + q(publicRemote)
+	}
+	if privateRemote != "" {
+		cmd += " --with-private-files " + q(privateRemote)
 	}
 
 	pw.Step("Restoring the database" + filesSuffix(withFiles))
@@ -677,7 +739,7 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 			bench.DevServerStartCmd); err != nil {
 			return fmt.Errorf("start the dev server: %w", err)
 		}
-		if err := bench.WaitForHTTP(fmt.Sprintf("http://localhost:%d", b.WebPort), 60*time.Second); err != nil {
+		if err := bench.WaitForHTTP(fmt.Sprintf("http://localhost:%d", b.WebPort), restoreWebWait); err != nil {
 			// Not fatal — the data is already restored, and failing here would
 			// tear that down over a dev server that has not finished booting.
 			fmt.Fprintf(pw.Stderr(), "warning: %v\n", webServerUnreachable(runner, true, err))

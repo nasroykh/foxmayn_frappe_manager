@@ -1082,7 +1082,7 @@ Flags:  --every <interval>      1h, 6h, 24h, 168h (whole hours), or hourly/daily
 - Archives stay on this machine. They protect against a broken site, not a lost disk — copy
   them off the host if that matters.
 
-### `ffm restore <archive> [name]`
+### `ffm restore <archive|url|target://…> [name]`
 
 Rebuilds a bench from an archive. Always creates a **new** bench; it never writes into an
 existing one, so a failed restore leaves the machine as it found it.
@@ -1091,6 +1091,8 @@ existing one, so a failed restore leaves the machine as it found it.
 ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
 ffm restore mybench_20260826T090000Z.ffm.tar staging     # under a different name
 ffm restore mybench_20260826T090000Z.ffm.tar --dry-run   # validate only
+ffm restore https://files.example.com/mybench_20260826T090000Z.ffm.tar staging
+ffm restore target://nas/mybench staging --identity ~/ffm-backup.key   # newest archive on a target
 ```
 
 ```
@@ -1111,7 +1113,69 @@ Flags:  --dry-run                       Validate the archive and print the plan
         --ssh-agent                     Forward the host SSH agent into the dev container
         --skip-space-check              Do not check free disk space first
         --app <app>=<git-url>[@branch]  Clone an app from here instead (repeatable; frappe=... too)
+        --keep-download                 Keep the archive fetched from a URL or target
+        --header-url <url>              Where an encrypted https archive's .header.json is, if not next to it
+        --frappe-backup <db.sql.gz>     Build the bench from Frappe's own backup files (see below)
 ```
+
+**Sources.** The first argument is a local path, an `https://` URL, or a file on a configured
+backup target:
+
+| Source | Meaning |
+|---|---|
+| `~/frappe/_backups/b/b_….ffm.tar` | a local path, as before |
+| `https://host/path/b_….ffm.tar` | download over https (plain `http://` is refused; no user name or password in the URL, use a presigned URL) |
+| `target://NAME/BENCH/b_….ffm.tar.age` | a file on the target `NAME` from `ffm backup target list` |
+| `target://NAME/BENCH` | the newest archive of `BENCH` on that target |
+
+`target://` is a URL-style prefix on purpose: a bare `name:path` would collide with a Windows
+drive (`C:\backups\x.ffm.tar`) and a bare word with a bench name. Targets only hold
+age-encrypted archives, so pass `--identity`. An encrypted https archive (`….ffm.tar.age`) needs
+its header sidecar next to it as `<url>.header.json` (`--header-url` when the URL cannot take a
+suffix); it is fetched first, so a wrong URL or a taken bench name fails before the archive is
+downloaded.
+
+The download lands in a private (0700) temporary directory under the backups directory, is capped
+at 64 GiB, stops when the server goes quiet for two minutes or on Ctrl-C, never prints the URL's
+query string, user info or directories, and is deleted when the restore ends (`--keep-download`
+keeps it). Redirects must stay on https. After the download everything is the ordinary restore:
+the same preflight checks, the same plan. `--dry-run` still downloads the archive to check it, then
+deletes it. Only the command line can fetch a remote source; the dashboard cannot.
+
+**From Frappe's own backup files** (moving a site from Frappe Cloud or a plain `bench backup` to
+ffm). `--frappe-backup` takes the database dump and the one argument is then the new bench's name,
+which is required:
+
+```bash
+ffm restore --frappe-backup 20260101_000000-site-database.sql.gz mysite \
+    --files 20260101_000000-site-files.tar \
+    --private-files 20260101_000000-site-private-files.tar \
+    --config 20260101_000000-site-site_config_backup.json \
+    --apps erpnext,hrms
+```
+
+```
+Flags (with --frappe-backup only):
+        --files <tar>            public files (.tar, .tgz, .tar.gz)
+        --private-files <tar>    private files
+        --config <json>          the backup's site_config.json: only its encryption_key is used
+        --apps <list>            apps besides frappe (erpnext,hrms or URL@branch); also --app <name>=<url>
+        --mode dev|prod          default dev; prod needs --domain
+        --frappe-branch <branch> default: the branch recorded in the dump
+        --db-type mariadb|postgres   default: what the dump is; a mismatch is refused
+```
+
+Frappe's backup does not say which apps the site had, so ffm reads the dump (one streaming pass
+that also checks the gzip is complete). If the dump lists an app you did not give with `--apps` or
+`--app <name>=<git-url>`, the import stops before building anything and names them. The dump must
+have the `tabUser` and `__Auth` tables, MariaDB or Postgres is detected from the dump (a wrong
+`--db-type` is refused), and the Frappe major version in the dump picks the branch (a branch of
+another major is refused). The file tarballs are checked for paths that would escape the site
+directory. From `--config` only `encryption_key` (and `backup_encryption_key`) is taken, so Password
+fields stay readable; `db_name`, `db_password`, `db_host` and the rest are never copied. The
+Administrator password becomes `--admin-password` or a generated one (the dump's own is replaced).
+A GPG-encrypted Frappe backup (System Settings, Encrypt backups) is refused: decrypt it first.
+This is a create-only import like every restore; it does not write into an existing bench.
 
 Apps are cloned from the remote and branch recorded at backup time; apps whose source is in the
 archive are unpacked from it. If the archive has no usable source for an app — every archive
