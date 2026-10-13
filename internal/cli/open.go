@@ -68,12 +68,18 @@ func newMailCmd() *cobra.Command {
 	var printOnly, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "mail [name]",
-		Short: "Open the Mailpit inbox that catches a dev bench's outgoing mail",
+		Short: "Open the Mailpit inbox of a dev bench; 'mail set|show|unset' configure real outgoing mail",
 		Long: `Every dev bench runs Mailpit, and its site sends mail there unless the site
 has its own default outgoing Email Account. This opens the inbox (the bench's
 web port + 6); without a desktop session the URL is printed instead.
 
-Benches created before ffm v0.11.0 get Mailpit from 'ffm reconcile <bench>'.`,
+Benches created before ffm v0.11.0 get Mailpit from 'ffm reconcile <bench>'.
+
+  ffm mail set [bench] --smtp-host H --from ADDR   send through an SMTP server
+  ffm mail show [bench]                            where the site's mail goes
+  ffm mail unset [bench]                           back to Mailpit (dev)
+
+A bench named set, show or unset is opened with 'ffm open <bench> --mail'.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := resolveBenchName(args, "Select a bench")
@@ -92,6 +98,7 @@ Benches created before ffm v0.11.0 get Mailpit from 'ffm reconcile <bench>'.`,
 	}
 	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the URL instead of opening it")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the URL as JSON (schema ffm.url/v1)")
+	addMailSubcommands(cmd)
 	return cmd
 }
 

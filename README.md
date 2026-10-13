@@ -538,6 +538,58 @@ ffm site scheduler on|off|pause|resume mybench # Frappe's scheduled jobs
 `on`/`off` change the System Settings flag; `pause`/`resume` stop jobs for a maintenance window
 without changing it. This is Frappe's scheduler, not `ffm backup scheduler` (ffm's own backups).
 
+### `ffm config`, `ffm user`, `ffm mail set` — site administration
+
+Everything below needs a running bench and runs inside its frappe container. Values never
+travel on a command line: secrets and passwords reach Frappe on stdin, so neither `ps` on the host
+nor in the container shows them.
+
+```bash
+ffm config list mybench [--json] [--show-secrets]   # site_config.json (ffm.config/v1)
+ffm config get mybench max_file_size
+ffm config set mybench max_file_size 20971520       # 587, true, 0.5, '["a"]' are typed; else a string
+ffm config set mybench some_code 007 --string       # keep the text as given; --json forces JSON
+echo "$TOKEN" | ffm config set mybench my_api_token --stdin
+ffm config unset mybench max_file_size
+
+ffm user list mybench [--json]                      # ffm.users/v1
+echo "$PW" | ffm user add ana@example.com mybench --first-name Ana --system-manager --password-stdin
+ffm user disable|enable ana@example.com mybench
+echo "$PW" | ffm user password ana@example.com mybench --password-stdin
+
+echo "$SMTP_PASSWORD" | ffm mail set mybench --smtp-host smtp.postmarkapp.com \
+    --from erp@example.com --user "$TOKEN" --password-stdin
+ffm mail show mybench [--json]                      # ffm.mail/v1, never the password
+ffm mail unset mybench
+```
+
+**`config`.** Keys that look secret (password, secret, key, token, encryption) and URL values that
+carry credentials are masked unless stdout is a terminal or `--show-secrets` is given (in `--json`,
+only with the flag). Keys ffm depends on are refused for `set` and `unset`: the database
+(`db_name`, `db_user`, `db_password`, `db_type`, `db_host`, `db_port`, `db_schema`, `db_socket`),
+the redis URLs, `socketio_port`, `socketio_frappe_url`, `webserver_port`, `installed_apps`, and
+`host_name` on a production bench or one behind a proxy host (use `ffm set-proxy` or `ffm domain`).
+`encryption_key` needs `--force`: every stored password is encrypted with it. Frappe version 15
+reads `site_config.json` on every request; version 16 caches it for up to 60 seconds.
+
+**`user`.** The password comes from `--password-stdin`, `$FFM_USER_PASSWORD` or a hidden prompt,
+never from a flag. Frappe's password policy applies to every user except Administrator, whose
+password goes through `bench set-admin-password` and is also written to ffm's record (so
+`ffm status --show-secrets` stays right). Changing a password signs the user out everywhere.
+Administrator cannot be disabled, nor can the agent user of an agent-ready bench (`ffm agent off`).
+
+**`mail set`.** Creates or updates the site's default outgoing Email Account (`--tls
+starttls|ssl|none`, port defaults to 587, 465 or 25; `--name` names the account, which recipients see as the
+sender name (default: Frappe names it after the address); `--no-verify` skips Frappe's test connection). Without a password the account
+does not authenticate. It prints the SPF, DKIM and DMARC records for the From domain (SPF
+include for the common providers) and recommends a transactional provider. Frappe sends through
+the default outgoing Email Account and falls back to `mail_server` in `site_config.json` only when
+there is none, so on a dev bench the Mailpit settings are removed and a `ffm_mail_account` marker
+is left in `site_config.json`; `ffm start` and `ffm reconcile` then do not put Mailpit back.
+`ffm mail unset` disables the account (it stays in Frappe) and restores Mailpit. Bare `ffm mail`
+still opens the Mailpit inbox; a bench named `set`, `show` or `unset` is opened with
+`ffm open <bench> --mail`.
+
 ### `ffm doctor [name]`
 
 Checks that benches are healthy, not just running, and changes nothing:
@@ -619,8 +671,8 @@ ffm login mybench --user jane@example.com --print
 **Mail (dev).** Every dev bench runs [Mailpit](https://mailpit.axllent.org/). The site's
 `site_config.json` points `mail_server` at it, so everything the bench sends lands in the inbox
 on the web port + 6 (`http://localhost:8006` for the first bench) instead of reaching anyone.
-A default outgoing Email Account configured in the site still wins, and ffm never replaces a
-`mail_server` you set yourself. Benches created before v0.11.0 get Mailpit from `ffm reconcile`.
+A default outgoing Email Account configured in the site still wins ([`ffm mail set`](#ffm-config-ffm-user-ffm-mail-set--site-administration)
+creates one), and ffm never replaces a `mail_server` you set yourself. Benches created before v0.11.0 get Mailpit from `ffm reconcile`.
 
 **Login.** `ffm login` starts a session and opens `/app?sid=…`. The URL works as a password until
 the session ends, so it is printed only with `--print` or when nothing can be opened. Dev benches
@@ -1356,6 +1408,9 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm doctor [bench] --json` | `ffm.doctor/v1` |
 | `ffm rotate-credentials [bench] --json [--show-secrets]` | `ffm.credentials/v1` (new passwords only with `--show-secrets`) |
 | `ffm site [bench] --json` | `ffm.site/v1` |
+| `ffm config list [bench] --json`, `ffm config get [bench] <key> --json` | `ffm.config/v1` (secret-looking values only with `--show-secrets`) |
+| `ffm user list [bench] --json` | `ffm.users/v1` |
+| `ffm mail show [bench] --json` | `ffm.mail/v1` (no SMTP password) |
 | `ffm scale [bench] --json` | `ffm.scale/v1` |
 | `ffm app list [bench] --json` | `ffm.apps/v1` |
 

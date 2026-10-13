@@ -45,6 +45,9 @@ database-probe classifier (`internal/bench/waithttp_test.go`,
 (`internal/manager/lifecycle_test.go`), the compose secret file and rendering
 (`internal/bench/secret_test.go`), the no-secret-on-argv tests
 (`internal/manager/secrets_argv_test.go`) and rotation (`internal/manager/rotate_test.go`).
+The site administration commands are covered by `internal/manager/siteadmin_test.go` (typed values, key guard,
+masking, every command's secret off argv, the Mailpit marker) and `internal/cli/siteadmin_test.go` (the real
+command tree: ffm.config/v1, ffm.users/v1, ffm.mail/v1, bare `ffm mail` still routing to Mailpit).
 All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 
@@ -82,7 +85,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 46 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 48 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -160,6 +163,14 @@ internal/
     mcp_confirm.go        → delete's elicitation confirmation (HMAC-bound, single-use, 10 min request
                             state; same design as ffc's)
     site.go               → ffm site [bench] / migrate / maintenance on|off / scheduler on|off|pause|resume
+    config.go             → ffm config list|get|set|unset [bench] [key] [value]: the bench is the optional FIRST
+                            argument, so configArgs splits by argument count; set takes --string / --json /
+                            --stdin / --force; ffm.config/v1 (secret-looking values only with --show-secrets)
+    user.go               → ffm user list|add|disable|enable|password; ffm.users/v1; the password comes from
+                            secretinput.go secretInput (--password-stdin, $FFM_USER_PASSWORD, hidden prompt twice;
+                            never a flag)
+    mailset.go            → ffm mail set|show|unset, hung under the existing `ffm mail` (bare = Mailpit inbox, so
+                            set/show/unset are in bench.reservedNames); ffm.mail/v1 never has the SMTP password
     app.go                → ffm app list|add|remove|update (update ≠ `ffm update`, which is ffm's
                             self-update; --to-branch, --dry-run, --no-rollback, --yes)
     notify.go             → ffm notify add|list|remove|test (Slack URL / Telegram token from stdin)
@@ -326,6 +337,28 @@ internal/
                             After the ALTER, any failure prints the new value to stderr (it exists nowhere
                             else). The site's own db user is out of scope
     admin.go              → setAdminPassword: `bench set-admin-password` with the password on stdin
+    siteops.go            → runSiteRequest: runs a Python script in the frappe container with the request (JSON,
+                            secrets included) on STDIN and only the site name on argv; scriptPrelude turns an
+                            uncaught exception into one `FFM_ERROR=` line (Frappe's message, HTML stripped, no
+                            traceback); result is the `FFM_RESULT=` line. runningBench = GetBench + ErrBenchStopped
+    siteconfig.go         → ConfigList/Get/Set/Unset on site_config.json (read-modify-write in the container,
+                            indent 1 + sorted keys like Frappe, via a temp file; no frappe import). ParseConfigValue
+                            (auto: bool/int/float/JSON else string; json.Number keeps big ints exact),
+                            IsSecretConfigKey, configGuard + configOwnedKeys (db_*, redis_*, socketio_*,
+                            webserver_port, installed_apps refused outright; host_name on prod / behind a proxy
+                            host; encryption_key unless --force). Writes take lockBench like SiteMigrate
+    users.go              → UserList/Add/SetEnabled/SetPassword through the User doctype (not `bench add-user`
+                            or `set-password`, which take the password as an argument). Administrator's password
+                            goes through setAdminPassword and UpdateBench(AdminPassword) like rotate.go;
+                            Administrator, Guest and the agent user cannot be disabled
+    mail.go               → MailSet/Show/Unset: the default outgoing Email Account through a stdin script. Frappe
+                            (v16 email_account.py find_default_outgoing) uses that account first and only falls
+                            back to site_config mail_server, so Mailpit never beat it; MailSet still removes
+                            Mailpit's keys (only while mail_server is "mailpit") and writes the `ffm_mail_account`
+                            marker to site_config, which ensureDevMail honours (stateless, travels in a backup).
+                            Frappe allows ONE outgoing-only account per address (unique_email_account_type), so
+                            an existing one is reused whatever --name says. MailDNSRecords: SPF include for known
+                            providers, DKIM pointer, DMARC p=none
     clean_logs.go         → deletes old rows from 7 Frappe log tables
     scale.go              → Scale / ScaleStatus (prod only, ErrProdOnly; counts 1-32 because the record stores 0 as
                             "unset"): lockBench, persist the counts, then applyScaleLocked = render compose + `up -d`
@@ -895,6 +928,10 @@ internal/
   silently. Values must be one line. `TestCreateKeepsSecretsOffArgv` and its siblings assert on every recorded fakeexec
   argv, keep them passing when adding a command that touches a credential.
 
+- **Site administration never puts a value on an argv** (`config`, `user`, `mail set`): the request goes to a
+  Python script on stdin (`runSiteRequest`), so a `mail_password`, an SMTP password or a user's password is not on
+  the container's or the host's process list. `bench set-config` and `bench add-user` would put it there. The
+  tests for it are in `internal/manager/siteadmin_test.go` (`noSecretOnArgv` on every command).
 - **Published ports** bind to `Bench.PublishHost()`: `127.0.0.1` for new benches (`Bind: loopback`),
   all interfaces with `--lan`. Records without `Bind` keep their old behaviour: prod → loopback,
   dev → all interfaces. `--lan` is refused with the default admin password; a dev bench with domain
