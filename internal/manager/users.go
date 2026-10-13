@@ -17,8 +17,7 @@ import (
 // interpreter's argument list, and the doctype is what applies Frappe's own
 // password-strength policy and session handling. The request, password
 // included, arrives on stdin.
-const userScript = `import json, sys
-import frappe
+const userScript = `import frappe
 req = json.load(sys.stdin)
 frappe.init(site=sys.argv[1], sites_path=".")
 frappe.connect()
@@ -31,11 +30,11 @@ if op == "list":
     roles = {}
     for r in frappe.get_all("Has Role", filters={"parenttype": "User"}, fields=["parent", "role"]):
         roles.setdefault(r.parent, []).append(r.role)
-    res["users"] = [dict(u, roles=sorted(roles.get(u.name, []))) for u in users]
+    res["users"] = [dict(u, enabled=bool(u.enabled), roles=sorted(roles.get(u.name, []))) for u in users]
 elif op == "add":
     email = req["email"]
     if frappe.db.exists("User", email):
-        sys.exit("user %s already exists" % email)
+        raise Fail("user %s already exists" % email)
     user = frappe.new_doc("User")
     user.update({"email": email, "first_name": req["first_name"], "last_name": req.get("last_name") or None,
         "enabled": 1, "user_type": "System User", "send_welcome_email": 0, "new_password": req["password"]})
@@ -47,7 +46,7 @@ elif op == "add":
 else:
     name = req["name"]
     if not frappe.db.exists("User", name):
-        sys.exit("user %s does not exist" % name)
+        raise Fail("user %s does not exist" % name)
     user = frappe.get_doc("User", name)
     if op in ("enable", "disable"):
         user.enabled = 1 if op == "enable" else 0
@@ -55,7 +54,7 @@ else:
         user.new_password = req["password"]
         user.logout_all_sessions = 1
     else:
-        sys.exit("unknown operation %s" % op)
+        raise Fail("unknown operation %s" % op)
     user.save(ignore_permissions=True)
     frappe.db.commit()
     res["name"] = user.name

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,22 @@ import (
 // result. Frappe prints warnings and deprecation notices of its own, so the
 // result is found by prefix, never by position.
 const resultPrefix = "FFM_RESULT="
+
+// errorPrefix marks the one line a failed site script prints: Frappe's own
+// message with its HTML stripped, instead of a traceback.
+const errorPrefix = "FFM_ERROR="
+
+// scriptPrelude starts every site script. An uncaught exception prints
+// errorPrefix and the exception's text (Frappe's validation messages are HTML
+// lists) rather than a traceback, which is long and, for Frappe's frames, can
+// list local variables.
+const scriptPrelude = `import json, os, re, sys
+class Fail(Exception):
+    pass
+def _ffm_excepthook(kind, err, tb):
+    print("` + errorPrefix + `" + " ".join(re.sub(r"<[^>]+>", " ", str(err)).split()) + ("" if kind is Fail else " (" + kind.__name__ + ")"))
+sys.excepthook = _ffm_excepthook
+`
 
 // runningBench returns the bench when its frappe container runs, and
 // ErrBenchStopped (with the command that fixes it) when it does not.
@@ -44,9 +61,14 @@ func runSiteRequest(runner *bench.Runner, site, script string, req any, secrets 
 	r := *runner
 	r.Redact = append(append([]string{}, runner.Redact...), secrets...)
 	cmd := "cd /workspace/frappe-bench/sites && /workspace/frappe-bench/env/bin/python -c " +
-		bench.ShellQuote(script) + " " + bench.ShellQuote(site)
+		bench.ShellQuote(scriptPrelude+script) + " " + bench.ShellQuote(site)
 	out, err := r.ExecStdinOut("frappe", strings.NewReader(string(payload)+"\n"), "bash", "-c", cmd)
 	if err != nil {
+		for _, l := range strings.Split(out, "\n") {
+			if msg, ok := strings.CutPrefix(strings.TrimSpace(l), errorPrefix); ok {
+				return nil, errors.New(msg)
+			}
+		}
 		return nil, fmt.Errorf("%w\n%s", err, lastLines(out, 8))
 	}
 	var result json.RawMessage

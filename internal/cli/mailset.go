@@ -99,6 +99,10 @@ back on start; 'ffm mail unset' restores them. Use a transactional provider
 			}
 			fmt.Printf("Outgoing mail of %q now goes through %s:%d (%s) as %s, Email Account %q.\n",
 				name, acct.SMTPServer, acct.SMTPPort, acct.Security(), acct.EmailID, acct.Name)
+			if in.AccountName != "" && in.AccountName != acct.Name {
+				fmt.Printf("An outgoing Email Account for %s already existed, so %q was updated instead of making %q.\n",
+					acct.EmailID, acct.Name, in.AccountName)
+			}
 			printMailRecords(acct.EmailID, acct.SMTPServer)
 			return nil
 		},
@@ -112,8 +116,6 @@ back on start; 'ffm mail unset' restores them. Use a transactional provider
 	f.BoolVar(&stdin, "password-stdin", false, "Read the SMTP password from stdin (one line)")
 	f.StringVar(&in.AccountName, "name", "", "Name of the Email Account, also shown as the sender's name (default: \""+manager.DefaultMailAccount+"\", not shown)")
 	f.BoolVar(&in.NoVerify, "no-verify", false, "Do not let Frappe test the SMTP connection when saving")
-	_ = cmd.MarkFlagRequired("smtp-host")
-	_ = cmd.MarkFlagRequired("from")
 	return cmd
 }
 

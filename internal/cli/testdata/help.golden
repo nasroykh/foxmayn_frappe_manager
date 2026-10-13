@@ -9,6 +9,7 @@ Available Commands:
   clean              Remove volumes and images left by deleted benches (and, opt-in, Docker caches)
   clean-logs         Delete old log table rows to reclaim database space
   clone              Copy a bench, its site's data and app commits, to a new bench
+  config             Read and change a site's site_config.json: get, set, unset, list
   console            Open bench console (Python REPL with the site loaded)
   create             Create and start a new Frappe bench
   dashboard          Web dashboard for managing Frappe benches
@@ -21,7 +22,7 @@ Available Commands:
   list               List all managed benches
   login              Open a dev bench's desk already logged in (Administrator by default)
   logs               Stream logs from a bench (all services or one)
-  mail               Open the Mailpit inbox that catches a dev bench's outgoing mail
+  mail               Open the Mailpit inbox of a dev bench; 'mail set|show|unset' configure real outgoing mail
   mcp                Serve ffm's bench tools to an MCP client (stdio)
   notify             Where ffm reports failed scheduled backups, verifies and checks (add / list / remove / test)
   open               Open a bench's site (or its Mailpit, or the Traefik dashboard) in the browser
@@ -45,6 +46,7 @@ Available Commands:
   tunnel             Expose a bench over a secure public URL via a VPS tunnel
   up                 Create or start the development bench this project's ffm.yaml describes
   update             Update ffm to the latest version
+  user               Manage a site's users: list, add, disable, enable, password
   version            Print the ffm version
   worktree           Run a branch of your project in its own bench, in a git worktree
 
@@ -542,6 +544,77 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm config
+Usage:
+  ffm config [command]
+
+Available Commands:
+  get         Print one setting (a secret-looking key is masked)
+  list        List the site's settings (secret values masked)
+  set         Set one setting (the value's type is detected)
+  unset       Remove one setting from the site
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm config [command] --help" for more information about a command.
+
+=== ffm config get
+Usage:
+  ffm config get [bench] <key> [flags]
+
+Flags:
+      --json           Print as JSON (schema ffm.config/v1)
+      --show-secrets   Show the value of a secret-looking key even when stdout is not a terminal
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm config list
+Usage:
+  ffm config list [bench] [flags]
+
+Flags:
+      --json           Print as JSON (schema ffm.config/v1)
+      --show-secrets   Show the values of secret-looking keys even when stdout is not a terminal; with --json, include them
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm config set
+Usage:
+  ffm config set [bench] <key> [value] [flags]
+
+Examples:
+  ffm config set mybench max_file_size 20971520
+  ffm config set mybench allow_cors '["https://app.example.com"]'
+  ffm config set mybench some_code 007 --string
+  echo "$TOKEN" | ffm config set mybench my_api_token --stdin
+
+Flags:
+      --force    Allow changing encryption_key (all stored passwords become unreadable)
+      --json     Parse the value as JSON (any kind)
+      --stdin    Read the value from stdin instead of an argument
+      --string   Store the value as a string, whatever it looks like
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm config unset
+Usage:
+  ffm config unset [bench] <key> [flags]
+
+Flags:
+      --force   Allow removing encryption_key (all stored passwords become unreadable)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm console
 Usage:
   ffm console [name] [flags]
@@ -836,10 +909,62 @@ Global Flags:
 === ffm mail
 Usage:
   ffm mail [name] [flags]
+  ffm mail [command]
+
+Available Commands:
+  set         Send the site's mail through an SMTP server (creates the default outgoing Email Account)
+  show        Show where the site's outgoing mail goes
+  unset       Stop sending through the Email Account 'ffm mail set' made
 
 Flags:
       --json    Print the URL as JSON (schema ffm.url/v1)
       --print   Print the URL instead of opening it
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm mail [command] --help" for more information about a command.
+
+=== ffm mail set
+Usage:
+  ffm mail set [bench] [flags]
+
+Examples:
+  echo "$SMTP_PASSWORD" | ffm mail set mybench --smtp-host smtp.postmarkapp.com \
+      --from erp@example.com --user "$TOKEN" --password-stdin
+
+Flags:
+      --from string        The address mail is sent from (required)
+      --name string        Name of the Email Account, also shown as the sender's name (default: "Outgoing (ffm)", not shown)
+      --no-verify          Do not let Frappe test the SMTP connection when saving
+      --password-stdin     Read the SMTP password from stdin (one line)
+      --smtp-host string   SMTP server host name (required)
+      --smtp-port int      SMTP port (default: 587 for starttls, 465 for ssl, 25 for none)
+      --tls string         Transport security: starttls, ssl or none (default "starttls")
+      --user string        SMTP login (default with a password: the --from address); needs a password
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm mail show
+Usage:
+  ffm mail show [bench] [flags]
+
+Flags:
+      --json   Print as JSON (schema ffm.mail/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm mail unset
+Usage:
+  ffm mail unset [bench] [flags]
+
+Flags:
+      --name string   Name of the Email Account (default: the one 'ffm mail set' made)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
@@ -1467,6 +1592,81 @@ Usage:
 Flags:
       --check   Only check for updates, do not install
   -y, --yes     Skip confirmation prompt
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm user
+Usage:
+  ffm user [command]
+
+Available Commands:
+  add         Create an enabled user with a password
+  disable     Disable a user (Administrator cannot be disabled)
+  enable      Enable a user
+  list        List the site's users (Guest excluded)
+  password    Change a user's password and sign them out everywhere
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+Use "ffm user [command] --help" for more information about a command.
+
+=== ffm user add
+Usage:
+  ffm user add <email> [bench] [flags]
+
+Examples:
+  echo "$PW" | ffm user add ana@example.com mybench --first-name Ana --system-manager --password-stdin
+
+Flags:
+      --first-name string   First name (default: the part of the address before the @)
+      --last-name string    Last name
+      --password-stdin      Read the password from stdin (one line)
+      --system-manager      Give the user the System Manager role
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm user disable
+Usage:
+  ffm user disable <user> [bench] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm user enable
+Usage:
+  ffm user enable <user> [bench] [flags]
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm user list
+Usage:
+  ffm user list [bench] [flags]
+
+Flags:
+      --json   Print as JSON (schema ffm.users/v1)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm user password
+Usage:
+  ffm user password <user> [bench] [flags]
+
+Examples:
+  echo "$PW" | ffm user password Administrator mybench --password-stdin
+
+Flags:
+      --password-stdin   Read the password from stdin (one line)
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

@@ -175,8 +175,7 @@ func configGuard(b state.Bench, key string, force bool) error {
 // frappe: it needs no database, and it writes the file the way Frappe does
 // (indent 1, sorted keys), through a temporary file so a reader never sees half
 // of it. The request arrives on stdin.
-const configScript = `import json, os, sys
-site = sys.argv[1]
+const configScript = `site = sys.argv[1]
 req = json.load(sys.stdin)
 path = os.path.join(site, "site_config.json")
 with open(path) as f:
