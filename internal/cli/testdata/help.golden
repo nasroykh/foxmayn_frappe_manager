@@ -34,6 +34,7 @@ Available Commands:
   restore            Rebuild a bench from a backup archive
   rotate-credentials Replace a bench's database root and Administrator passwords with new random ones
   run                Run a tooling command from this project's ffm.yaml in its bench
+  scale              Change a production bench's gunicorn workers and background-worker replicas
   set-proxy          Configure a bench to run behind a reverse proxy
   shell              Open an interactive shell inside a bench container
   site               Site operations: migrate, maintenance mode, Frappe's scheduler (bare: show state)
@@ -42,6 +43,7 @@ Available Commands:
   status             Show per-container status for a bench
   stop               Stop a running bench (containers remain, data preserved)
   test               Run an app's tests on a dev bench
+  trim               Drop database columns and tables that Frappe no longer uses (dry run unless --yes)
   trust              Allow this project's ffm.yaml hooks and tooling to run
   tunnel             Expose a bench over a secure public URL via a VPS tunnel
   up                 Create or start the development bench this project's ffm.yaml describes
@@ -1276,6 +1278,21 @@ Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
       --verbose           Show docker compose output
 
+=== ffm scale
+Usage:
+  ffm scale [bench] [flags]
+
+Flags:
+      --dry-run                     Show the change without applying it
+      --gunicorn-workers int        Gunicorn worker processes in the frappe container (1-32)
+      --json                        Print the counts as JSON (schema ffm.scale/v1)
+      --worker-long-replicas int    Replicas of the long-queue worker (1-32)
+      --worker-short-replicas int   Replicas of the short-queue worker (1-32)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
 === ffm set-proxy
 Usage:
   ffm set-proxy [name] [flags]
@@ -1459,6 +1476,21 @@ Flags:
       --junit string     Write a JUnit XML report to this file
       --module string    Only this module (dotted path)
       --test string      Only this test case (needs --module or --doctype)
+
+Global Flags:
+      --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)
+      --verbose           Show docker compose output
+
+=== ffm trim
+Usage:
+  ffm trim [bench] [flags]
+
+Flags:
+      --database      Only drop tables no DocType owns (bench trim-database; MariaDB only)
+      --dry-run       Only list what would be dropped (the default without --yes)
+      --no-snapshot   Do not take an ffm snapshot first (Frappe's own backup runs instead)
+      --tables        Only drop columns no field owns any more (bench trim-tables)
+      --yes           Apply the trim without asking
 
 Global Flags:
       --non-interactive   Never open interactive prompts; fail with a message naming the missing flag instead. Implied when $CI or $FFM_NON_INTERACTIVE is set, or when there is no controlling terminal (set $FFM_INTERACTIVE=1 to force prompting back on)

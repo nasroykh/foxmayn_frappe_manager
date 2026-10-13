@@ -580,6 +580,8 @@ Override during creation with `--admin-password`, `--db-password`, and `--db-typ
 
 **Scripting:** `ffm list|status|backup list|backup schedule|domain list|tunnel server|version --json` print one JSON object with a versioned `schema` field; secrets only with `--show-secrets`. Exit codes: 2 usage, 3 bench not found, 4 busy, 6 wrong state (stopped), 7 restore preflight refused, 1 anything else.
 
+**Scale and trim:** `ffm scale [bench] [--gunicorn-workers N] [--worker-long-replicas N] [--worker-short-replicas N] [--dry-run] [--json]` changes a PROD bench's process counts live (each 1-32; records them, re-renders the compose file, `up -d`; a gunicorn change replaces the frappe container and waits for the site; dev benches are refused, exit 2; no flags prints the counts, `ffm.scale/v1`). `ffm trim [bench] [--tables] [--database] [--yes] [--no-snapshot]` wraps Frappe's `trim-tables` (unused columns) and `trim-database` (tables no DocType owns): a dry run listing unless `--yes`, a `pre-trim-<time>` snapshot first (`ffm snapshot restore <bench> --name …` undoes it), running bench only, `--database` is MariaDB only (refused on PostgreSQL).
+
 **Ports:** new benches publish their ports on `127.0.0.1` only; pass `--lan` to reach them from another machine (refused with the default admin password; needed for dev domain aliases). SSH agent forwarding is opt-in with `--ssh-agent`. After upgrading ffm, run `ffm reconcile <bench>` to apply template fixes without losing data (v0.8.1 fixes prod workers that never consumed Frappe's `default` queue).
 
 ---

@@ -1228,6 +1228,31 @@ Flags:
   --yes        Skip confirmation prompt
 ```
 
+### `ffm scale [name]`
+
+Changes how many processes a **production** bench runs, live and without losing data: the gunicorn workers in the frappe container and the replicas of the long- and short-queue worker containers. The counts are saved on the bench record, `docker-compose.yml` is rendered again and `docker compose up -d` rolls it out (databases, workspace and the other containers are untouched). A replica change adds or removes worker containers only; a `--gunicorn-workers` change replaces the frappe container, so the site is unavailable for a few seconds and ffm waits until it answers again. Dev benches run everything in one container and are refused (exit 2).
+
+```
+ffm scale mybench                                  # print the current counts and how many workers run
+ffm scale mybench --worker-long-replicas 3
+ffm scale mybench --gunicorn-workers 5 --worker-short-replicas 2 --dry-run
+```
+
+Every count is between 1 and 32: the record stores 0 as "not set" (so it falls back to the default), and 32 is a cap against typos, since each worker is a Python process of a few hundred MiB. Gunicorn's rule of thumb is 2 x CPUs + 1. `--json` prints `ffm.scale/v1`. If the bench is stopped the counts apply on the next `ffm start`.
+
+### `ffm trim [name]`
+
+Runs Frappe's `trim-tables` (drops columns that no field of the DocType owns any more) and `trim-database` (drops whole tables that no DocType owns, for example those left by an uninstalled app) on a running bench. Both destroy data, so the default is a dry run that lists what would go; `--yes` applies it, and at a terminal ffm asks first. Before anything is dropped ffm takes a snapshot named `pre-trim-<time>`; undo with `ffm snapshot restore <bench> --name pre-trim-<time>`.
+
+```
+ffm trim mybench                       # list the columns and tables that would be dropped
+ffm trim mybench --yes                 # snapshot, then drop them
+ffm trim mybench --tables --yes        # only unused columns
+ffm trim mybench --database --yes --no-snapshot
+```
+
+`--no-snapshot` skips the ffm snapshot; Frappe's own pre-trim backup then runs instead. `trim-database` supports MariaDB only (on PostgreSQL Frappe's command fails with a SQL error): on a PostgreSQL bench `--tables` works and `--database` is refused. Frappe decides what counts as unused: a fresh bench already lists about a dozen leftover columns of its own core tables (`tabDocType.app`, `tabDocField.trigger`, …), which is one more reason ffm snapshots first. On PostgreSQL `tabFile.module` is created again by Frappe and is listed on every run.
+
 ### `ffm domain`
 
 Routes extra hostnames (for example a LAN name such as `erp.internal`) to a bench through the shared Traefik proxy. ffm configures the routing; pointing DNS at this host is up to you, and `domain add` prints the records to create. A dev bench with aliases needs its ports on the LAN (`ffm reconcile <bench> --lan`).
@@ -1386,6 +1411,7 @@ Read commands take `--json` and print one JSON object whose `schema` field names
 | `ffm config list [bench] --json`, `ffm config get [bench] <key> --json` | `ffm.config/v1` (secret-looking values only with `--show-secrets`) |
 | `ffm user list [bench] --json` | `ffm.users/v1` |
 | `ffm mail show [bench] --json` | `ffm.mail/v1` (no SMTP password) |
+| `ffm scale [bench] --json` | `ffm.scale/v1` |
 | `ffm app list [bench] --json` | `ffm.apps/v1` |
 
 Within a version, fields are only added. Renaming or removing one bumps the version and is listed in the release's upgrade notes. Times are RFC 3339 UTC; absent values are omitted.
