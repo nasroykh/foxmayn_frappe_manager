@@ -59,10 +59,9 @@ func (r TrimResult) Counts() (columns, tables, ghosts int) {
 // undoes it, and runs the commands with their own backup off, which the
 // snapshot replaces. The output of each command goes through pw.
 //
-// trim-database is MariaDB only: it asks information_schema for the tables of
-// the schema named like the database, but a PostgreSQL site keeps its tables in
-// the "public" schema, so the command would report "No ghost tables" for any
-// site. Trim refuses it there rather than print that. trim-tables is portable
+// trim-database is MariaDB only: on a PostgreSQL site Frappe's command fails
+// with a SQL error (its information_schema query is built for MariaDB; checked
+// on version-16), so Trim refuses it up front instead. trim-tables is portable
 // SQL and runs on both.
 func (s *Service) Trim(in TrimInput, pw ProgressWriter) (TrimResult, error) {
 	if pw == nil {
@@ -83,8 +82,7 @@ func (s *Service) Trim(in TrimInput, pw ProgressWriter) (TrimResult, error) {
 	if doDatabase && b.IsPostgres() {
 		if explicit {
 			return TrimResult{}, &PreflightError{msg: fmt.Sprintf("bench %q uses PostgreSQL, and Frappe's trim-database only works on MariaDB "+
-				"(it looks for the tables in a schema named like the database, which PostgreSQL does not have), so it would report nothing to drop "+
-				"on a site that has ghost tables. Use --tables, which works on both.", b.Name)}
+				"(on PostgreSQL it fails with a SQL error). Use --tables, which works on both.", b.Name)}
 		}
 		pw.Println("Skipping trim-database: it supports MariaDB only (bench is PostgreSQL).")
 		doDatabase = false

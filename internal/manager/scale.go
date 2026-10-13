@@ -27,6 +27,9 @@ const (
 // containers of a production bench.
 var ErrProdOnly = errors.New("this applies to production benches only")
 
+// ErrScaleRange is returned (wrapped) for a count outside ScaleMin..ScaleMax.
+var ErrScaleRange = errors.New("count out of range")
+
 // ScaleSettings are the process counts of a production bench.
 type ScaleSettings struct {
 	// Gunicorn is the number of gunicorn worker processes in the frappe
@@ -124,7 +127,7 @@ func runningReplicas(r *bench.Runner) map[string]int {
 
 func validateScale(name string, v *int) error {
 	if v != nil && (*v < ScaleMin || *v > ScaleMax) {
-		return fmt.Errorf("%s must be between %d and %d (got %d)", name, ScaleMin, ScaleMax, *v)
+		return fmt.Errorf("%w: %s must be between %d and %d (got %d)", ErrScaleRange, name, ScaleMin, ScaleMax, *v)
 	}
 	return nil
 }

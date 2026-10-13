@@ -82,7 +82,7 @@ cmd/ffm/main.go          → entrypoint, calls cli.Execute(), exits 1 on error
 
 internal/
   cli/                    → cobra command definitions; flags, prompts, delegation. No bench logic.
-    root.go               → registers all 44 subcommands; global --verbose and --non-interactive;
+    root.go               → registers all 46 subcommands; global --verbose and --non-interactive;
                             PersistentPreRunE runs the update check (skipped for 'update' and
                             for the hourly 'backup run-due');
                             Execute() dispatches the hidden __dashboard-daemon argv BEFORE cobra
@@ -170,6 +170,11 @@ internal/
     status.go             → per-container status + credentials; also prints a clean-logs tip
                             for benches older than 7 days
     clean_logs.go         → ffm clean-logs: --days 30 / --dry-run / --yes
+    scale.go              → ffm scale [bench] [--gunicorn-workers N] [--worker-long-replicas N]
+                            [--worker-short-replicas N] [--dry-run] [--json ffm.scale/v1]; no count flag prints
+                            the current counts; ErrProdOnly becomes a usage error. Behaviour in manager/scale.go
+    trim.go               → ffm trim [bench] [--tables] [--database] [--dry-run] [--yes] [--no-snapshot]: dry
+                            run listing unless --yes, a typed confirm at a terminal; behaviour in manager/trim.go
     pick.go               → resolveBenchName() + benchNameFromCWD() + pickBench();
                             benchPickKeyMap() is what makes Esc abort every form in the package
     ffc.go                → ffm ffc: regenerate Frappe API keys + ffc config; --host [--force] adds the bench to
@@ -322,6 +327,18 @@ internal/
                             else). The site's own db user is out of scope
     admin.go              → setAdminPassword: `bench set-admin-password` with the password on stdin
     clean_logs.go         → deletes old rows from 7 Frappe log tables
+    scale.go              → Scale / ScaleStatus (prod only, ErrProdOnly; counts 1-32 because the record stores 0 as
+                            "unset"): lockBench, persist the counts, then applyScaleLocked = render compose + `up -d`
+                            + WaitForHTTP only after a gunicorn change (it replaces the frappe container) + poll `ps`
+                            until the worker-long/worker-short container counts match. Not applyDomainChange: that
+                            restarts socketio and re-patches. No template change, so no TemplateVersion bump
+    trim.go               → Trim: lockBench, running bench only. Frappe's own `--dry-run` first (trim-tables as
+                            --format json; trim-database as text, its json dry run prints {} even with ghost tables),
+                            applies only with Apply: createSnapshotLocked ("pre-trim-<time>") then the real commands
+                            with --no-backup (trim-database also --yes, else click prompts); --no-snapshot leaves
+                            Frappe's own backup on. trim-database is refused on PostgreSQL (PreflightError): live on
+                            version-16 it dies with a SQL error (UndefinedTable) on postgres; trim-tables works there
+                            (tabFile.module reappears after every run, so it is always listed)
     exec.go               → Exec / ExecOrError: one-shot command in a container
     devtools.go           → SiteURL / MailURL / LoginURL (a sid URL: a credential, shown only on
                             request) / DBExport / DBImport (root password via stdin) /

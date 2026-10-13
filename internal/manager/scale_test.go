@@ -117,8 +117,11 @@ func TestScaleValidationRunsNothing(t *testing.T) {
 		{Name: "sv", Gunicorn: ptr(-1)},
 		{Name: "sv"}, // nothing to change
 	} {
-		if _, err := s.Scale(in, DiscardProgress{}); err == nil {
+		_, err := s.Scale(in, DiscardProgress{})
+		if err == nil {
 			t.Errorf("%+v accepted", in)
+		} else if in.Name == "sv" && (in.WorkerLong != nil || in.WorkerShort != nil || in.Gunicorn != nil) && !errors.Is(err, ErrScaleRange) {
+			t.Errorf("%+v: err = %v, want ErrScaleRange", in, err)
 		}
 	}
 	if _, err := s.Scale(ScaleInput{Name: "devb", WorkerLong: ptr(2)}, DiscardProgress{}); !errors.Is(err, ErrProdOnly) {

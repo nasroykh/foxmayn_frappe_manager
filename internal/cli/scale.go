@@ -111,9 +111,10 @@ under honcho and are refused. --dry-run shows the change and does nothing.`,
 	return cmd
 }
 
-// scaleErr turns the dev-bench refusal into a usage error (exit 2).
+// scaleErr turns the dev-bench refusal and a count out of range into usage
+// errors (exit 2).
 func scaleErr(err error) error {
-	if errors.Is(err, manager.ErrProdOnly) {
+	if errors.Is(err, manager.ErrProdOnly) || errors.Is(err, manager.ErrScaleRange) {
 		return usageError{err}
 	}
 	return err
