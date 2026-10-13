@@ -310,7 +310,15 @@ ffm app remove hrms mybench --yes                # snapshot first; uninstall del
 ffm app update mybench --dry-run                 # then without --dry-run (--yes); rolls back on failure
 ffm app update mybench --to-branch version-16 --yes   # major upgrade incl. Python/Node
 ffm site migrate mybench | ffm site maintenance on|off mybench | ffm site scheduler pause|resume mybench
+ffm config list|get|set|unset mybench [key] [value]   # site_config.json; typed values, --string/--json, --stdin for secrets
+echo "$PW" | ffm user add ana@example.com mybench --system-manager --password-stdin   # also: list, disable, enable, password
+echo "$SMTP_PW" | ffm mail set mybench --smtp-host H --from erp@example.com --user U --password-stdin   # also: mail show, mail unset
 ```
+
+`ffm config` refuses keys ffm depends on (db_*, redis_*, socketio_*, installed_apps, host_name on prod or behind a proxy host;
+encryption_key needs `--force`) and masks secret-looking values off a terminal. Passwords are never flags: `--password-stdin`,
+`$FFM_USER_PASSWORD`, `$FFM_SMTP_PASSWORD`. `ffm mail set` makes the default outgoing Email Account and, on a dev bench, keeps
+Mailpit from coming back (marker `ffm_mail_account` in site_config); bare `ffm mail` still opens Mailpit.
 
 Never `ffm shell --exec "bench update"`: it reverts ffm's realtime patches and has no rollback.
 
