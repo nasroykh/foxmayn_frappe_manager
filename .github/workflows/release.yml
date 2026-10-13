@@ -45,6 +45,10 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
+          # The tag that triggered the run. With a release candidate on the same
+          # commit, GoReleaser's own pick (-version:refname) sorts v1.0.0-rc.2
+          # above v1.0.0 and builds the rc again.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FFM_RELEASE_SIGNING_KEY: ${{ secrets.FFM_RELEASE_SIGNING_KEY }}
 
