@@ -909,7 +909,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 		pw.Printf("  URL (port):    http://localhost:%d\n", webPort)
 		if resolvedProxyHost != "" {
 			pw.Printf("  URL (proxy):   %s\n", resolvedProxyHost)
-		} else if proxy.IsRunning() {
+		} else if proxyServingWarn(pw) {
 			pw.Printf("  URL (domain):  http://%s  ← proxy is running\n", siteName)
 		} else {
 			pw.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", siteName)

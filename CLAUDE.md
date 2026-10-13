@@ -539,7 +539,13 @@ internal/
                             Image or one that is still unhealthy after `docker start`; an HTTPS proxy is
                             recreated with the ACME email read from its args, or Start errors if there is none.
                             Status says "running but broken" / names an outdated image; doctor fails a "proxy"
-                            check for a running-but-broken proxy on dev benches
+                            check for a running-but-broken proxy on dev benches. Serving()/Probe() (one inspect:
+                            running AND Healthy; Probe also returns the "broken" reason) is what every caller
+                            deciding a *.localhost URL uses (list, status, home/bench views, SiteURL/LoginURL,
+                            create, start, domains); a broken proxy then falls back to the direct published
+                            port and prints one stderr warning naming 'ffm proxy start' (manager
+                            proxyServingWarn). IsRunning stays for poweroff (must stop a broken proxy), proxy
+                            status/start and doctor
   proxy/socket.go         → dockerSocket(): the host path mounted at /var/run/docker.sock. The
                             context/DOCKER_HOST socket is used ONLY when `docker info` lists
                             "rootless" (Docker Desktop's context socket cannot be bind-mounted);

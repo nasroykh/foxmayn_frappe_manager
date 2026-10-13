@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -157,10 +158,13 @@ func runStatus(name string, showSecrets bool) error {
 		label("url (port)", fmt.Sprintf("http://localhost:%d", b.WebPort))
 		if b.ProxyHost != "" {
 			label("url (proxy)", b.ProxyHost)
-		} else if proxy.IsRunning() {
+		} else if serving, broken := proxy.Probe(); serving {
 			label("url (domain)", fmt.Sprintf("http://%s", b.SiteName))
 		} else {
 			label("url (domain)", fmt.Sprintf("http://%s  (run 'ffm proxy start')", b.SiteName))
+			if broken != "" {
+				fmt.Fprintf(os.Stderr, "warning: the Traefik proxy is running but broken (%s); run 'ffm proxy start' to recreate it.\n", broken)
+			}
 		}
 	}
 	label("branch", b.FrappeBranch)

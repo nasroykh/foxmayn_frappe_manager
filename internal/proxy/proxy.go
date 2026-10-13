@@ -179,6 +179,29 @@ func IsRunning() bool {
 	return containerStatus() == "running"
 }
 
+// Serving reports whether the proxy container is running and actually serving
+// (attached, ports published), from one docker inspect. Callers that decide
+// which URL to show, or whether to wire a bench to the proxy, use this; a
+// running-but-broken container answers nothing on *.localhost.
+func Serving() bool {
+	serving, _ := Probe()
+	return serving
+}
+
+// Probe is Serving plus the reason: broken is non-empty only when the
+// container is running but not serving, which is the case worth a warning
+// (a missing or stopped proxy is already said by the callers' own hints).
+func Probe() (serving bool, broken string) {
+	i := inspectContainer()
+	if i.Status != "running" {
+		return false, ""
+	}
+	if p := i.problem(); p != "" {
+		return false, p
+	}
+	return true, ""
+}
+
 // Healthy reports whether the proxy container is running, attached to the
 // ffm-proxy network and publishing its ports. When it is not, reason says why.
 func Healthy() (bool, string) {
