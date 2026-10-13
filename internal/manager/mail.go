@@ -15,10 +15,6 @@ import (
 // lives in site_config (not in ffm's record) so it travels with a backup.
 const mailMarkerKey = "ffm_mail_account"
 
-// DefaultMailAccount is the name of the Email Account `ffm mail set` manages
-// unless --name says otherwise.
-const DefaultMailAccount = "Outgoing (ffm)"
-
 // Transport security of the SMTP connection.
 const (
 	MailTLSStartTLS = "starttls"
@@ -63,9 +59,9 @@ if op == "show":
     res["site_config"] = {k: frappe.conf.get(k) for k in ("mail_server", "mail_port", "use_tls", "use_ssl")
         if frappe.conf.get(k) is not None}
 elif op == "set":
-    name = req["account_name"]
+    name = req.get("account_name")
     doc = None
-    if frappe.db.exists("Email Account", name):
+    if name and frappe.db.exists("Email Account", name):
         doc = frappe.get_doc("Email Account", name)
     else:
         # An outgoing-only account is unique per address and on/off state
@@ -77,7 +73,8 @@ elif op == "set":
             doc = frappe.get_doc("Email Account", other[0])
     if doc is None:
         doc = frappe.new_doc("Email Account")
-        doc.email_account_name = name
+        if name:
+            doc.email_account_name = name
     doc.update({"email_id": req["email_id"], "smtp_server": req["smtp_server"],
         "smtp_port": req["smtp_port"], "use_tls": 1 if req["tls"] == "starttls" else 0,
         "use_ssl_for_outgoing": 1 if req["tls"] == "ssl" else 0,
@@ -102,8 +99,8 @@ elif op == "set":
     frappe.db.commit()
     res["account"] = describe(doc.name)
 elif op == "unset":
-    name = req["account_name"]
-    if not frappe.db.exists("Email Account", name):
+    name = req.get("account_name")
+    if not name or not frappe.db.exists("Email Account", name):
         res["changed"] = False
     else:
         doc = frappe.get_doc("Email Account", name)
@@ -174,7 +171,8 @@ type MailSetInput struct {
 	Password string
 	// AccountName names the Email Account and, when given, is also the name
 	// recipients see as the sender. Empty reuses the account an earlier
-	// 'ffm mail set' made, or DefaultMailAccount.
+	// 'ffm mail set' made, else an outgoing account for the same address,
+	// else lets Frappe name a new one after the address (erp@x.io -> "Erp").
 	AccountName string
 	// NoVerify skips Frappe's test connection to the SMTP server on save.
 	NoVerify bool
@@ -310,7 +308,7 @@ func (s *Service) MailSet(in MailSetInput) (*MailAccount, error) {
 }
 
 // mailAccountName is the Email Account ffm manages on b: the one the marker
-// names, else DefaultMailAccount.
+// names, else "" (none).
 func (s *Service) mailAccountName(b state.Bench) string {
 	if res, err := s.configCall(b, configRequest{Op: "get", Key: mailMarkerKey}); err == nil && string(res["found"]) == "true" {
 		var n string
@@ -318,7 +316,7 @@ func (s *Service) mailAccountName(b state.Bench) string {
 			return n
 		}
 	}
-	return DefaultMailAccount
+	return ""
 }
 
 // devMailpitKeys are the site_config keys ensureDevMail writes.

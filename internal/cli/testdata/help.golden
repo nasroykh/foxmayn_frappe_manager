@@ -936,7 +936,7 @@ Examples:
 
 Flags:
       --from string        The address mail is sent from (required)
-      --name string        Name of the Email Account, also shown as the sender's name (default: "Outgoing (ffm)", not shown)
+      --name string        Name of the Email Account, which recipients see as the sender name (default: Frappe names it after the --from address)
       --no-verify          Do not let Frappe test the SMTP connection when saving
       --password-stdin     Read the SMTP password from stdin (one line)
       --smtp-host string   SMTP server host name (required)

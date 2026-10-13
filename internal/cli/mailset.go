@@ -114,7 +114,7 @@ back on start; 'ffm mail unset' restores them. Use a transactional provider
 	f.StringVar(&in.From, "from", "", "The address mail is sent from (required)")
 	f.StringVar(&in.User, "user", "", "SMTP login (default with a password: the --from address); needs a password")
 	f.BoolVar(&stdin, "password-stdin", false, "Read the SMTP password from stdin (one line)")
-	f.StringVar(&in.AccountName, "name", "", "Name of the Email Account, also shown as the sender's name (default: \""+manager.DefaultMailAccount+"\", not shown)")
+	f.StringVar(&in.AccountName, "name", "", "Name of the Email Account, which recipients see as the sender name (default: Frappe names it after the --from address)")
 	f.BoolVar(&in.NoVerify, "no-verify", false, "Do not let Frappe test the SMTP connection when saving")
 	return cmd
 }

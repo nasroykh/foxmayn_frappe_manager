@@ -45,6 +45,9 @@ database-probe classifier (`internal/bench/waithttp_test.go`,
 (`internal/manager/lifecycle_test.go`), the compose secret file and rendering
 (`internal/bench/secret_test.go`), the no-secret-on-argv tests
 (`internal/manager/secrets_argv_test.go`) and rotation (`internal/manager/rotate_test.go`).
+The site administration commands are covered by `internal/manager/siteadmin_test.go` (typed values, key guard,
+masking, every command's secret off argv, the Mailpit marker) and `internal/cli/siteadmin_test.go` (the real
+command tree: ffm.config/v1, ffm.users/v1, ffm.mail/v1, bare `ffm mail` still routing to Mailpit).
 All of those run without Docker. The create
 pipeline and most of the CLI are still untested.
 

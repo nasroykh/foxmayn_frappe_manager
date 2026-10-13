@@ -428,7 +428,7 @@ func TestMailSetKeepsTheSMTPPasswordOffArgv(t *testing.T) {
 	noSecretOnArgv(t, fake, secSMTP)
 	req := stdinOf(t, mailIn)
 	if req["op"] != "set" || req["password"] != secSMTP || req["login"] != "tok" || req["tls"] != "starttls" ||
-		req["smtp_port"] != float64(587) || req["verify"] != true || req["account_name"] != DefaultMailAccount {
+		req["smtp_port"] != float64(587) || req["verify"] != true || req["account_name"] != "Outgoing (ffm)" {
 		t.Errorf("request = %v", req)
 	}
 	// The last site_config call writes the marker that keeps Mailpit away.
@@ -460,7 +460,7 @@ func TestMailSetNamedAccountIsTheSenderName(t *testing.T) {
 	}
 }
 
-func TestMailSetDefaultNameIsNotTheSenderName(t *testing.T) {
+func TestMailSetWithoutANameLetsFrappeNameTheAccount(t *testing.T) {
 	mailIn := filepath.Join(t.TempDir(), "mail.stdin")
 	s, _, _ := siteBench(t, func(b *state.Bench) { b.Mode = "prod" },
 		fakeexec.Rule{Match: "Email Account", Stdout: result(`{"account": {"name": "Outgoing (ffm)", "email_id": "erp@acme.io"}}`), StdinTo: mailIn},
@@ -469,7 +469,7 @@ func TestMailSetDefaultNameIsNotTheSenderName(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := stdinOf(t, mailIn)
-	if _, named := req["name_as_sender"]; named || req["account_name"] != DefaultMailAccount || req["tls"] != "ssl" || req["smtp_port"] != float64(2465) {
+	if _, named := req["name_as_sender"]; named || req["account_name"] != nil || req["tls"] != "ssl" || req["smtp_port"] != float64(2465) {
 		t.Errorf("request = %v", req)
 	}
 }

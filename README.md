@@ -579,8 +579,8 @@ password goes through `bench set-admin-password` and is also written to ffm's re
 Administrator cannot be disabled, nor can the agent user of an agent-ready bench (`ffm agent off`).
 
 **`mail set`.** Creates or updates the site's default outgoing Email Account (`--tls
-starttls|ssl|none`, port defaults to 587, 465 or 25; `--name` names the account and is also the
-sender name shown; `--no-verify` skips Frappe's test connection). Without a password the account
+starttls|ssl|none`, port defaults to 587, 465 or 25; `--name` names the account, which recipients see as the
+sender name (default: Frappe names it after the address); `--no-verify` skips Frappe's test connection). Without a password the account
 does not authenticate. It prints the SPF, DKIM and DMARC records for the From domain (SPF
 include for the common providers) and recommends a transactional provider. Frappe sends through
 the default outgoing Email Account and falls back to `mail_server` in `site_config.json` only when
