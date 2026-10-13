@@ -163,6 +163,10 @@ ffm restore <archive> staging            # rebuild under a different name
 ffm restore <archive> staging --dry-run  # validate and print the plan, change nothing
 ffm restore <archive> staging --pin-apps # apps at the archived commits, not branch head
 ffm restore <archive> --app my_app=git@github.com:acme/my_app.git@main  # app source the archive lacks
+ffm restore https://host/path/b.ffm.tar staging                        # https URL (no http, no user:pass; presigned is fine)
+ffm restore target://NAME/BENCH staging --identity <file>              # newest archive on a backup target (target://NAME/BENCH/FILE for one)
+ffm restore --frappe-backup <db.sql.gz> mysite --files f.tar --private-files p.tar --config site_config_backup.json --apps erpnext
+                                                                       # from Frappe Cloud / plain `bench backup` files; name required
 ```
 
 The archive holds the database, the site's public and private files, the site and bench
@@ -174,6 +178,22 @@ reachable remote, unpushed commit) have their source archived; `--vendor-apps` f
 
 `ffm restore` always creates a **new** bench and never writes into an existing one, so a
 failed restore leaves the machine as it found it. The target name must be free.
+
+The archive argument can also be an `https://` URL (plain `http://` and `user:pass@` URLs are
+refused; a presigned URL works) or `target://NAME/BENCH[/FILE]` for a file on a backup target from
+`ffm backup target list` (without FILE, the newest; targets hold age-encrypted archives, so pass
+`--identity`). The download goes to a private temp directory, is size-capped, never printed with its
+query string, and is deleted afterwards (`--keep-download`); an encrypted URL archive needs
+`<url>.header.json` next to it (`--header-url` otherwise). `--dry-run` still downloads it. Then it is
+the ordinary restore, preflight included.
+
+`ffm restore --frappe-backup <db.sql.gz> <name>` builds a new bench from Frappe's own backup files
+(Frappe Cloud or plain `bench backup`): `--files`/`--private-files` tarballs, `--config` (only its
+`encryption_key` is used, never db credentials), `--apps erpnext,hrms` or `--app name=git-url`
+(the dump is read to learn the apps; one it lists that you did not give stops the import before
+anything is built), `--mode dev|prod` (prod needs `--domain`), `--frappe-branch`, `--db-type`
+(must match the dump). The name is required. The Administrator password is replaced by
+`--admin-password` or a generated one. Encrypted Frappe backups are refused.
 
 `ffm delete` and `ffm recreate` back the bench up first (a manual archive labelled "before
 delete" / "before recreate") and refuse to continue if that backup fails; `--no-backup` skips

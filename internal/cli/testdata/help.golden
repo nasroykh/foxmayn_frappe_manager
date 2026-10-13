@@ -30,7 +30,7 @@ Available Commands:
   reconcile          Apply this ffm version's templates to an existing bench without losing data
   recreate           Delete a bench and provision it again from saved settings
   restart            Restart a bench (stop then start)
-  restore            Rebuild a bench from a backup archive
+  restore            Rebuild a bench from a backup archive, a URL, a backup target or Frappe's own backup files
   rotate-credentials Replace a bench's database root and Administrator passwords with new random ones
   run                Run a tooling command from this project's ffm.yaml in its bench
   scale              Change a production bench's gunicorn workers and background-worker replicas
@@ -1083,7 +1083,7 @@ Global Flags:
 
 === ffm restore
 Usage:
-  ffm restore <archive> [name] [flags]
+  ffm restore <archive|url|target://NAME/BENCH[/FILE]> [name] [flags]
 
 Examples:
   ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
@@ -1091,22 +1091,35 @@ Examples:
   ffm restore mybench_20260826T090000Z.ffm.tar --dry-run
   ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps
   ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
+  ffm restore https://files.example.com/mybench_20260826T090000Z.ffm.tar staging
+  ffm restore target://nas/mybench staging --identity ~/age-identity.txt
+  ffm restore --frappe-backup site-database.sql.gz mysite --files files.tar --apps erpnext
 
 Flags:
       --acme-email string              Let's Encrypt account address for a production restore
       --admin-password string          Set a new Administrator password instead of keeping the archived one. Prefer the environment variable FFM_ADMIN_PASSWORD: a flag value is visible in the process list.
       --allow-missing-encryption-key   Restore even though the archive has no site encryption key, accepting that Password fields (email passwords, integration secrets) will not decrypt
       --app stringArray                Clone an app from this source instead: <app>=<git-url>[@branch] (repeatable; frappe=... sets the framework's repo)
+      --apps strings                   With --frappe-backup: apps besides frappe, as for 'ffm create --apps' (erpnext,hrms or URL@branch). Every app the dump lists must be given here or with --app
+      --config string                  With --frappe-backup: the backup's site_config.json. Only its encryption_key is used
+      --db-type string                 With --frappe-backup: mariadb or postgres (default: what the dump is; a mismatch is refused)
       --domain string                  Override the production domain recorded in the archive
       --dry-run                        Validate the archive and print the plan without creating anything
       --encryption-key string          Key for a GPG-encrypted database dump, when the archive does not carry it. Prefer the environment variable FFM_ENCRYPTION_KEY: a flag value is visible in the process list.
+      --files string                   With --frappe-backup: the public files tarball (.tar, .tgz)
+      --frappe-backup string           Build the bench from Frappe's own backup files instead of an ffm archive: the database dump (…-database.sql.gz). The one argument is then the new bench's name
+      --frappe-branch string           With --frappe-backup: Frappe branch (default: the dump's major version, version-N)
       --github-token string            GitHub token for cloning private apps; github.com SSH sources are cloned over HTTPS with it. Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
+      --header-url string              https URL of the header sidecar of an encrypted archive, when it is not <archive URL>.header.json
       --identity string                age identity file that decrypts an encrypted (.age) archive. Env: FFM_AGE_IDENTITY_FILE
+      --keep-download                  Keep the archive downloaded from a URL or backup target instead of deleting it afterwards
       --keep-on-failure                Leave a failed restore in place for diagnosis instead of removing it
       --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
+      --mode string                    With --frappe-backup: bench mode, dev or prod (prod needs --domain) (default "dev")
       --no-files                       Restore the database only, without attachments
       --no-ssl                         Serve the restored production bench over plain HTTP
       --pin-apps                       Check each app out at the commit recorded in the archive instead of its branch head
+      --private-files string           With --frappe-backup: the private files tarball (.tar, .tgz)
       --reallocate-ports               Always assign a fresh port pair instead of reusing the archive's
       --show-secrets                   Print the Administrator password at the end even when stdout is not a terminal (it is masked then)
       --skip-migrate                   Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions

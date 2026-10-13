@@ -42,7 +42,10 @@ bash and git exist), the backup failure formatter
 (`internal/manager/backup_failure_test.go`), the HTTP readiness wait and the
 database-probe classifier (`internal/bench/waithttp_test.go`,
 `internal/bench/dbprobe_test.go`) and the log tail helper
-(`internal/manager/lifecycle_test.go`), the compose secret file and rendering
+(`internal/manager/lifecycle_test.go`), the restore sources and Frappe backup import
+(`internal/manager/restore_source_test.go` — an httptest TLS server and hostile responses —,
+`restore_target_test.go`, `restore_dump_test.go`, `restore_dump_real_test.go`,
+`restore_frappe_test.go`, `restore_frappe_pipeline_test.go`), the compose secret file and rendering
 (`internal/bench/secret_test.go`), the no-secret-on-argv tests
 (`internal/manager/secrets_argv_test.go`) and rotation (`internal/manager/rotate_test.go`).
 All of those run without Docker. The create
@@ -107,14 +110,23 @@ internal/
                             --backend cron|systemd|launchd|schtasks); syncSchedulerJob installs the
                             job with the first schedule, removes it with the last, both through
                             scheduler.Install / scheduler.Uninstall
-    restore.go            → ffm restore <archive> [name]: --dry-run / --no-files / --pin-apps /
+    restore.go            → ffm restore <archive|url|target://NAME/BENCH[/FILE]> [name]: --dry-run /
+                            --no-files / --pin-apps /
                             --allow-missing-encryption-key / --encryption-key / --domain /
                             --no-ssl / --acme-email / --reallocate-ports / --web-port /
                             --socketio-port / --admin-password / --github-token /
                             --skip-migrate / --keep-on-failure / --skip-space-check /
-                            --app <app>=<git-url>[@branch] (repeatable; frappe=… too).
-                            arg0 is the ARCHIVE, arg1 the new bench name — so it does NOT
-                            call resolveBenchName: the target must not exist yet
+                            --app <app>=<git-url>[@branch] (repeatable; frappe=… too) /
+                            --keep-download / --header-url. arg0 is the ARCHIVE, arg1 the new
+                            bench name — so it does NOT call resolveBenchName: the target must
+                            not exist yet. --frappe-backup <db.sql.gz> (a string flag; the one
+                            positional is then the NAME, required) switches to Frappe's own
+                            backup files, with --files / --private-files / --config / --apps
+                            (StringSlice) / --mode / --frappe-branch / --db-type; those flags are
+                            usage errors without it, and --identity / --pin-apps /
+                            --encryption-key / --keep-download / --header-url are usage errors
+                            with it. The CLI is the only caller that sets AllowRemote, and it
+                            passes a signal context so Ctrl-C stops a download
     rotate.go             → ffm rotate-credentials [bench] [--db-root] [--admin] [--show-secrets] [--json
                             ffm.credentials/v1]; behaviour in manager/rotate.go. Progress goes to stderr
                             with --json
@@ -228,7 +240,32 @@ internal/
     backup.go             → Service.Backup: reads site identity host-side, runs `bench backup`
                             into an in-container staging dir, streams members out
     restore.go            → Service.Restore: preflight → Create → data → reconcile. Fresh
-                            bench only, so it borrows Create's rollback
+                            bench only, so it borrows Create's rollback. Two front doors, one
+                            core: Restore (archive: resolve source, decrypt, extract, verify)
+                            and restoreFrappeBackup both fill a restoreRun {manifest, staging,
+                            restoreMembers (the db / public / private files `bench restore` is
+                            handed; an empty half is not restored)} and call restoreCore
+                            (gates, plan, Create, applySiteConfig, runBenchRestore,
+                            reconcileAfterRestore)
+    restore_source.go     → parseRestoreSource (local path / https URL / target://NAME/BENCH[/FILE];
+                            http:// and user:pass@ are refused, other schemes point at
+                            `ffm backup target add`) / resolveRestoreSource (a 0700 .download-*
+                            dir under config.BackupsDir, removed afterwards unless KeepDownload) /
+                            httpGet (https-only redirects, MaxDownloadBytes cap = 64 GiB default
+                            checked on Content-Length and on the bytes, stall timeout, truncation
+                            check, restoreHTTPClient is the test hook) / redactURL. An age .age
+                            URL archive fetches <url>.header.json (or HeaderURL) FIRST and checks
+                            the name before the archive. Targets go through pullArchiveTo (shared
+                            with PullArchive, which keeps its old behaviour)
+    restore_frappe.go     → FrappeBackupInput import: inspectFrappeFiles (every file checked
+                            without Docker: dump, file tars via archive/tar for traversal and
+                            truncation, config) / chooseDBEngine / chooseFrappeBranch /
+                            planDumpApps (an app the dump lists with no --apps / --app source is a
+                            Problem before Create) / the manifest built for restoreCore. Config
+                            contributes ONLY encryption_key (+ backup_encryption_key)
+    restore_dump.go       → inspectDump: one streaming pass over a Frappe dump (mysqldump and
+                            pg_dump layouts): engine, __Auth / tabUser, the `tabInstalled
+                            Application` rows, the "-- begin frappe metadata" block
     backup_manifest.go    → Header / Manifest / SiteInfo / AppInfo / Secrets + schema gates
     backup_preflight.go   → checkArchive / verifyMembers / scrubSecrets / checkNameFree /
                             honoursFileModes
@@ -792,6 +829,29 @@ internal/
   `TeardownBenchFiles` runs `os.RemoveAll(b.Dir)`, so `ffm recreate` would otherwise destroy
   the backups that make it survivable. They hold credentials in plaintext at 0600, and
   `honoursFileModes` warns when the filesystem ignores that (a Windows drive under WSL2).
+
+- **Restore sources and Frappe's own backup files.** Both feed `restoreCore`, so every gate,
+  Create's rollback and the reconcile steps are the proven ones.
+  - A source is a local path, an https URL or `target://NAME/BENCH[/FILE]` (URL-style on purpose: a
+    bare `name:path` collides with `C:\` and bench names). Remote sources need
+    `RestoreInput.AllowRemote`, set only by the CLI: the dashboard, clone and verify pass local
+    paths, and a request-driven caller must never be able to make ffm fetch a URL. The download
+    is deleted when the restore ends; `--dry-run` downloads too. Never print a `*url.Error`: its
+    text carries the whole URL, query string included; `redactURL` / `unwrapURLError` exist for
+    that. Plain http, user info in a URL, a redirect to http, a body over the cap, a truncated body
+    and a silent server are all errors (`TestHTTPGet`).
+  - `--frappe-backup` needs the name, builds a `Manifest` from the dump (Header.Kind
+    `frappe-backup`, random DB and (unless given) Administrator password, Members = the dump) and
+    copies the user's files into staging under canonical names (copies, never links: the copy
+    into the container chmods the staged file). `bench restore` picks tar vs tgz by extension, so
+    `.tar` stays `.tar` and `.tar.gz` becomes `.tgz`. Frappe's dump layout (verified on a live v16
+    bench): a `-- begin frappe metadata` block (version, branch) first, and
+    `INSERT INTO \`tabInstalled Application\` VALUES` with the rows on the FOLLOWING lines.
+    The dump decides MariaDB vs Postgres and the Frappe major version; a wrong `--db-type` or
+    `--frappe-branch` is refused. An app the dump lists that nobody sourced is refused before
+    Create. Encrypted (GPG) Frappe backups are refused by design. The Administrator password is
+    always reset (the dump's own is a hash ffm cannot keep). Absolute URLs in the data keep the
+    old site name; the summary says so.
 
 - **Scheduled backups: one hourly job, tiered retention, no second source of truth.**
   `ffm backup run-due`, run by a single tagged crontab line, backs up each bench whose

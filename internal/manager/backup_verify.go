@@ -221,7 +221,7 @@ func fetchNewest(targetName, bench, dir string) (string, error) {
 			continue
 		}
 		local := filepath.Join(dir, path.Base(r.Key))
-		if err := download(ctx, d, r.Key, local); err != nil {
+		if err := download(ctx, d, r.Key, local, 0); err != nil {
 			return "", err
 		}
 		if st, err := os.Stat(local); err != nil || st.Size() != r.Size {

@@ -1,5 +1,7 @@
 package manager
 
+import "context"
+
 // CreateInput holds parameters for provisioning a new bench.
 type CreateInput struct {
 	// recreating is set by Recreate, which rebuilds an EXISTING bench and so
@@ -253,7 +255,8 @@ type BackupInput struct {
 // That is what lets the whole operation reuse Create's rollback defer, so a
 // failed restore leaves the host exactly as it found it.
 type RestoreInput struct {
-	// Archive is the path to a .ffm.tar file.
+	// Archive is the path to a .ffm.tar file, or with AllowRemote an https://
+	// URL or a target://NAME/BENCH[/FILE] reference to one.
 	// Identity is the age identity file that decrypts an encrypted archive
 	// (default $FFM_AGE_IDENTITY_FILE).
 	Identity string
@@ -313,4 +316,50 @@ type RestoreInput struct {
 	MaxExtractBytes int64
 	// SkipSpaceCheck bypasses the free-space preflight.
 	SkipSpaceCheck bool
+
+	// AllowRemote lets Archive be an https:// URL or a target://NAME/BENCH[/FILE]
+	// reference. Only the CLI sets it: the dashboard, clone and verify always
+	// hand over a local path, and a request-driven caller must never be able to
+	// make ffm fetch an arbitrary URL.
+	AllowRemote bool
+	// Context cancels a download. Nil means context.Background().
+	Context context.Context
+	// KeepDownload leaves a downloaded archive (and its header) in place
+	// instead of deleting it once the restore has finished.
+	KeepDownload bool
+	// HeaderURL is where the header sidecar of an age-encrypted https archive
+	// lives, when it is not "<archive URL>.header.json" (a presigned URL cannot
+	// be extended with a suffix).
+	HeaderURL string
+	// MaxDownloadBytes caps a download. Zero means DefaultMaxDownloadBytes.
+	MaxDownloadBytes int64
+
+	// Frappe, when set, imports Frappe's own backup files instead of an ffm
+	// archive; Archive is then unused and TargetName is required.
+	Frappe *FrappeBackupInput
+}
+
+// FrappeBackupInput describes a restore from the files `bench backup` (or
+// Frappe Cloud) writes: a database dump, optionally the file tarballs and the
+// site_config.json. They are plain local files.
+type FrappeBackupInput struct {
+	// DB is the <site>-database.sql.gz (or .sql) dump.
+	DB string
+	// Files and PrivateFiles are the public and private file tarballs (.tar,
+	// .tgz or .tar.gz). Either, both or neither may be given.
+	Files, PrivateFiles string
+	// Config is the backup's site_config.json. Only its encryption_key (and
+	// backup_encryption_key) are used.
+	Config string
+	// Apps are the apps to install besides frappe, in create's --apps syntax.
+	// The dump lists which apps the site had; every one of them must be here or
+	// in RestoreInput.AppOverrides.
+	Apps []string
+	// Mode is "dev" (default) or "prod".
+	Mode string
+	// FrappeBranch overrides the branch guessed from the dump's frappe version.
+	FrappeBranch string
+	// DBType is "mariadb" or "postgres". Empty takes the dump's engine; a
+	// value that disagrees with the dump is refused.
+	DBType string
 }

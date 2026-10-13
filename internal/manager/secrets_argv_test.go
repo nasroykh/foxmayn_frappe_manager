@@ -97,7 +97,11 @@ func TestRestoreKeepsSecretsOffArgv(t *testing.T) {
 	m := Manifest{Members: []archive.Member{{Path: archive.Prefix + "/db/database.sql.gz", Encoding: archive.EncodingGPG}}}
 	m.Secrets.BackupEncryptionKey = secKey
 	in := RestoreInput{EncryptionKey: secKey}
-	if err := s.runBenchRestore(s.runnerFor(b), b, m, in, staging, true, DiscardProgress{}); err != nil {
+	if err := s.runBenchRestore(s.runnerFor(b), b, m, in, staging, restoreMembers{
+		DB:      archive.Prefix + "/db/database.sql.gz",
+		Public:  archive.Prefix + "/files/public-files.tgz",
+		Private: archive.Prefix + "/files/private-files.tgz",
+	}, DiscardProgress{}); err != nil {
 		t.Fatalf("runBenchRestore: %v", err)
 	}
 	noSecretOnArgv(t, fake, secAdmin, secDB, secKey)
