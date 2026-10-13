@@ -351,7 +351,9 @@ func printDomainHints(pw ProgressWriter, b state.Bench, d string) {
 	}
 	pw.Printf("\nBench %q now answers on %s://%s\n", b.Name, scheme, d)
 
-	if !proxy.IsRunning() {
+	if serving, broken := proxy.Probe(); broken != "" {
+		fmt.Fprintf(pw.Stderr(), "warning: the Traefik proxy is running but broken (%s); run 'ffm proxy start' to recreate it.\n", broken)
+	} else if !serving {
 		pw.Println("  ! The shared Traefik proxy is not running — start it with 'ffm proxy start'.")
 	}
 

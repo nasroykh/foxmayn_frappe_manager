@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"fmt"
+
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 )
 
@@ -35,6 +37,17 @@ func (s *Service) ProxyStart(pw ProgressWriter) error {
 	pw.Printf("  HTTP:      http://<bench>.localhost\n")
 	pw.Printf("  Dashboard: %s\n", proxy.DashboardURL())
 	return nil
+}
+
+// proxyServingWarn reports whether the proxy serves *.localhost and, when the
+// container runs but is broken, prints one warning naming the fix. It never
+// fails: the caller falls back to the direct published port.
+func proxyServingWarn(pw ProgressWriter) bool {
+	serving, broken := proxy.Probe()
+	if broken != "" {
+		fmt.Fprintf(pw.Stderr(), "warning: the Traefik proxy is running but broken (%s); *.localhost URLs will not answer. Run 'ffm proxy start' to recreate it.\n", broken)
+	}
+	return serving
 }
 
 // ProxyStop stops the shared Traefik proxy.

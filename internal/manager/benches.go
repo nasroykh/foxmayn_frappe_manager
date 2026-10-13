@@ -155,7 +155,7 @@ func (s *Service) listBenchViews() ([]BenchView, func() bool, error) {
 	var once sync.Once
 	var up bool
 	proxyUp := func() bool {
-		once.Do(func() { up = proxy.IsRunning() })
+		once.Do(func() { up = proxy.Serving() })
 		return up
 	}
 	out := make([]BenchView, 0, len(benches))
@@ -166,7 +166,7 @@ func (s *Service) listBenchViews() ([]BenchView, func() bool, error) {
 }
 
 func (s *Service) benchToView(b state.Bench) BenchView {
-	return s.viewOf(b, s.LiveStatus(b), proxy.IsRunning)
+	return s.viewOf(b, s.LiveStatus(b), proxy.Serving)
 }
 
 func (s *Service) viewOf(b state.Bench, status string, proxyUp func() bool) BenchView {
@@ -228,7 +228,7 @@ func (s *Service) GetBenchDetail(name string) (BenchDetail, error) {
 }
 
 func (s *Service) siteURL(b state.Bench) string {
-	return viewSiteURL(b, proxy.IsRunning)
+	return viewSiteURL(b, proxy.Serving)
 }
 
 // viewSiteURL is the URL shown for a bench. proxyUp is asked only for a dev

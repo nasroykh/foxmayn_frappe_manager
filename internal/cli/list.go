@@ -63,7 +63,7 @@ func runList(asJSON bool) error {
 		return nil
 	}
 
-	proxyUp := proxy.IsRunning()
+	proxyUp, proxyBroken := proxy.Probe()
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
@@ -129,7 +129,11 @@ func runList(asJSON bool) error {
 	}
 
 	if !proxyUp && devBenchExists {
-		fmt.Printf("\n  %s\n", mutedStyle.Render("Run 'ffm proxy start' to enable sitename.localhost routing."))
+		msg := "Run 'ffm proxy start' to enable sitename.localhost routing."
+		if proxyBroken != "" {
+			msg = "The proxy is running but broken (" + proxyBroken + "): run 'ffm proxy start' to recreate it."
+		}
+		fmt.Printf("\n  %s\n", mutedStyle.Render(msg))
 	}
 	var outdated, partial []string
 	for _, v := range views {

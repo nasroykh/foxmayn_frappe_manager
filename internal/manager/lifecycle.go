@@ -9,7 +9,6 @@ import (
 
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/bench"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/execx"
-	"github.com/nasroykh/foxmayn_frappe_manager/internal/proxy"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 	"github.com/nasroykh/foxmayn_frappe_manager/internal/tunnel"
 )
@@ -115,7 +114,7 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		}
 	} else {
 		pw.Printf("  URL (port):    http://localhost:%d\n", b.WebPort)
-		if proxy.IsRunning() {
+		if proxyServingWarn(pw) {
 			pw.Printf("  URL (domain):  http://%s\n", b.SiteName)
 		} else {
 			pw.Printf("  URL (domain):  http://%s  ← run 'ffm proxy start' to enable\n", b.SiteName)

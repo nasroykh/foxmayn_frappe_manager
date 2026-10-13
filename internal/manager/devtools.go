@@ -52,7 +52,7 @@ func (s *Service) SiteURL(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return siteURL(b, proxy.IsRunning()), nil
+	return siteURL(b, proxy.Serving()), nil
 }
 
 func siteURL(b state.Bench, proxyRunning bool) string {
@@ -132,7 +132,7 @@ func (s *Service) LoginURL(name, user string) (string, error) {
 	if sid == "" {
 		return "", fmt.Errorf("start a session: no session id in the output\n%s", lastLines(out, 5))
 	}
-	return siteURL(b, proxy.IsRunning()) + "/app?sid=" + sid, nil
+	return siteURL(b, proxy.Serving()) + "/app?sid=" + sid, nil
 }
 
 func lastLines(s string, n int) string {
