@@ -26,13 +26,18 @@ func hasMailpit(b state.Bench) bool {
 // ensureDevMail points the site's outgoing mail at the bench's Mailpit, unless
 // site_config already names a mail server. Frappe uses these keys only when no
 // Email Account is the default outgoing one (EmailAccount.find_from_config),
-// so an account the user configured still wins.
+// so an account the user configured still wins. A bench whose outgoing mail
+// 'ffm mail set' configured carries mailMarkerKey and is left alone: Mailpit's
+// keys were removed on purpose and must not come back on the next start.
 func ensureDevMail(b state.Bench) error {
 	if !hasMailpit(b) {
 		return nil
 	}
 	return patchSiteConfig(b, func(cfg map[string]any) {
 		if _, ok := cfg["mail_server"]; ok {
+			return
+		}
+		if _, ok := cfg[mailMarkerKey]; ok {
 			return
 		}
 		cfg["mail_server"] = "mailpit"
