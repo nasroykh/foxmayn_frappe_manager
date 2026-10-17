@@ -146,6 +146,9 @@ func repairVenv(runner *bench.Runner, name string, pw ProgressWriter) error {
 	case len(f) == 2 && f[0] == "gone":
 		return fmt.Errorf("the bench's virtualenv was made with Python %s, and its image has no %s release: "+
 			"run 'ffm recreate %s' (it backs the bench up first)", f[1], minorOf(f[1]), name)
+	case len(f) == 3 && f[0] == "failed":
+		return fmt.Errorf("the bench's virtualenv needs Python %s, which its image replaced with %s, "+
+			"and re-pointing it failed: is %s/workspace/frappe-bench/env writable?", f[1], f[2], runner.ComposeDir)
 	case len(f) == 2 && f[0] == "unknown":
 		return fmt.Errorf("the bench's virtualenv points at %s, which its image does not have", f[1])
 	case err != nil:

@@ -31,7 +31,9 @@ func venvRig(t *testing.T, made, exe string, installed ...string) (env, versions
 	if err := os.Symlink(versions+made+"/bin/"+exe, filepath.Join(env, "bin", "python")); err != nil {
 		t.Fatal(err)
 	}
-	cfg := "home = " + versions + made + "/bin\nimplementation = CPython\nversion_info = " + made + "\n"
+	// uv writes version_info = X.Y.Z, virtualenv version_info = X.Y.Z.final.0
+	// and the stdlib version = X.Y.Z.
+	cfg := "home = " + versions + made + "/bin\nversion_info = " + made + "\nversion = " + made + ".final.0\n"
 	os.WriteFile(filepath.Join(env, "pyvenv.cfg"), []byte(cfg), 0o644)
 	return env, versions
 }
@@ -43,7 +45,7 @@ func runRepair(t *testing.T, env, versions string) (string, error) {
 }
 
 func TestRepairVenvRelinksToTheNewestPatchOfTheSameMinor(t *testing.T) {
-	env, versions := venvRig(t, "3.14.7", "python3", "3.12.15", "3.14.9", "3.14.10")
+	env, versions := venvRig(t, "3.14.7", "python3", "3.12.15", "3.14.9", "3.14.10", "3.14.11t", "3.14.12rc1")
 	out, err := runRepair(t, env, versions)
 	if err != nil || out != "FFM_VENV=relinked 3.14.7 3.14.10" {
 		t.Fatalf("out = %q, err = %v", out, err)
@@ -52,7 +54,7 @@ func TestRepairVenvRelinksToTheNewestPatchOfTheSameMinor(t *testing.T) {
 		t.Errorf("link = %q", got)
 	}
 	cfg, _ := os.ReadFile(filepath.Join(env, "pyvenv.cfg"))
-	if want := "home = " + versions + "3.14.10/bin\nimplementation = CPython\nversion_info = 3.14.10\n"; string(cfg) != want {
+	if want := "home = " + versions + "3.14.10/bin\nversion_info = 3.14.10\nversion = 3.14.10.final.0\n"; string(cfg) != want {
 		t.Errorf("pyvenv.cfg =\n%s\nwant\n%s", cfg, want)
 	}
 	// Repaired: a second run changes nothing.
@@ -68,6 +70,20 @@ func TestRepairVenvLeavesAWorkingVenvAlone(t *testing.T) {
 	}
 	if got, _ := os.Readlink(filepath.Join(env, "bin", "python")); got != versions+"3.14.7/bin/python3.14" {
 		t.Errorf("link = %q", got)
+	}
+}
+
+// A venv directory it cannot write is a failure, not a "relinked".
+func TestRepairVenvReportsAFailedRelink(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through 0o555")
+	}
+	env, versions := venvRig(t, "3.14.7", "python3", "3.14.8")
+	bin := filepath.Join(env, "bin")
+	os.Chmod(bin, 0o555)
+	t.Cleanup(func() { os.Chmod(bin, 0o755) })
+	if out, err := runRepair(t, env, versions); err == nil || !strings.HasSuffix(out, "FFM_VENV=failed 3.14.7 3.14.8") {
+		t.Fatalf("out = %q, err = %v", out, err)
 	}
 }
 

@@ -14,8 +14,9 @@ package bench
 //
 // It prints nothing when the link resolves or bin/python is not a link,
 // "FFM_VENV=relinked <old> <new>" after a repair, and exits 3 with
-// "FFM_VENV=gone <version>" or "FFM_VENV=unknown <target>" when it cannot
-// repair.
+// "FFM_VENV=gone <version>", "FFM_VENV=unknown <target>" or
+// "FFM_VENV=failed <old> <new>" when it cannot repair. Only plain X.Y.Z
+// releases are candidates: 3.14.8t (free-threaded) or an rc is another ABI.
 var RepairVenvCmd = repairVenvScript("/workspace/frappe-bench/env", "/home/frappe/.pyenv/versions/")
 
 // repairVenvScript builds RepairVenvCmd for an env directory and a pyenv
@@ -26,11 +27,12 @@ t=$(readlink "$e/bin/python") || exit 0
 [ -e "$e/bin/python" ] && exit 0
 case $t in "$p"*) ;; *) echo "FFM_VENV=unknown $t"; exit 3;; esac
 v=${t#"$p"}; v=${v%%/*}
-n=$(ls -d "$p${v%.*}".[0-9]* 2>/dev/null | sort -V | tail -n1); n=${n#"$p"}
+n=$(ls -d "$p${v%.*}".* 2>/dev/null | grep -E '/[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1); n=${n#"$p"}
 nt=$p$n${t#"$p$v"}
 if [ -z "$n" ] || [ ! -e "$nt" ]; then echo "FFM_VENV=gone $v"; exit 3; fi
-ln -sfn "$nt" "$e/bin/python"
 r=${v//./\\.}
-sed -i -E "s#/versions/$r(/|\$)#/versions/$n\1#; s#^(version(_info)?) = $r\$#\1 = $n#" "$e/pyvenv.cfg"
+ln -sfn "$nt" "$e/bin/python" &&
+	sed -i -E "s#/versions/$r(/|\$)#/versions/$n\1#; s#^(version(_info)? = )$r(\.|\$)#\1$n\3#" "$e/pyvenv.cfg" ||
+	{ echo "FFM_VENV=failed $v $n"; exit 3; }
 echo "FFM_VENV=relinked $v $n"`
 }

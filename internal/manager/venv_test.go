@@ -15,7 +15,7 @@ func TestStartRefusesAVenvItsImageCannotRun(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Python 3.12.4") || !strings.Contains(err.Error(), "ffm recreate old") {
 		t.Fatalf("err = %v", err)
 	}
-	if !r.fake.Called(" run --rm --no-deps -T frappe bash -c ") {
+	if !r.fake.Called(" run --rm --no-deps -T --label traefik.enable=false frappe bash -c ") {
 		t.Errorf("repair not run:\n%s", strings.Join(r.fake.Calls(), "\n"))
 	}
 	if r.fake.Called(" up -d") {
