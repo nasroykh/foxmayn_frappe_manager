@@ -138,6 +138,13 @@ func (ComposeData) FfcVersion() string { return strings.TrimPrefix(FfcRef, "v") 
 const (
 	// BenchImageTag is the frappe/bench base image of both Dockerfiles.
 	BenchImageTag = "v5.31.0"
+	// BenchImageDigest is the multi-arch index digest of BenchImageTag. The
+	// tag alone is not a pin: upstream re-pushes it, and one re-push moved
+	// Python 3.14.7 to 3.14.8 under every bench built from v5.31.0 (see
+	// RepairVenvCmd). Take it from `docker buildx imagetools inspect`.
+	BenchImageDigest = "sha256:68e586a75392629680f70e956739f418f3502c601b2f35e2ee365572f06c923a"
+	// BenchImage is the FROM of both Dockerfiles, and part of a seed's key.
+	BenchImage = "docker.io/frappe/bench:" + BenchImageTag + "@" + BenchImageDigest
 	// FrappeSkillsCommit is the commit of the Frappe Claude skill pack
 	// (OpenAEC-Foundation/Frappe_Claude_Skill_Package) baked into the dev image.
 	FrappeSkillsCommit = "36cfa807518f48e4210fac2a5afc6adafad4c53e"
@@ -151,8 +158,8 @@ const (
 // MailPort is the host port of a dev bench's Mailpit web UI.
 func (d ComposeData) MailPort() int { return d.WebPort + MailPortOffset }
 
-// BenchImageTag exposes the pinned base image tag to the Dockerfile templates.
-func (ComposeData) BenchImageTag() string { return BenchImageTag }
+// BenchImage exposes the pinned base image to the Dockerfile templates.
+func (ComposeData) BenchImage() string { return BenchImage }
 
 // PostgresMajor exposes the pinned PostgreSQL major to the templates.
 func (ComposeData) PostgresMajor() string { return PostgresMajor }
@@ -421,7 +428,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 8
+const TemplateVersion = 9
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {

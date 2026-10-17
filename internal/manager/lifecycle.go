@@ -37,6 +37,11 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 			return fmt.Errorf("create home directories: %w", err)
 		}
 	}
+	// Before up: a prod frappe container runs gunicorn from the venv and
+	// would only crash-loop until the venv is repaired.
+	if err := repairVenv(runner, name, pw); err != nil {
+		return err
+	}
 	if err := runner.Up(); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
@@ -121,6 +126,43 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 		}
 	}
 	return nil
+}
+
+// repairVenv runs bench.RepairVenvCmd, so a bench whose image now ships
+// another patch release of its Python starts instead of dying in os.execv.
+// A docker failure is only a warning: up reports it better.
+func repairVenv(runner *bench.Runner, name string, pw ProgressWriter) error {
+	out, err := runner.RunSilent("frappe", "bash", "-c", bench.RepairVenvCmd)
+	var marker string
+	for _, line := range strings.Split(out, "\n") {
+		if m, ok := strings.CutPrefix(line, "FFM_VENV="); ok {
+			marker = m
+		}
+	}
+	f := strings.Fields(marker)
+	switch {
+	case len(f) == 3 && f[0] == "relinked":
+		pw.Printf("The image ships Python %s, not %s: virtualenv re-pointed.\n", f[2], f[1])
+	case len(f) == 2 && f[0] == "gone":
+		return fmt.Errorf("the bench's virtualenv was made with Python %s, and its image has no %s release: "+
+			"run 'ffm recreate %s' (it backs the bench up first)", f[1], minorOf(f[1]), name)
+	case len(f) == 3 && f[0] == "failed":
+		return fmt.Errorf("the bench's virtualenv needs Python %s, which its image replaced with %s, "+
+			"and re-pointing it failed: is %s/workspace/frappe-bench/env writable?", f[1], f[2], runner.ComposeDir)
+	case len(f) == 2 && f[0] == "unknown":
+		return fmt.Errorf("the bench's virtualenv points at %s, which its image does not have", f[1])
+	case err != nil:
+		fmt.Fprintf(pw.Stderr(), "warning: could not check the bench's virtualenv: %v\n", err)
+	}
+	return nil
+}
+
+// minorOf returns "3.14" for "3.14.7".
+func minorOf(v string) string {
+	if i := strings.LastIndex(v, "."); i > 0 {
+		return v[:i]
+	}
+	return v
 }
 
 // webServerUnreachable explains a WaitForHTTP failure with the bench's own

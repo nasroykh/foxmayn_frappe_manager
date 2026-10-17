@@ -159,6 +159,20 @@ func (r *Runner) Run(service string, args ...string) error {
 	return nil
 }
 
+// RunSilent runs a one-off command in a fresh service container
+// (`compose run --rm --no-deps -T`), capturing its output. It works when the
+// service's own command would crash, which ExecSilent needs running.
+// traefik.enable=false: a run container inherits the service's labels, and
+// Traefik would route the bench's requests to it while it lives.
+func (r *Runner) RunSilent(service string, args ...string) (string, error) {
+	full := append(append(r.baseArgs(), "run", "--rm", "--no-deps", "-T",
+		"--label", "traefik.enable=false", service), args...)
+	cmd := execx.Command("docker", full...)
+	cmd.Dir = r.ComposeDir
+	out, err := cmd.CombinedOutput()
+	return r.scrub(strings.TrimSpace(string(out))), err
+}
+
 // Up starts all services detached.
 func (r *Runner) Up() error {
 	return r.withOutput(r.compose("up", "-d")).Run()
