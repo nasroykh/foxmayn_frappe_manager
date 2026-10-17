@@ -6,7 +6,9 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -428,7 +430,7 @@ func RenderDockerfile(data ComposeData) ([]byte, error) {
 // reconciled, so ffm can tell which benches were built from older templates.
 // Bump it whenever a template changes; TestTemplateVersionTracksTemplates
 // fails until you do.
-const TemplateVersion = 9
+const TemplateVersion = 10
 
 // templatesFingerprint hashes every template, for the version guard test.
 func templatesFingerprint() string {
@@ -546,8 +548,8 @@ func PatchAuthenticateJs(benchDir string) error {
 // RealtimeAcceptsAnyHost reports whether authenticate.js resolves the site from
 // conf.default_site regardless of the request Host — i.e. whether edit 2 above
 // is in effect. Callers use it to warn when adding a domain alias to a dev
-// bench, where socket.io connects straight to the published port and Traefik
-// cannot inject an X-Frappe-Site-Name header as a fallback.
+// bench, where socket.io may connect straight to the published port (see
+// PatchDeskSocketio), out of reach of Traefik's X-Frappe-Site-Name fallback.
 func RealtimeAcceptsAnyHost(benchDir string) bool {
 	content, err := os.ReadFile(authenticateJsPath(benchDir))
 	if err != nil {
@@ -594,6 +596,87 @@ func PatchUtilsJs(benchDir string) error {
 	}
 
 	return nil // unrecognized file structure; leave it alone
+}
+
+// DeskTemplates are the Desk page templates, relative to apps/frappe, that
+// PatchDeskSocketio edits: version-16 renamed app.html to desk.html.
+var DeskTemplates = []string{"frappe/www/desk.html", "frappe/www/app.html"}
+
+// deskSocketioMarker identifies the line PatchDeskSocketio inserts.
+const deskSocketioMarker = "// ffm: socket.io through the proxy"
+
+// DeskSocketioTemplate is the first TemplateVersion whose dev compose routes
+// /socket.io through Traefik. A bench on an older compose must not get
+// PatchDeskSocketio: its port-less pages would send socket.io to Traefik, which
+// has no route for it there, where the published port used to work.
+const DeskSocketioTemplate = 10
+
+// deskSocketioLine sends socket.io to the page's own origin when the page was
+// loaded on a default port, i.e. through Traefik, a tunnel or any reverse
+// proxy. Under `bench start` (DEV_SERVER) the client builds the socket.io URL
+// as the page host plus frappe.boot.socketio_port (socketio_client.js
+// get_host), so https://erp.example.com reached through a tunnel dialled
+// https://erp.example.com:9010, which nothing forwards. The default port of the
+// page's scheme is the page's own origin, where the proxy routes /socket.io.
+// A page loaded on an explicit port (http://localhost:8010) keeps the published
+// socket.io port. dev_server is false on prod, so the line does nothing there.
+const deskSocketioLine = `if (window.dev_server && !location.port) frappe.boot.socketio_port = location.protocol === "https:" ? 443 : 80; ` +
+	deskSocketioMarker
+
+// PatchDeskSocketio inserts deskSocketioLine after the line of the Desk
+// template that assigns frappe.boot. It is a Jinja template, not part of the
+// JS bundle, so no `bench build` is needed. Idempotent; like the realtime
+// patches it must be re-applied after a bench update. Unlike PatchUtilsJs it
+// returns an error when no template has the frappe.boot line, so a Frappe
+// version that moved it is reported instead of breaking socket.io silently.
+func PatchDeskSocketio(benchDir string) error {
+	found := false
+	for _, rel := range DeskTemplates {
+		path := filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe", rel)
+		content, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		text := string(content)
+		if strings.Contains(text, deskSocketioMarker) {
+			found = true
+			continue
+		}
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if !strings.HasPrefix(trimmed, "frappe.boot = {{") || !strings.HasSuffix(trimmed, "}};") {
+				continue
+			}
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			lines = append(lines[:i+1], append([]string{indent + deskSocketioLine}, lines[i+1:]...)...)
+			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+				return err
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("no Desk template assigns frappe.boot (looked in %s): socket.io will use the published port only",
+			strings.Join(DeskTemplates, ", "))
+	}
+	return nil
+}
+
+// DeskSocketioPatched reports whether a Desk template carries the line
+// PatchDeskSocketio inserts. It only reads.
+func DeskSocketioPatched(benchDir string) bool {
+	for _, rel := range DeskTemplates {
+		content, err := os.ReadFile(filepath.Join(benchDir, "workspace", "frappe-bench", "apps", "frappe", rel))
+		if err == nil && strings.Contains(string(content), deskSocketioMarker) {
+			return true
+		}
+	}
+	return false
 }
 
 // PatchProcfileWorker rewrites the dev Procfile's `worker:` line so the RQ

@@ -45,6 +45,9 @@ func (s *Service) Restart(in RestartInput, pw ProgressWriter) error {
 		if err := bench.PatchUtilsJs(b.Dir); err != nil {
 			fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 		}
+		if err := patchDeskSocketio(b); err != nil {
+			fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
+		}
 		runner := s.runnerFor(b)
 		runner.ErrOut = pw.Stderr()
 		pw.Printf("Rebuilding image for bench %q...\n", in.Name)

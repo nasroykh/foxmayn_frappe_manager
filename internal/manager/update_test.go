@@ -66,7 +66,7 @@ func TestApplyUpdateOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := strings.Join(fake.Calls(), "\n")
-	order := []string{"git checkout -- realtime/middlewares/authenticate.js", "bench update --pull --reset --no-backup --apps 'erpnext'",
+	order := []string{"for f in realtime/middlewares/authenticate.js realtime/utils.js frappe/www/desk.html frappe/www/app.html; do git checkout", "bench update --pull --reset --no-backup --apps 'erpnext'",
 		"bench setup requirements", "bench --site 'up.localhost' clear-cache", "bench --site 'up.localhost' migrate", "bench build", "[h]oncho start"}
 	last := -1
 	for _, step := range order {

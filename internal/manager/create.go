@@ -1027,6 +1027,9 @@ func (s *Service) afterBenchInit(benchDir, workspaceDir, name, siteName, mode st
 	if err := bench.PatchUtilsJs(benchDir); err != nil {
 		fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 	}
+	if err := bench.PatchDeskSocketio(benchDir); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
+	}
 
 	if mode == "dev" {
 		frappeBench := filepath.Join(workspaceDir, "frappe-bench")

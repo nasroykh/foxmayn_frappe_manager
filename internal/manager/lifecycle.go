@@ -56,6 +56,9 @@ func (s *Service) Start(name string, pw ProgressWriter) error {
 	if err := bench.PatchUtilsJs(b.Dir); err != nil && s.Verbose {
 		fmt.Fprintf(pw.Stderr(), "warning: could not patch utils.js: %v\n", err)
 	}
+	if err := patchDeskSocketio(b); err != nil && s.Verbose {
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
+	}
 
 	if b.IsDev() {
 		if _, err := runner.ExecSilent("frappe", "bash", "-c",
@@ -313,4 +316,14 @@ func removeProjectVolumes(project string, pw ProgressWriter) {
 			fmt.Fprintf(pw.Stderr(), "warning: remove volume %s: %v %s\n", v, err, strings.TrimSpace(string(o)))
 		}
 	}
+}
+
+// patchDeskSocketio applies bench.PatchDeskSocketio to a bench whose compose
+// file already routes /socket.io through Traefik. An older bench gets it from
+// the next reconcile or domain change, which render the current template.
+func patchDeskSocketio(b state.Bench) error {
+	if b.TemplateVersion < bench.DeskSocketioTemplate {
+		return nil
+	}
+	return bench.PatchDeskSocketio(b.Dir)
 }

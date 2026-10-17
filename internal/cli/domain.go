@@ -90,10 +90,10 @@ func newDomainAddCmd() *cobra.Command {
 The bench keeps answering on its primary host; the alias is served in addition.
 Aliases are served over plain HTTP unless --tls is passed.
 
-Socket.IO is handled per mode. Dev benches connect straight to the published
-Socket.IO port, so that port has to be reachable from the other machines too —
-the exact port is printed after the alias is added. Prod benches route
-/socket.io through Traefik on the alias, so nothing extra needs opening.`,
+Socket.IO is routed through Traefik on the alias in both modes, so nothing
+extra needs opening. On a dev bench whose Desk template ffm could not patch,
+Socket.IO uses the published port instead; the port is then printed after the
+alias is added.`,
 		Example: `  ffm domain add erp.internal
   ffm domain add shop.test mybench
   ffm domain add erp.example.org prodbench --tls`,

@@ -109,7 +109,7 @@ func renderCompose(t *testing.T, data ComposeData) string {
 
 func TestComposeRendersDevAlias(t *testing.T) {
 	base := ComposeData{
-		Name: "kb", Mode: "dev", DBType: "mariadb", DBRootPassword: "pw",
+		Name: "kb", Mode: "dev", DBType: "mariadb", DBRootPassword: "pw", SiteName: "kb.localhost",
 		WebPort: 8000, WebPortEnd: 8005, SocketIOPort: 9000, SocketIOPortEnd: 9005,
 	}
 
@@ -123,10 +123,19 @@ func TestComposeRendersDevAlias(t *testing.T) {
 	if !strings.Contains(withAlias, "rule=Host(`kb.localhost`) || Host(`erp.internal`)") {
 		t.Errorf("dev alias missing from router rule:\n%s", withAlias)
 	}
-	// Dev must not route socket.io through Traefik: the dev client appends
-	// socketio_port to the origin, so moving it to :80 breaks localhost access.
-	if strings.Contains(withAlias, "PathPrefix(`/socket.io`)") {
-		t.Errorf("dev compose must not add a socket.io router:\n%s", withAlias)
+	// Socket.IO is routed on the same hosts, to the socket.io port, and the
+	// main router names its service: with two services on the container
+	// Traefik refuses a router that does not.
+	for _, want := range []string{
+		"kb-socketio.rule=(Host(`kb.localhost`) || Host(`erp.internal`)) && PathPrefix(`/socket.io`)",
+		"routers.kb.service=kb\"",
+		"routers.kb-socketio.service=kb-socketio",
+		"services.kb-socketio.loadbalancer.server.port=9000",
+		"customRequestHeaders.X-Frappe-Site-Name=kb.localhost",
+	} {
+		if !strings.Contains(withAlias, want) {
+			t.Errorf("dev compose missing %q:\n%s", want, withAlias)
+		}
 	}
 }
 
@@ -258,5 +267,57 @@ function get_site_name(socket) {
 	}
 	if string(again) != got {
 		t.Errorf("PatchAuthenticateJs is not idempotent:\nfirst:\n%s\nsecond:\n%s", got, again)
+	}
+}
+
+func TestPatchDeskSocketio(t *testing.T) {
+	cases := map[string]string{
+		// version-16 frappe/www/desk.html
+		"frappe/www/desk.html": "\t\t\twindow.dev_server = {{ dev_server }};\n\n" +
+			"\t\t\tfrappe.boot = {{ frappe.utils.orjson_dumps(boot, default=frappe.json_handler) }};\n" +
+			"\t\t\tfrappe._messages = frappe.boot[\"__messages\"];\n",
+		// version-15 frappe/www/app.html
+		"frappe/www/app.html": "\t\t\twindow.dev_server = {{ dev_server }};\n\n" +
+			"\t\t\tfrappe.boot = {{ boot | json }};\n" +
+			"\t\t\tfrappe._messages = frappe.boot[\"__messages\"];\n",
+	}
+	for rel, upstream := range cases {
+		t.Run(rel, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "workspace", "frappe-bench", "apps", "frappe", rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(upstream), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := PatchDeskSocketio(dir); err != nil {
+				t.Fatalf("PatchDeskSocketio: %v", err)
+			}
+			got, _ := os.ReadFile(path)
+			lines := strings.Split(string(got), "\n")
+			if len(lines) < 4 || lines[3] != "\t\t\t"+deskSocketioLine {
+				t.Fatalf("line not inserted after frappe.boot with its indent:\n%s", got)
+			}
+			if err := PatchDeskSocketio(dir); err != nil {
+				t.Fatalf("PatchDeskSocketio (second run): %v", err)
+			}
+			if again, _ := os.ReadFile(path); string(again) != string(got) {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", got, again)
+			}
+		})
+	}
+
+	// A Frappe that moved the frappe.boot line is reported, not skipped.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workspace", "frappe-bench", "apps", "frappe", "frappe", "www", "desk.html")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("<script>window.boot = {};</script>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := PatchDeskSocketio(dir); err == nil {
+		t.Error("PatchDeskSocketio = nil on a template without the frappe.boot line")
 	}
 }

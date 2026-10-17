@@ -710,9 +710,15 @@ internal/
   `/<frappe.boot.sitename>` and the server rejects it as "Invalid namespace" unless the resolved
   site matches, and without the patch the site is resolved from the request Host/Origin. Sound
   here because every ffm bench is single-site. `RealtimeAcceptsAnyHost` reports whether edit 2
-  landed. `PatchProcfileWorker` wraps the dev `worker:` line in a self-restarting loop so an
+  landed. `PatchDeskSocketio` inserts one line after `frappe.boot = {{ … }};` in the Desk template
+  (`frappe/www/desk.html` on v16, `app.html` on v15; Jinja, so no `bench build`): see Domain
+  aliases. It errors when no template has that line. Start, `restart --rebuild`, restore and update
+  apply it only from template `DeskSocketioTemplate` (10) on (`manager.patchDeskSocketio`): on an
+  older compose a port-less page would send socket.io to Traefik, which has no route for it there.
+  Create and `applyDomainChange` (reconcile, domains) apply it unconditionally: they render the current compose. `ffmPatchedPaths` (backup) and
+  `revertFfmPatches` (update, one `git checkout` per file) list all four files. `PatchProcfileWorker` wraps the dev `worker:` line in a self-restarting loop so an
   idle-Redis worker exit doesn't make honcho tear down the whole stack. All are idempotent;
-  `Service.Start` re-applies the two realtime patches in **both** modes (prod needs them too),
+  `Service.Start` re-applies the realtime and Desk patches in **both** modes (prod needs them too),
   and `restart --rebuild` re-applies them as well. If you are wondering why a bench's
   `realtime/utils.js` differs from upstream, this is why.
 - **Project mount** (`ffm up` in an app repository; dev only; template v5). When the directory
@@ -782,10 +788,12 @@ internal/
 - **Domain aliases** (`ffm domain add`, `ffm create --domain-alias`) route extra hostnames — LAN
   names like `erp.internal` — to a bench alongside its primary host. ffm only configures Traefik;
   pointing DNS at the host is the user's job and `domain add` prints the records to create.
-  - **dev** folds aliases into the single existing router rule (`Host(a) || Host(b)`). Socket.IO
-    is deliberately *not* put behind Traefik: the dev client appends `socketio_port` to the page
-    origin, so it reaches the published 9000-9005 range directly, and moving it to :80 would
-    break plain `http://localhost:<web-port>`. That port must be reachable from the LAN.
+  - **dev** folds aliases into the single existing router rule (`Host(a) || Host(b)`), and a
+    `<name>-socketio` router (template 10) sends `/socket.io` on the same hosts to port 9000 with
+    `X-Frappe-Site-Name`. Under `bench start` the Desk client appends `socketio_port` to the page
+    host, so `PatchDeskSocketio` makes a page loaded *without* a port (Traefik, a tunnel, any
+    reverse proxy) use its scheme's default port, i.e. its own origin; `http://localhost:<web-port>`
+    keeps the published 9000-9005 range. `aliasesNeedLAN` predates this and still asks for `--lan`.
   - **prod** gives aliases their *own* routers (`<name>-alias`, `<name>-alias-socketio`), never
     merged into the primary rule — Traefik derives one ACME request per router, so a LAN-only
     name in the primary rule would fail the order and leave the real domain with no cert.

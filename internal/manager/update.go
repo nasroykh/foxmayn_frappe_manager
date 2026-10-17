@@ -275,9 +275,12 @@ func describeCommits(apps []appState) string {
 	return strings.Join(parts, " ")
 }
 
-// revertFfmPatches undoes ffm's edits to frappe's realtime sources, which
-// would otherwise make bench's `git pull --rebase` refuse to run.
-const revertFfmPatches = `cd /workspace/frappe-bench/apps/frappe && git checkout -- realtime/middlewares/authenticate.js realtime/utils.js 2>/dev/null || true`
+// revertFfmPatches undoes ffm's edits to frappe's realtime sources and Desk
+// template, which would otherwise make bench's `git pull --rebase` refuse to
+// run. One checkout per file: a single `git checkout` reverts nothing when one
+// pathspec is missing, and each Frappe version has only one of the two Desk
+// templates.
+const revertFfmPatches = `cd /workspace/frappe-bench/apps/frappe && for f in realtime/middlewares/authenticate.js realtime/utils.js frappe/www/desk.html frappe/www/app.html; do git checkout -- "$f" 2>/dev/null; done; true`
 
 func (s *Service) applyUpdate(b state.Bench, in UpdateInput, plan updatePlan, out io.Writer, pw ProgressWriter) error {
 	if out == nil {
@@ -342,7 +345,7 @@ func (s *Service) applyUpdate(b state.Bench, in UpdateInput, plan updatePlan, ou
 	if err := exec("Building assets", "bench build"); err != nil {
 		return err
 	}
-	if err := s.reapplyPatches(b); err != nil {
+	if err := s.reapplyPatches(b, pw); err != nil {
 		return err
 	}
 	pw.Step("Restarting the bench's processes")
@@ -444,12 +447,17 @@ func (s *Service) changeToolchain(b *state.Bench, tc bench.Toolchain, branch str
 	return nil
 }
 
-func (s *Service) reapplyPatches(b state.Bench) error {
+func (s *Service) reapplyPatches(b state.Bench, pw ProgressWriter) error {
 	if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
 		return fmt.Errorf("re-apply the realtime auth patch: %w", err)
 	}
 	if err := bench.PatchUtilsJs(b.Dir); err != nil {
 		return fmt.Errorf("re-apply the realtime url patch: %w", err)
+	}
+	// Not fatal: the new Frappe may have moved the line the patch anchors on, and
+	// socket.io still works on http://localhost:<web-port> without it.
+	if err := patchDeskSocketio(b); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
 	}
 	if b.IsDev() {
 		_ = bench.PatchProcfileWorker(b.Dir)
@@ -515,7 +523,7 @@ func (s *Service) rollbackUpdate(b state.Bench, plan updatePlan, snap string, ou
 	if err := runner.ExecTo("frappe", "/workspace/frappe-bench", out, out, "bash", "-c", "bench build"); err != nil {
 		return fmt.Errorf("bench build: %w", err)
 	}
-	if err := s.reapplyPatches(b); err != nil {
+	if err := s.reapplyPatches(b, pw); err != nil {
 		return err
 	}
 	return s.restartAndWait(b, true)

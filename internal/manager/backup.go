@@ -705,6 +705,8 @@ const maxDirtyPaths = 20
 var ffmPatchedPaths = map[string]bool{
 	"realtime/middlewares/authenticate.js": true,
 	"realtime/utils.js":                    true,
+	"frappe/www/desk.html":                 true, // PatchDeskSocketio, version-16
+	"frappe/www/app.html":                  true, // PatchDeskSocketio, version-15
 }
 
 // parseDirtyPaths filters a newline-separated list of changed paths down to the

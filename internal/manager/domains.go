@@ -299,6 +299,11 @@ func (s *Service) applyDomainChange(b state.Bench, pw ProgressWriter) error {
 	if err := bench.PatchAuthenticateJs(b.Dir); err != nil {
 		fmt.Fprintf(pw.Stderr(), "warning: could not patch authenticate.js: %v\n", err)
 	}
+	// The compose file just written routes /socket.io through Traefik, so the
+	// Desk can send port-less pages there whatever the record's template version.
+	if err := bench.PatchDeskSocketio(b.Dir); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
+	}
 
 	if st := s.LiveStatus(b); st != StatusRunning && st != StatusPartial {
 		pw.Println("  Bench is not running — the new routing applies on the next 'ffm start'.")
@@ -374,8 +379,10 @@ func printDomainHints(pw ProgressWriter, b state.Bench, d string) {
 	}
 
 	if b.IsDev() {
-		pw.Printf("\nSocket.IO connects straight to %s:%d (the published port), not through Traefik,\n"+
-			"  so that port must be reachable from the other machines too.\n", d, b.SocketIOPort)
+		if !bench.DeskSocketioPatched(b.Dir) {
+			pw.Printf("\nSocket.IO connects straight to %s:%d (the published port), not through Traefik,\n"+
+				"  so that port must be reachable from the other machines too.\n", d, b.SocketIOPort)
+		}
 		if !bench.RealtimeAcceptsAnyHost(b.Dir) {
 			pw.Println("  ! Could not patch realtime/middlewares/authenticate.js, so Socket.IO will reject")
 			pw.Println("    connections on this hostname with \"Invalid namespace\". Page loads still work.")

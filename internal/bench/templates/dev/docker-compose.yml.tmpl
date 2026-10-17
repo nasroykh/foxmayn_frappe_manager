@@ -120,13 +120,29 @@ services:
       # randomly selecting the wrong network when a container has multiple NICs.
       - "traefik.docker.network=ffm-proxy"
       # Matches <name>.localhost plus any domain alias. Dev has a single plain
-      # HTTP router, so aliases just join the rule. Socket.IO is deliberately
-      # NOT routed through Traefik here: the dev client appends socketio_port to
-      # the page origin, so it reaches the published 9000-9005 range directly,
-      # and moving it onto :80 would break plain http://localhost:<web-port>.
+      # HTTP router, so aliases just join the rule.
       - "traefik.http.routers.{{.Name}}.rule={{.RouterRule}}"
       - "traefik.http.routers.{{.Name}}.entrypoints=web"
+      - "traefik.http.routers.{{.Name}}.service={{.Name}}"
       - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
+      # Socket.IO on the same hosts. A page loaded without a port (through this
+      # proxy, a tunnel or any reverse proxy in front of it) connects to its own
+      # origin, because ffm patches the Desk template (bench.PatchDeskSocketio);
+      # a page on http://localhost:<web-port> still uses the published
+      # 9000-9005 range. Traefik's default priority is rule length, so this
+      # beats the router above for /socket.io. The browser's Origin is passed
+      # through: authenticate.js compares it with the Host.
+      - "traefik.http.routers.{{.Name}}-socketio.rule=({{.RouterRule}}) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.{{.Name}}-socketio.entrypoints=web"
+      - "traefik.http.routers.{{.Name}}-socketio.service={{.Name}}-socketio"
+{{- if .SiteName}}
+      - "traefik.http.routers.{{.Name}}-socketio.middlewares={{.Name}}-socketio-headers"
+      # Keeps the namespace check passing on a hostname that is not the site
+      # name, even where the authenticate.js patch did not land. (An empty
+      # value would delete the header instead.)
+      - "traefik.http.middlewares.{{.Name}}-socketio-headers.headers.customRequestHeaders.X-Frappe-Site-Name={{.SiteName}}"
+{{- end}}
+      - "traefik.http.services.{{.Name}}-socketio.loadbalancer.server.port=9000"
 
 volumes:
 {{- if eq .DBType "postgres"}}

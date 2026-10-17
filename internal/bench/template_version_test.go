@@ -29,6 +29,9 @@ var templatesAtVersion = map[int]string{
 	8: "a72e5b2928e1166c84da7b78a4b9530a62a3e6d914e194d2fcc9892d24ce53f1",
 	// 9: both Dockerfiles: the base image is pinned by digest (bench.BenchImage).
 	9: "0e77ee74e1efaf3daa90c000595f39a9cd403ad65ef80df50ea6bae8a78d6ae6",
+	// 10: dev compose: socket.io routed through Traefik on the bench hosts
+	// (<name>-socketio router, X-Frappe-Site-Name header).
+	10: "a2dcb4d017c61e8faeb5ea78a9bc2eec75602a7943c999bbc960119de8557ac9",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

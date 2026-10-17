@@ -720,6 +720,10 @@ func (s *Service) reconcileAfterRestore(runner *bench.Runner, b state.Bench, m M
 	if err := bench.PatchUtilsJs(b.Dir); err != nil {
 		return fmt.Errorf("re-apply the realtime url patch: %w", err)
 	}
+	// Not fatal: without it socket.io still works on http://localhost:<web-port>.
+	if err := patchDeskSocketio(b); err != nil {
+		fmt.Fprintf(pw.Stderr(), "warning: could not patch the Desk template: %v\n", err)
+	}
 	if !bench.RealtimeAcceptsAnyHost(b.Dir) {
 		return fmt.Errorf("the restored bench's realtime auth patch did not apply — " +
 			"socket.io would reject every connection. The archived Frappe version is probably " +
