@@ -249,7 +249,7 @@ func seedKeyFor(frappeURL, branch string, tc bench.Toolchain, uid, gid int, apps
 	for _, a := range apps {
 		canon = append(canon, canonicalApp(a, appBranch))
 	}
-	return seedKey{Format: seedFormat, Image: bench.BenchImageTag, FrappeURL: canonicalRepo(frappeURL), Branch: branch,
+	return seedKey{Format: seedFormat, Image: bench.BenchImage, FrappeURL: canonicalRepo(frappeURL), Branch: branch,
 		Python: tc.Python, Node: tc.Node, UID: uid, GID: gid, Apps: canon}
 }
 

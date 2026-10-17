@@ -159,6 +159,10 @@ func TestTemplatesPinTheirInputs(t *testing.T) {
 		}
 		df, _ := os.ReadFile(filepath.Join(dir, "Dockerfile"))
 		compose := renderFor(t, d)
+		// A tag is not a pin: upstream re-pushes frappe/bench tags.
+		if !strings.Contains(string(df), "FROM docker.io/frappe/bench:"+BenchImageTag+"@sha256:") {
+			t.Errorf("%s: base image not pinned by digest", mode)
+		}
 		for _, floating := range []string{"frappe/bench:latest", "redis:alpine", "git clone --depth=1 https://github.com/OpenAEC"} {
 			if strings.Contains(string(df)+compose, floating) {
 				t.Errorf("%s: floating input %q", mode, floating)

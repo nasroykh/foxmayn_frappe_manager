@@ -16,9 +16,9 @@ type Toolchain struct {
 	Node   string
 }
 
-// The toolchains the pinned frappe/bench image (BenchImageTag) ships: pyenv
+// The toolchains the pinned frappe/bench image (BenchImage) ships: pyenv
 // with Python 3.14 and 3.12, nvm with Node 24 and 22. Anything else would need
-// an extra install in the Dockerfile. Bump these together with BenchImageTag.
+// an extra install in the Dockerfile. Bump these together with BenchImage.
 var (
 	ImagePythons = []string{"3.12", "3.14"}
 	ImageNodes   = []string{"22", "24"}

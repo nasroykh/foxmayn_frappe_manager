@@ -1,4 +1,4 @@
-FROM docker.io/frappe/bench:{{.BenchImageTag}}
+FROM {{.BenchImage}}
 
 USER root
 {{- if .HostUID}}

@@ -102,6 +102,9 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 		// Something runs, so the user meant the bench to be up: bring back
 		// what is missing and leave it running afterwards.
 		pw.Step("Starting the bench's frappe and database containers (they were down)")
+		if err := repairVenv(runner, b.Name, pw); err != nil {
+			return err
+		}
 		if err := runner.UpServices(dbService(b), "frappe"); err != nil {
 			return fmt.Errorf("start bench for backup: %w", err)
 		}
@@ -120,6 +123,9 @@ func (s *Service) backupLocked(in BackupInput, pw ProgressWriter) (backupErr err
 			return ErrBenchStopped
 		}
 		pw.Step("Starting the bench for the backup (it was stopped)")
+		if err := repairVenv(runner, b.Name, pw); err != nil {
+			return err
+		}
 		if err := runner.UpServices(dbService(b), "frappe"); err != nil {
 			return fmt.Errorf("start bench for backup: %w", err)
 		}
