@@ -27,6 +27,8 @@ var templatesAtVersion = map[int]string{
 	// 8: postgres benches: both Dockerfiles install the PGDG PostgreSQL client
 	// of bench.PostgresMajor; compose image tag comes from the same constant.
 	8: "a72e5b2928e1166c84da7b78a4b9530a62a3e6d914e194d2fcc9892d24ce53f1",
+	// 9: both Dockerfiles: the base image is pinned by digest (bench.BenchImage).
+	9: "0e77ee74e1efaf3daa90c000595f39a9cd403ad65ef80df50ea6bae8a78d6ae6",
 }
 
 func TestTemplateVersionTracksTemplates(t *testing.T) {

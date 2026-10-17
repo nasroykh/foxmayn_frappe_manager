@@ -684,6 +684,13 @@ internal/
   `templates/prod/` based on `ComposeData.Mode`. Changing either requires a rebuild, and existing
   benches only pick up **Dockerfile** changes via `restart --rebuild`; the **compose** file is
   regenerated only by `ffm recreate`.
+- **The venv links to a patch release the image may not have.** `env/bin/python` is an absolute
+  link to `/home/frappe/.pyenv/versions/3.14.7/...`; an image from a newer base breaks it and every
+  bench command dies in `os.execv` with `FileNotFoundError`. `Service.Start` (so restart and
+  `restart --rebuild` too) runs `bench.RepairVenvCmd` in a `compose run --rm --no-deps` container
+  BEFORE `up` (prod's gunicorn would crash-loop): it re-links to the newest patch of the same minor
+  and fixes `pyvenv.cfg`; another minor fails Start pointing at `ffm recreate`. Costs ~1 s per start.
+  Seeds are keyed by `BenchImage`, so a seed's venv always matches its image.
 - **Container/host uid mismatch** — `frappe/bench` runs as uid 1000. On a host with a different
   uid the `./workspace` bind mount is unwritable in both directions: bench init cannot write into
   the directory the host created, and the host cannot write `wsgi.py` into the directory the
@@ -1037,8 +1044,9 @@ internal/
   constant, `bench.PostgresMajor`, feeds the image tag and the client;
   `TestPostgresClientMatchesServerImage` guards it. Existing postgres benches get the client through
   `ffm restart --rebuild` (template 8); `backup-roundtrip.yml` has a postgres job.
-- **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImageTag` (frappe/bench base
-  image), `FrappeSkillsCommit` (skill pack) and `FfcRef` (ffc: the binary AND its skills). The dev Dockerfile
+- **Pinned build inputs** live in `internal/bench/compose.go`: `BenchImage` (frappe/bench base
+  image: `BenchImageTag` + `BenchImageDigest`, the multi-arch index digest — upstream re-pushes tags,
+  and one re-push moved Python 3.14.7 to 3.14.8 under every v5.31.0 bench), `FrappeSkillsCommit` (skill pack) and `FfcRef` (ffc: the binary AND its skills). The dev Dockerfile
   installs ffc, then `ffc update --version <FfcRef> --yes` and a `ffc --version` grep fail the build if
   the pin did not take (install.sh alone installs the latest); `ffm status` shows the version in a
   running container. Redis is
