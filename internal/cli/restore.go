@@ -215,7 +215,7 @@ decrypt them with gpg first.`,
 	cmd.Flags().BoolVar(&pinApps, "pin-apps", false,
 		"Check each app out at the commit recorded in the archive instead of its branch head")
 	cmd.Flags().BoolVar(&lan, "lan", false,
-		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password")
+		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password")
 	cmd.Flags().BoolVar(&sshAgent, "ssh-agent", false,
 		"Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK")
 	cmd.Flags().BoolVar(&keepOnFailure, "keep-on-failure", false,

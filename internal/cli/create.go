@@ -151,7 +151,7 @@ func newCreateCmd() *cobra.Command {
 			"Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), "+
 			"otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER")
 	cmd.Flags().BoolVar(&lan, "lan", false,
-		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password")
+		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password")
 	cmd.Flags().BoolVar(&sshAgent, "ssh-agent", false,
 		"Forward the host SSH agent into the dev frappe container, for SSH-URL private repos. Requires SSH_AUTH_SOCK")
 	cmd.Flags().BoolVar(&keepOnFailure, "keep-on-failure", false,

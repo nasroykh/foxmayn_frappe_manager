@@ -774,7 +774,6 @@ internal/
   requirements` halves, migrate and `bench build --app`. The restored clone gets `MatchHostUser`
   from the host (`needsHostUserRemap`), so the worktree is writable. Bench name `<from>-<slug>`
   (hash suffix past 63); worktree at `<repo-parent>/<repo>.worktrees/<slug>`, never inside the repo.
-  `*.localhost` aliases are exempt from the dev "aliases need --lan" rule (`aliasesNeedLAN`).
   **Invariant: ffm never deletes the user's worktree/checkout or changes its git state**, except
   `git worktree remove` WITHOUT `--force` (git refuses dirty/untracked; `--force` only when the user
   passes it) and `git branch -d` (never -D) only for a branch ffm created and only with
@@ -793,7 +792,8 @@ internal/
     `X-Frappe-Site-Name`. Under `bench start` the Desk client appends `socketio_port` to the page
     host, so `PatchDeskSocketio` makes a page loaded *without* a port (Traefik, a tunnel, any
     reverse proxy) use its scheme's default port, i.e. its own origin; `http://localhost:<web-port>`
-    keeps the published 9000-9005 range. `aliasesNeedLAN` predates this and still asks for `--lan`.
+    keeps the published 9000-9005 range. So aliases need no `--lan`: a loopback bench serves any
+    alias, a tunnel's name included (the `--lan` rule was dropped in v1.2.1).
   - **prod** gives aliases their *own* routers (`<name>-alias`, `<name>-alias-socketio`), never
     merged into the primary rule — Traefik derives one ACME request per router, so a LAN-only
     name in the primary rule would fail the order and leave the real domain with no cert.
@@ -1009,8 +1009,8 @@ internal/
   tests for it are in `internal/manager/siteadmin_test.go` (`noSecretOnArgv` on every command).
 - **Published ports** bind to `Bench.PublishHost()`: `127.0.0.1` for new benches (`Bind: loopback`),
   all interfaces with `--lan`. Records without `Bind` keep their old behaviour: prod → loopback,
-  dev → all interfaces. `--lan` is refused with the default admin password; a dev bench with domain
-  aliases needs `--lan` (socket.io is reached on the published port). `ffm tunnel` refuses the
+  dev → all interfaces. `--lan` is refused with the default admin password. Domain aliases do not need `--lan`
+  (socket.io goes through Traefik, see Domain aliases). `ffm tunnel` refuses the
   default admin password unless `--allow-default-password`.
 - **Prod workers** run `--queue long,default,short` and `--queue short,default`. Frappe enqueues to
   `default` unless told otherwise; before v0.8.1 nothing consumed it (confirmed live).

@@ -18,7 +18,7 @@ func TestCheckReconcile(t *testing.T) {
 	}{
 		{"lan with default password", state.Bench{Name: "a", AdminPassword: "admin"}, ReconcileInput{Bind: state.BindLAN}, "default admin password"},
 		{"lan with real password", state.Bench{Name: "a", AdminPassword: "s3cret-x"}, ReconcileInput{Bind: state.BindLAN}, ""},
-		{"dev aliases on loopback", state.Bench{Name: "a", Bind: state.BindLoopback, DomainAliases: []string{"erp.internal"}}, ReconcileInput{}, "domain aliases"},
+		{"dev aliases on loopback", state.Bench{Name: "a", Mode: "dev", Bind: state.BindLoopback, DomainAliases: []string{"erp.internal"}}, ReconcileInput{}, ""},
 		{"legacy dev aliases stay on LAN", state.Bench{Name: "a", DomainAliases: []string{"erp.internal"}}, ReconcileInput{}, ""},
 		{"ssh agent without socket", state.Bench{Name: "a"}, ReconcileInput{SSHAgent: &yes}, "SSH_AUTH_SOCK"},
 	}

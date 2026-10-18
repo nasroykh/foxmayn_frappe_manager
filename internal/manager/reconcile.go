@@ -167,9 +167,6 @@ func checkReconcile(b state.Bench, in ReconcileInput) error {
 	if in.Bind == state.BindLAN && b.AdminPassword == defaultAdminPassword {
 		return fmt.Errorf("--lan publishes the bench to other machines; bench %q still has the default admin password", b.Name)
 	}
-	if b.IsDev() && aliasesNeedLAN(b.DomainAliases) && b.PublishHost() != "" {
-		return fmt.Errorf("bench %q has domain aliases, which on a dev bench need its ports on the LAN; drop --loopback or remove the aliases first", b.Name)
-	}
 	if in.SSHAgent != nil && *in.SSHAgent && os.Getenv("SSH_AUTH_SOCK") == "" {
 		return fmt.Errorf("--ssh-agent needs a running SSH agent (SSH_AUTH_SOCK is not set)")
 	}

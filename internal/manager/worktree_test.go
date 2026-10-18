@@ -483,44 +483,35 @@ func TestWorktreeSourceIsTheBenchOfTheMainCheckout(t *testing.T) {
 	}
 }
 
-func TestLocalhostAliasesNeedNoLAN(t *testing.T) {
-	for alias, want := range map[string]bool{
-		"feat-x.src.localhost": false, "FEAT.localhost": false,
-		"erp.internal": true, "localhost.example.com": true, "notlocalhost": true,
-	} {
-		if got := aliasesNeedLAN([]string{alias}); got != want {
-			t.Errorf("aliasesNeedLAN(%q) = %v, want %v", alias, got, want)
-		}
-	}
-	if aliasesNeedLAN(nil) {
-		t.Error("no aliases need the LAN")
-	}
-
+// Dev aliases need no LAN bind: socket.io goes through Traefik (template 10),
+// so a loopback bench serves any alias, a tunnel's name included.
+func TestDevAliasesNeedNoLAN(t *testing.T) {
 	// ffm domain add on a loopback dev bench.
 	fakeexec.Install(t, fakeexec.Rule{Match: " ps ", Stdout: psRunning})
 	s, b := newTestBench(t, state.Bench{
 		Name: "dom", Mode: "dev", SiteName: "dom.localhost", WebPort: 8000, SocketIOPort: 9000,
 		AdminPassword: "s3cret-admin", DBPassword: "s3cret-db1", Bind: state.BindLoopback,
 	})
-	if err := s.DomainAdd(DomainInput{Name: "dom", Domain: "erp.internal"}, DiscardProgress{}); err == nil || !strings.Contains(err.Error(), "LAN") {
-		t.Errorf("erp.internal on a loopback dev bench: %v", err)
+	for _, d := range []string{"feat.dom.localhost", "kb.example.com"} {
+		if err := s.DomainAdd(DomainInput{Name: "dom", Domain: d}, DiscardProgress{}); err != nil {
+			t.Fatalf("%s on a loopback dev bench: %v", d, err)
+		}
 	}
-	if err := s.DomainAdd(DomainInput{Name: "dom", Domain: "feat.dom.localhost"}, DiscardProgress{}); err != nil {
-		t.Fatalf("a .localhost alias was refused: %v", err)
+	if rec, _ := s.GetBench("dom"); len(rec.DomainAliases) != 2 || rec.PublishHost() != "127.0.0.1" {
+		t.Errorf("aliases = %v, publish host = %q", rec.DomainAliases, rec.PublishHost())
 	}
-	if rec, _ := s.GetBench("dom"); len(rec.DomainAliases) != 1 || rec.DomainAliases[0] != "feat.dom.localhost" {
-		t.Errorf("aliases = %v", rec.DomainAliases)
-	}
-	if raw, _ := os.ReadFile(filepath.Join(b.Dir, "docker-compose.yml")); !strings.Contains(string(raw), "feat.dom.localhost") {
-		t.Errorf("compose lacks the alias:\n%s", raw)
+	raw, _ := os.ReadFile(filepath.Join(b.Dir, "docker-compose.yml"))
+	for _, want := range []string{"feat.dom.localhost", "kb.example.com", "dom-socketio.rule="} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("compose lacks %q:\n%s", want, raw)
+		}
 	}
 
-	// ffm reconcile --loopback keeps working with only .localhost aliases.
-	if err := checkReconcile(state.Bench{Mode: "dev", Bind: state.BindLoopback, DomainAliases: []string{"a.b.localhost"}, AdminPassword: "x"}, ReconcileInput{}); err != nil {
-		t.Errorf("reconcile refused a .localhost alias: %v", err)
-	}
-	if err := checkReconcile(state.Bench{Mode: "dev", Bind: state.BindLoopback, DomainAliases: []string{"erp.internal"}, AdminPassword: "x"}, ReconcileInput{}); err == nil {
-		t.Error("reconcile accepted erp.internal on loopback")
+	// ffm reconcile --loopback keeps any alias.
+	for _, a := range []string{"a.b.localhost", "erp.internal"} {
+		if err := checkReconcile(state.Bench{Mode: "dev", Bind: state.BindLoopback, DomainAliases: []string{a}, AdminPassword: "x"}, ReconcileInput{}); err != nil {
+			t.Errorf("reconcile refused %s on loopback: %v", a, err)
+		}
 	}
 }
 
@@ -528,15 +519,8 @@ func TestCreateAliasRules(t *testing.T) {
 	r := newMountRig(t, "als")
 	in := r.createInput("als")
 	in.ProjectApp, in.ProjectAppPath = "", ""
-	in.DomainAliases = []string{"erp.internal"}
-	if err := r.s.Create(in, DiscardProgress{}); err == nil || !strings.Contains(err.Error(), "--lan") {
-		t.Fatalf("erp.internal on loopback: %v", err)
-	}
-	if len(r.fake.Calls()) != 0 {
-		t.Errorf("work started before the refusal: %v", r.fake.Calls())
-	}
-	in.DomainAliases = []string{"feat.als.localhost"}
+	in.DomainAliases = []string{"feat.als.localhost", "erp.internal"}
 	if err := r.s.Create(in, DiscardProgress{}); err != nil {
-		t.Fatalf("a .localhost alias on loopback: %v", err)
+		t.Fatalf("dev aliases on loopback: %v", err)
 	}
 }

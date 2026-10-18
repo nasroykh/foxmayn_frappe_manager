@@ -645,7 +645,7 @@ Flags:
       --github-token string          GitHub personal access token for private HTTPS repos. Prefer the environment variable FFM_GITHUB_TOKEN (or GITHUB_TOKEN): a flag value is visible in the process list.
       --gunicorn-workers int         Number of gunicorn worker processes (prod only). Rule of thumb: 2*CPU+1. (default 2)
       --keep-on-failure              On failure, leave containers and the bench directory in place instead of rolling back, so logs survive for diagnosis. Env: FFM_KEEP_ON_FAILURE
-      --lan                          Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
+      --lan                          Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password
       --mariadb-buffer-pool string   InnoDB buffer pool size for MariaDB (e.g. 512M, 1G, 2G, 4G). Prod only; dev uses 256M. (default "1G")
       --mariadb-fast-commit          Prod + MariaDB: innodb_flush_log_at_trx_commit=2, faster commits that a crash can lose up to about a second of. The default (1) loses none
       --match-host-user              Build the image with the container's frappe user remapped to your uid/gid. Needed wherever your uid is not 1000 (e.g. GitHub-hosted runners, uid 1001), otherwise the ./workspace bind mount is unwritable from one side. Env: FFM_MATCH_HOST_USER
@@ -1239,7 +1239,7 @@ Flags:
       --identity string                age identity file that decrypts an encrypted (.age) archive. Env: FFM_AGE_IDENTITY_FILE
       --keep-download                  Keep the archive downloaded from a URL or backup target instead of deleting it afterwards
       --keep-on-failure                Leave a failed restore in place for diagnosis instead of removing it
-      --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine, and for dev domain aliases). Refused with the default admin password
+      --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password
       --mode string                    With --frappe-backup: bench mode, dev or prod (prod needs --domain) (default "dev")
       --no-files                       Restore the database only, without attachments
       --no-ssl                         Serve the restored production bench over plain HTTP

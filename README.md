@@ -330,8 +330,8 @@ Flags:
   --keep-on-failure       Leave containers and the bench directory in place on failure
                           instead of rolling back (env FFM_KEEP_ON_FAILURE)
   --lan                   Publish the bench's ports on all interfaces instead of
-                          127.0.0.1 (needed from another machine and for dev
-                          --domain-alias; refused with the default admin password)
+                          127.0.0.1 (needed from another machine; refused with
+                          the default admin password)
   --ssh-agent             Forward the host SSH agent into the dev container (opt-in)
   --verbose               Stream full Docker and bench init output
 
@@ -1264,7 +1264,7 @@ ffm reconcile mybench --ssh-agent   # keep forwarding the SSH agent (dev)
 
 **Template versions.** Each bench records the template version its `docker-compose.yml` was rendered from. `ffm list` names the benches built from older templates (and `--json` reports `templates_outdated`). Reconcile only applies `docker-compose.yml`; when the image recipe (`Dockerfile`) changed too, it says so, and `ffm restart <bench> --rebuild` applies it.
 
-**Ports.** New benches publish their ports on `127.0.0.1` only; `--lan` (on `create`, `restore` or `reconcile`) publishes them on all interfaces. Benches created before v0.8.1 keep their behaviour until reconciled: prod benches move to `127.0.0.1` (Traefik reaches them over the proxy network, and a host-side Caddy or nginx reaches `127.0.0.1`), dev benches stay on all interfaces unless you pass `--loopback`. A dev bench with domain aliases needs `--lan`, because the browser reaches socket.io on the published port.
+**Ports.** New benches publish their ports on `127.0.0.1` only; `--lan` (on `create`, `restore` or `reconcile`) publishes them on all interfaces. Benches created before v0.8.1 keep their behaviour until reconciled: prod benches move to `127.0.0.1` (Traefik reaches them over the proxy network, and a host-side Caddy or nginx reaches `127.0.0.1`), dev benches stay on all interfaces unless you pass `--loopback`.
 
 **Upgrading to v0.8.1.** Run `ffm reconcile <bench>` on every prod bench: before v0.8.1, prod workers never consumed Frappe's `default` queue, so most scheduled jobs and plain `frappe.enqueue` calls never ran, and gunicorn was reachable over plain HTTP on the published port.
 
@@ -1319,7 +1319,7 @@ ffm trim mybench --database --yes --no-snapshot
 
 ### `ffm domain`
 
-Routes extra hostnames (for example a LAN name such as `erp.internal`) to a bench through the shared Traefik proxy. ffm configures the routing; pointing DNS at this host is up to you, and `domain add` prints the records to create. A dev bench with aliases needs its ports on the LAN (`ffm reconcile <bench> --lan`).
+Routes extra hostnames (for example a LAN name such as `erp.internal`) to a bench through the shared Traefik proxy. ffm configures the routing; pointing DNS at this host is up to you, and `domain add` prints the records to create. Socket.IO goes through the same proxy, so a bench whose ports stay on `127.0.0.1` serves its aliases too, including a name behind a tunnel such as Cloudflare's pointed at `http://localhost:80`.
 
 ```bash
 ffm domain list [bench]
