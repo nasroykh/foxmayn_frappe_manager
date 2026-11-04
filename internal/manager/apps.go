@@ -130,7 +130,7 @@ func (s *Service) AppAdd(in AppAddInput, pw ProgressWriter) (string, error) {
 	}
 	pw.Step(fmt.Sprintf("Getting %s", spec.DisplayName()))
 	if out, err := runner.ExecSilent("frappe", "bash", "-c", "cd /workspace/frappe-bench && "+spec.GetAppCmd()); err != nil {
-		return "", fmt.Errorf("bench get-app: %w\n%s", err, lastLines(out, 10))
+		return "", fmt.Errorf("bench get-app: %w\n%s%s", err, lastLines(out, 10), gitAuthSuffix(out, in.GithubToken != ""))
 	}
 	// The app's name is what get-app added to apps.txt; a repository is often
 	// named differently from the app it holds.

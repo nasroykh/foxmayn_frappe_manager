@@ -1,6 +1,6 @@
 module github.com/nasroykh/foxmayn_frappe_manager
 
-go 1.26.9
+go 1.26.10
 
 require (
 	charm.land/lipgloss/v2 v2.0.3

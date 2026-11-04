@@ -39,7 +39,8 @@ manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
 `internal/manager/backup_preflight_test.go`), app provenance and restore source planning
 (`internal/manager/appsource_test.go` — runs the git probe script against real repos when
 bash and git exist), the backup failure formatter
-(`internal/manager/backup_failure_test.go`), the HTTP readiness wait and the
+(`internal/manager/backup_failure_test.go`), restore drift, pinning, the git auth hint and the archived
+toolchain (`internal/manager/restore_drift_test.go`), the HTTP readiness wait and the
 database-probe classifier (`internal/bench/waithttp_test.go`,
 `internal/bench/dbprobe_test.go`) and the log tail helper
 (`internal/manager/lifecycle_test.go`), the restore sources and Frappe backup import
@@ -286,6 +287,15 @@ internal/
     restore_appsource.go  → planRestoreApps (where each app's code comes from) / planFrappe /
                             checkRestorePlan / checkBareNames (GitHub lookup before Create) /
                             installArchivedApps / syncAppsTxt
+    restore_drift.go      → checkDrift: after pinning, before site_config / bench restore / migrate, one
+                            exec reads HEAD of every cloned app with a recorded commit and warns (stderr)
+                            on any that differ; the summary's "App code:" line says the same. archived
+                            apps are never compared (they are the backed-up tree)
+    githint.go            → gitAuthHint / gitAuthSuffix: "could not read Username", "Repository not
+                            found", "Permission denied (publickey)" … become a hint naming --github-token,
+                            FFM_GITHUB_TOKEN / GITHUB_TOKEN, `gh auth token` or --ssh-agent. Appended to
+                            bench init (benchInit tees Runner.ErrOut to see the dump), get-app (create,
+                            app add) and pin failures
     backup_keys.go        → age encryption (internal/agecrypt): InitBackupKey / AddBackupRecipient
                             (config.BackupRecipientsFile — public keys only), encryptArchive
                             (<archive>.age + cleartext <archive>.age.header.json sidecar, plaintext
@@ -1100,7 +1110,7 @@ internal/
 - `github.com/go-resty/resty/v2` — HTTP client for the GitHub releases API
 
 The dashboard and server add **no** dependencies — stdlib `net/http`, `html/template`, `embed`,
-`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.9; the router uses Go 1.22 method+pattern
+`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.10; the router uses Go 1.22 method+pattern
 syntax.
 
 ## Release
