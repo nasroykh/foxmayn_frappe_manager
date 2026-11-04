@@ -103,20 +103,45 @@ func (p restorePlan) archivedApps() []AppInfo {
 	return out
 }
 
-// pinnable returns the recorded provenance of every cloned app --pin-apps can
+// pinnable returns the recorded provenance of every cloned app a restore can
 // check out at its commit, frappe included. Archived apps are excluded: they
 // already are that exact tree, and have no remote to fetch from.
+//
+// An --app override onto a different branch than the archive recorded is not
+// pinned either: the user asked for that branch's code, and the archived
+// commit may not even be on it. An override without a branch, or on the same
+// branch, is a repository that moved (or an old archive with no remote) and is
+// pinned like any other app.
 func (p restorePlan) pinnable() []AppInfo {
 	var out []AppInfo
-	if p.FrappeArchive == nil && p.frappeInfo != nil {
+	if p.FrappeArchive == nil && p.frappeInfo != nil && !p.frappeOverrideMovesBranch() {
 		out = append(out, *p.frappeInfo)
 	}
 	for _, a := range p.Apps {
-		if !a.Archived() && a.Info != nil && appNameRe.MatchString(a.Name) {
+		if !a.Archived() && a.Info != nil && appNameRe.MatchString(a.Name) && !a.overrideMovesBranch() {
 			out = append(out, *a.Info)
 		}
 	}
 	return out
+}
+
+// overrideMovesBranch reports an --app override that names a branch other
+// than the one the archive recorded the app's commit on.
+func (a restoreApp) overrideMovesBranch() bool {
+	if a.Origin != originOverride || a.Info == nil {
+		return false
+	}
+	b := bench.ParseAppSpec(a.Spec, "").Branch
+	return b != "" && b != a.Info.CloneBranch()
+}
+
+// frappeOverrideMovesBranch is overrideMovesBranch for --app frappe=….
+func (p restorePlan) frappeOverrideMovesBranch() bool {
+	if p.FrappeOrigin != originOverride || p.frappeInfo == nil {
+		return false
+	}
+	recorded := p.frappeInfo.CloneBranch()
+	return recorded != "" && p.FrappeBranch != recorded
 }
 
 // parseAppOverrides parses repeated --app name=source[@branch] values.

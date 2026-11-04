@@ -296,9 +296,11 @@ type RestoreInput struct {
 	// SkipMigrate omits 'bench migrate' after the data is in place. Only useful
 	// when restoring onto exactly the app versions the backup was taken from.
 	SkipMigrate bool
-	// PinApps checks each app out at the commit recorded in the archive instead
-	// of leaving it at branch HEAD.
-	PinApps bool
+	// LatestApps leaves every cloned app at its branch head instead of checking
+	// it out at the commit the archive recorded. Pinning is the default: a
+	// restore at the heads runs migrate over code the data has never seen, and
+	// exits 0 doing it.
+	LatestApps bool
 	// AppOverrides are "<app>=<git-url>[@branch]" values that replace where an
 	// app is cloned from. "frappe=..." sets the framework's repo and branch.
 	// This is what makes an archive restorable when it records no usable

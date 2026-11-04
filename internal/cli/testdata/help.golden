@@ -1214,7 +1214,7 @@ Examples:
   ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
   ffm restore mybench_20260826T090000Z.ffm.tar staging
   ffm restore mybench_20260826T090000Z.ffm.tar --dry-run
-  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps
+  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --latest-apps
   ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
   ffm restore https://files.example.com/mybench_20260826T090000Z.ffm.tar staging
   ffm restore target://nas/mybench staging --identity ~/age-identity.txt
@@ -1240,10 +1240,10 @@ Flags:
       --keep-download                  Keep the archive downloaded from a URL or backup target instead of deleting it afterwards
       --keep-on-failure                Leave a failed restore in place for diagnosis instead of removing it
       --lan                            Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password
+      --latest-apps                    Leave each cloned app at its branch head instead of the commit recorded in the archive
       --mode string                    With --frappe-backup: bench mode, dev or prod (prod needs --domain) (default "dev")
       --no-files                       Restore the database only, without attachments
       --no-ssl                         Serve the restored production bench over plain HTTP
-      --pin-apps                       Check each app out at the commit recorded in the archive instead of its branch head
       --private-files string           With --frappe-backup: the private files tarball (.tar, .tgz)
       --reallocate-ports               Always assign a fresh port pair instead of reusing the archive's
       --show-secrets                   Print the Administrator password at the end even when stdout is not a terminal (it is masked then)

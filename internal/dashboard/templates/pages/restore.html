@@ -44,7 +44,7 @@
       <div class="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
         <label class="{{template "cls_check"}}"><input name="reallocate_ports" type="checkbox" value="1" checked class="{{template "cls_checkbox"}}">Assign a fresh port pair (needed while the original runs)</label>
         <label class="{{template "cls_check"}}"><input name="no_files" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Database only (skip attachments)</label>
-        <label class="{{template "cls_check"}}"><input name="pin_apps" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Pin apps to the archived commits</label>
+        <label class="{{template "cls_check"}}"><input name="latest_apps" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Leave apps at their branch heads, not the archived commits</label>
         <label class="{{template "cls_check"}}"><input name="skip_migrate" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Skip bench migrate</label>
         <label class="{{template "cls_check"}}"><input name="no_ssl" type="checkbox" value="1" class="{{template "cls_checkbox"}}">Serve a prod restore over plain HTTP</label>
         <label class="{{template "cls_check"}}"><input name="lan" type="checkbox" value="1" class="{{template "cls_checkbox"}}">LAN: publish ports on all interfaces</label>

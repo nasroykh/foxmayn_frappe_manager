@@ -40,7 +40,7 @@ manifest and preflight gates (`internal/manager/backup_manifest_test.go`,
 (`internal/manager/appsource_test.go` — runs the git probe script against real repos when
 bash and git exist), the backup failure formatter
 (`internal/manager/backup_failure_test.go`), restore drift, pinning, the git auth hint and the archived
-toolchain (`internal/manager/restore_drift_test.go`), the HTTP readiness wait and the
+toolchain (`internal/manager/restore_drift_test.go`), the pinned-commit preflight (`internal/manager/restore_pincheck_test.go`), the HTTP readiness wait and the
 database-probe classifier (`internal/bench/waithttp_test.go`,
 `internal/bench/dbprobe_test.go`) and the log tail helper
 (`internal/manager/lifecycle_test.go`), the restore sources and Frappe backup import
@@ -115,7 +115,8 @@ internal/
                             job with the first schedule, removes it with the last, both through
                             scheduler.Install / scheduler.Uninstall
     restore.go            → ffm restore <archive|url|target://NAME/BENCH[/FILE]> [name]: --dry-run /
-                            --no-files / --pin-apps /
+                            --no-files / --latest-apps (pinning is the default; --pin-apps is a
+                            deprecated no-op, a usage error with --latest-apps) /
                             --allow-missing-encryption-key / --encryption-key / --domain /
                             --no-ssl / --acme-email / --reallocate-ports / --web-port /
                             --socketio-port / --admin-password / --github-token /
@@ -127,7 +128,7 @@ internal/
                             positional is then the NAME, required) switches to Frappe's own
                             backup files, with --files / --private-files / --config / --apps
                             (StringSlice) / --mode / --frappe-branch / --db-type; those flags are
-                            usage errors without it, and --identity / --pin-apps /
+                            usage errors without it, and --identity / --pin-apps / --latest-apps /
                             --encryption-key / --keep-download / --header-url are usage errors
                             with it. The CLI is the only caller that sets AllowRemote, and it
                             passes a signal context so Ctrl-C stops a download
@@ -287,6 +288,16 @@ internal/
     restore_appsource.go  → planRestoreApps (where each app's code comes from) / planFrappe /
                             checkRestorePlan / checkBareNames (GitHub lookup before Create) /
                             installArchivedApps / syncAppsTxt
+    restore_pincheck.go   → checkPinnedCommits: before Create (and in --dry-run), unless --latest-apps,
+                            GET api.github.com/repos/<o>/<r>/commits/<sha> per pinned github.com app
+                            (frappe included): 422 = commit gone, 404 = repo invisible (refused, except an
+                            SSH source with no token: a forwarded agent may still clone it), 401 = bad
+                            token; the first 401, transport error or 403/429 stops the loop (one message,
+                            no N×timeout stall offline); other answers warn. An --app override onto a
+                            branch other than the archived one is never pinned (overrideMovesBranch); one
+                            without a branch, or on the same branch, is (moved repo, old archive). githubCommitStatus is a
+                            var; restore_pincheck_test.go's init() stubs it for the whole package, so no
+                            test reaches GitHub. pinFailureSuffix: a failed pin fetch names --latest-apps
     restore_drift.go      → checkDrift: after pinning, before site_config / bench restore / migrate, one
                             exec reads HEAD of every cloned app with a recorded commit and warns (stderr)
                             on any that differ; the summary's "App code:" line says the same. archived
@@ -439,8 +450,8 @@ internal/
                             restore, see the vault's ADR-005. afterDatabaseSwap (optional
                             migrate, the recorded Administrator password re-applied, then
                             clear-cache) is shared with DBImport
-    clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, PinApps,
-                            ReallocatePorts)
+    clone.go              → Clone = Backup (temp dir, writtenTo) + Restore (new name, pinned like
+                            every restore, ReallocatePorts)
     seed.go               → seeds: a finished frappe-bench minus sites/<site>, logs, skills,
                             .ffm-* (pruneSeedTree; logs/ and config/pids are recreated EMPTY —
                             bench refuses set-config without them). Keyed by seedKey (image,
@@ -857,7 +868,7 @@ internal/
     the DB says frappe+erpnext). Restore rewrites it, and writes the DB's list back into
     `state.Bench.Apps`, which drifts from the site's truth over a bench's life.
   - `bench get-app --branch <sha>` cannot work — git rejects a SHA where it wants a branch.
-    `--pin-apps` does a post-clone `git checkout` + `bench setup requirements` instead, and
+    Pinning (the default; `--latest-apps` opts out) does a post-clone `git checkout` + `bench setup requirements` instead, and
     the commits come from `git rev-parse HEAD`, never `sites/apps.json` (which records
     `commit_hash: null` for frappe itself on any ffm bench).
   - bench clones every app with **`--origin upstream`**, so there is no `origin` remote on a
@@ -868,7 +879,7 @@ internal/
     `checkBareNames` refuses up front (and in `--dry-run`) instead of failing mid-Create.
   - bare **`bench setup requirements [app]`** builds a bench `App`, which opens the directory
     with `git.Repo` and crashes on an app that is not a repository (`bench new-app --no-git`).
-    The `--python` and `--node` halves do not, so restore and `--pin-apps` run those two.
+    The `--python` and `--node` halves do not, so restore and pinning run those two.
   **App source.** An app that cannot be cloned back — no git, no remote another machine can
   reach (a local path, `file://`), no commits, or a HEAD on no remote branch or tag — has its
   working tree archived as `ffm-backup/apps/<app>.tar.gz` (minus node_modules, public/dist,

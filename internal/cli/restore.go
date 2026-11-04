@@ -30,6 +30,7 @@ func newRestoreCmd() *cobra.Command {
 		githubToken     string
 		skipMigrate     bool
 		pinApps         bool
+		latestApps      bool
 		keepOnFailure   bool
 		lan             bool
 		sshAgent        bool
@@ -61,8 +62,12 @@ be free.
 The bench is provisioned by the same pipeline as 'ffm create' — same image, apps,
 mode, ports and proxy wiring — and the archived database and attachments are
 restored into it. Apps are cloned from the remote and branch the backup
-recorded, at the branch head; pass --pin-apps to check out the exact commits
-instead. Apps whose source is stored in the archive are unpacked from it.
+recorded, and checked out at the exact commit the archive recorded, so migrate
+runs on the code the data was backed up with. Before anything is built, every
+github.com commit is checked to still exist and be readable. --latest-apps
+leaves apps at their branch heads instead; the restore then warns about each
+app whose code is not the archived commit. Apps whose source is stored in the
+archive are unpacked from it.
 
 --app <app>=<git-url>[@branch] replaces where an app is cloned from, and
 --app frappe=<git-url>[@branch] does the same for the framework. Use it for an
@@ -111,7 +116,7 @@ decrypt them with gpg first.`,
 		Example: `  ffm restore ~/frappe/_backups/mybench/mybench_20260826T090000Z.ffm.tar
   ffm restore mybench_20260826T090000Z.ffm.tar staging
   ffm restore mybench_20260826T090000Z.ffm.tar --dry-run
-  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --pin-apps
+  ffm restore prod_20260826T090000Z.ffm.tar --domain erp.example.com --latest-apps
   ffm restore mybench_20260826T090000Z.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
   ffm restore https://files.example.com/mybench_20260826T090000Z.ffm.tar staging
   ffm restore target://nas/mybench staging --identity ~/age-identity.txt
@@ -130,6 +135,9 @@ decrypt them with gpg first.`,
 			envFallback(cmd, "admin-password", &adminPassword, envAdminPassword)
 			envFallback(cmd, "github-token", &githubToken, envGitHubTokens...)
 			envFallback(cmd, "encryption-key", &encryptionKey, envEncryptionKey)
+			if pinApps && latestApps {
+				return usageError{errors.New("--pin-apps contradicts --latest-apps (pinning is the default)")}
+			}
 			target := ""
 			archiveArg := args[0]
 			var frappe *manager.FrappeBackupInput
@@ -177,7 +185,7 @@ decrypt them with gpg first.`,
 				AdminPassword:             adminPassword,
 				GithubToken:               githubToken,
 				SkipMigrate:               skipMigrate,
-				PinApps:                   pinApps,
+				LatestApps:                latestApps,
 				KeepOnFailure:             keepOnFailure,
 				LAN:                       lan,
 				SSHAgent:                  sshAgent,
@@ -212,8 +220,12 @@ decrypt them with gpg first.`,
 		"Print the Administrator password at the end even when stdout is not a terminal (it is masked then)")
 	cmd.Flags().BoolVar(&skipMigrate, "skip-migrate", false,
 		"Skip 'bench migrate' after restoring — only safe when the apps are at the backed-up versions")
-	cmd.Flags().BoolVar(&pinApps, "pin-apps", false,
-		"Check each app out at the commit recorded in the archive instead of its branch head")
+	cmd.Flags().BoolVar(&latestApps, "latest-apps", false,
+		"Leave each cloned app at its branch head instead of the commit recorded in the archive")
+	// The default since pinning stopped being opt-in; kept so scripts that pass
+	// it keep working.
+	cmd.Flags().BoolVar(&pinApps, "pin-apps", false, "Check apps out at the archived commits (the default)")
+	_ = cmd.Flags().MarkDeprecated("pin-apps", "it is the default now; --latest-apps opts out")
 	cmd.Flags().BoolVar(&lan, "lan", false,
 		"Publish the bench's ports on all interfaces instead of 127.0.0.1 (needed to reach it from another machine). Refused with the default admin password")
 	cmd.Flags().BoolVar(&sshAgent, "ssh-agent", false,
@@ -250,7 +262,7 @@ decrypt them with gpg first.`,
 // checkFrappeFlags refuses the combinations that would otherwise be ignored
 // without a word.
 func checkFrappeFlags(cmd *cobra.Command, noFiles bool) error {
-	for _, f := range []string{"identity", "pin-apps", "encryption-key", "keep-download", "header-url"} {
+	for _, f := range []string{"identity", "pin-apps", "latest-apps", "encryption-key", "keep-download", "header-url"} {
 		if cmd.Flags().Changed(f) {
 			return usageError{fmt.Errorf("--%s does not apply to --frappe-backup", f)}
 		}
