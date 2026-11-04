@@ -78,7 +78,7 @@ func (h *Handler) RestoreRun(w http.ResponseWriter, r *http.Request) {
 		WebPort:         web,
 		SocketIOPort:    sock,
 		SkipMigrate:     r.FormValue("skip_migrate") == "1",
-		PinApps:         r.FormValue("pin_apps") == "1",
+		LatestApps:      r.FormValue("latest_apps") == "1",
 		LAN:             r.FormValue("lan") == "1",
 	}
 	// The job is keyed by the new target, which has no record yet, so

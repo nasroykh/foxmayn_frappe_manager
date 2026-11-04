@@ -31,6 +31,8 @@ func TestRestoreFlagValidation(t *testing.T) {
 		{"frappe import needs exactly the name", []string{"--frappe-backup", dump}, "exactly the new bench's name"},
 		{"frappe import with two args", []string{"--frappe-backup", dump, "a", "b"}, "exactly the new bench's name"},
 		{"identity is meaningless for a frappe import", []string{"--frappe-backup", dump, "n", "--identity", "x"}, "--identity does not apply"},
+		{"pin-apps contradicts latest-apps", []string{"a.ffm.tar", "--pin-apps", "--latest-apps"}, "--pin-apps contradicts --latest-apps"},
+		{"frappe import has no commits to leave", []string{"--frappe-backup", dump, "n", "--latest-apps"}, "--latest-apps does not apply"},
 		{"no-files contradicts --files", []string{"--frappe-backup", dump, "n", "--no-files", "--files", "f.tar"}, "contradicts"},
 		{"http is refused", []string{"http://example.com/a.ffm.tar"}, "plain http"},
 		{"unknown scheme", []string{"s3://b/a.ffm.tar"}, "unsupported source scheme"},

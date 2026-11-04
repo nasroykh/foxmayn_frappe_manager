@@ -79,6 +79,6 @@ func (s *Service) Clone(in CloneInput, pw ProgressWriter) error {
 	pw.Printf("Restoring it as %q...\n", in.Target)
 	return s.Restore(RestoreInput{
 		Archive: archive, TargetName: in.Target, WithFiles: !in.NoFiles,
-		PinApps: true, ReallocatePorts: true, Domain: in.Domain, NoSSL: in.NoSSL, LAN: in.LAN,
+		ReallocatePorts: true, Domain: in.Domain, NoSSL: in.NoSSL, LAN: in.LAN,
 	}, pw)
 }

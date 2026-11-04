@@ -410,8 +410,7 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 		{
 			name:   "commit used in a checkout",
 			mutate: func(m *Manifest) { m.Apps = []AppInfo{{Name: "erpnext", Commit: "$(id)"}} },
-			in:     RestoreInput{PinApps: true},
-			// Only checked when it will actually be used.
+			// Pinning is the default, so the commit reaches a checkout.
 			wantSub: "app commit",
 		},
 		{
@@ -465,7 +464,7 @@ func TestCheckManifestValuesRejectsInjection(t *testing.T) {
 		m.Secrets.AdminPassword = "Str0ng-Pass_word.1"
 		m.Bench.Domain = "erp.example.com"
 		m.Bench.DomainAliases = []string{"erp.internal"}
-		if p := checkManifestValues(m, RestoreInput{PinApps: true}); len(p) != 0 {
+		if p := checkManifestValues(m, RestoreInput{}); len(p) != 0 {
 			t.Fatalf("a valid archive was rejected: %v", p)
 		}
 	})

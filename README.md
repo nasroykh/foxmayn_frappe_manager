@@ -1098,7 +1098,7 @@ ffm restore target://nas/mybench staging --identity ~/ffm-backup.key   # newest 
 ```
 Flags:  --dry-run                       Validate the archive and print the plan
         --no-files                      Restore the database only
-        --pin-apps                      Check apps out at the archived commits, not branch head
+        --latest-apps                   Leave apps at their branch heads, not the archived commits
         --allow-missing-encryption-key  Restore without the site key (Password fields will not decrypt)
         --encryption-key <key>          Key for a GPG-encrypted dump
         --domain <domain>               Override the production domain
@@ -1190,6 +1190,14 @@ ffm restore old.ffm.tar --app my_app=git@github.com:acme/my_app.git@main
 The bench is provisioned by the same pipeline as `ffm create` — same image, apps, mode, ports
 and proxy wiring — and the archived data is restored into it. Ports are reused when they are
 free, so URLs stay stable on a fresh machine.
+
+Every app cloned from git is checked out at the commit the archive recorded, so `bench migrate`
+runs on the code the data was backed up with. Before anything is built, each github.com commit
+is looked up through the GitHub API: a commit that is gone (force-push, deleted branch) or a
+private repository without `--github-token` is refused in seconds, not after provisioning.
+`--latest-apps` leaves apps at their branch heads instead, and the restore warns about every app
+whose code is not the archived commit. (Before this, the heads were the default and `--pin-apps`
+opted in; `--pin-apps` is still accepted.)
 
 What a restore cannot bring back, and says so when it happens: uncommitted changes in an app's
 working tree (unless the backup archived that app's source), the VPS tunnel (its token lives in this host's `tunnel.json`, not the archive),

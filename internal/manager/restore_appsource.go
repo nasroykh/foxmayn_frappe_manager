@@ -103,7 +103,7 @@ func (p restorePlan) archivedApps() []AppInfo {
 	return out
 }
 
-// pinnable returns the recorded provenance of every cloned app --pin-apps can
+// pinnable returns the recorded provenance of every cloned app a restore can
 // check out at its commit, frappe included. Archived apps are excluded: they
 // already are that exact tree, and have no remote to fetch from.
 func (p restorePlan) pinnable() []AppInfo {

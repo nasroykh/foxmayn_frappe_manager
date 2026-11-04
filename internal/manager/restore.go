@@ -200,6 +200,13 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 	problems = append(problems, checkBareNames(plan, in.GithubToken, githubRegistryLookup, func(msg string) {
 		fmt.Fprintln(pw.Stderr(), "warning: "+msg)
 	})...)
+	if !in.LatestApps {
+		// A pin that cannot be fetched used to fail only after Create had
+		// spent minutes on bench init, get-app and new-site.
+		problems = append(problems, checkPinnedCommits(plan, in.GithubToken, githubCommitStatus, func(msg string) {
+			fmt.Fprintln(pw.Stderr(), "warning: "+msg)
+		})...)
+	}
 	problems = filterOverridden(problems, in)
 	if len(problems) > 0 {
 		return problemsError(problems)
@@ -223,7 +230,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 		if run.frappe {
 			printFrappeRestorePlan(pw, m, plan, target, in, webPort, socketIOPort, run)
 		} else {
-			printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath, in.PinApps)
+			printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath, !in.LatestApps)
 		}
 		return nil
 	}
@@ -268,7 +275,8 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 	if err := s.installArchivedApps(runner, b, plan, staging, pw); err != nil {
 		return err
 	}
-	if in.PinApps {
+	// Frappe's own backup files record no commits, so there is nothing to pin.
+	if !in.LatestApps && !run.frappe {
 		// Create configured the token for its own clones and removed it again
 		// on the way out, so pinning a private app fetched with no credentials
 		// and failed on every private repository. It gets its own, for exactly
@@ -286,7 +294,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 			return err
 		}
 	}
-	drift := checkDrift(runner, plan, in.PinApps, pw)
+	drift := checkDrift(runner, plan, !in.LatestApps, pw)
 
 	// Phase C. The order below is load-bearing; see the comments on each step.
 	if err := s.applySiteConfig(b, m, in, pw); err != nil {
@@ -846,7 +854,7 @@ func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, githubToken bo
 		//     `bench init` and `bench get-app` clone with;
 		//   - frappe's working tree is already dirty, because Create applied the
 		//     realtime patches to it, so a plain checkout aborts as soon as the
-		//     pinned commit touches those files — precisely the drift --pin-apps
+		//     pinned commit touches those files — precisely the drift pinning
 		//     exists to undo. --force discards them; they are re-applied
 		//     unconditionally later in the restore.
 		//   - bench clones with --depth 1, so the repository holds only the
@@ -862,7 +870,7 @@ func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, githubToken bo
 				"&& git checkout --force --quiet %s", dir, app.Commit, app.Commit)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
 			return fmt.Errorf("pin %s to %s: %w\n%s%s", app.Name, shortCommit(app.Commit), err, out,
-				gitAuthSuffix(out, githubToken))
+				pinFailureSuffix(app.Name, out, githubToken))
 		}
 		pinned = append(pinned, bench.ShellQuote(app.Name))
 	}
@@ -957,8 +965,7 @@ func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target, d
 		if pinned {
 			pw.Printf("  App code:      the commits the archive recorded\n")
 		} else {
-			pw.Printf("  App code:      branch heads, which may be newer than the backup " +
-				"(--pin-apps checks out the archived commits)\n")
+			pw.Printf("  App code:      branch heads, which may be newer than the backup (--latest-apps)\n")
 		}
 	}
 	pw.Printf("  Attachments:   %s\n", yesNo(withFiles))

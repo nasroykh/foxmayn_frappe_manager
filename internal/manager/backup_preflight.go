@@ -285,7 +285,7 @@ func checkManifestValues(m Manifest, in RestoreInput) []Problem {
 	problems = append(problems, checkRestorePlan(m, plan, overrides)...)
 	// Only the apps this restore uses are held to the name rule: a stray
 	// directory in the source bench's apps/ is recorded but never touched.
-	if in.PinApps {
+	if !in.LatestApps {
 		for _, a := range plan.pinnable() {
 			if a.Commit != "" && !commitRe.MatchString(a.Commit) {
 				bad("app commit", a.Commit)

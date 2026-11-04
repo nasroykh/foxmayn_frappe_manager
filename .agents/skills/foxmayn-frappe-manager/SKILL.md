@@ -161,7 +161,7 @@ ffm backup mybench --label "pre-upgrade"
 ffm restore <archive>                    # rebuild under the archive's own bench name
 ffm restore <archive> staging            # rebuild under a different name
 ffm restore <archive> staging --dry-run  # validate and print the plan, change nothing
-ffm restore <archive> staging --pin-apps # apps at the archived commits, not branch head
+ffm restore <archive> staging --latest-apps # apps at branch heads (default: the archived commits)
 ffm restore <archive> --app my_app=git@github.com:acme/my_app.git@main  # app source the archive lacks
 ffm restore https://host/path/b.ffm.tar staging                        # https URL (no http, no user:pass; presigned is fine)
 ffm restore target://NAME/BENCH staging --identity <file>              # newest archive on a backup target (target://NAME/BENCH/FILE for one)

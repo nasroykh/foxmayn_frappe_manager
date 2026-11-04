@@ -180,7 +180,7 @@ func TestCheckDriftWarnsBeforeMigrate(t *testing.T) {
 		t.Fatalf("report = %+v", r)
 	}
 	out := strings.Join(pw.Lines, "\n")
-	for _, want := range []string{"1 app(s) are not at the commit", "frappe", shortCommit(commitA), shortCommit(commitC), "--pin-apps"} {
+	for _, want := range []string{"1 app(s) are not at the commit", "frappe", shortCommit(commitA), shortCommit(commitC), "--latest-apps"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("warning lacks %q:\n%s", want, out)
 		}

@@ -71,10 +71,11 @@ func sameCommit(a, b string) bool {
 }
 
 // checkDrift reports, before the database is restored and migrated, every app
-// whose code is not what the archive recorded. Without --pin-apps that is any
+// whose code is not what the archive recorded. With --latest-apps that is any
 // app whose branch moved since the backup, and nothing used to say so: the
 // restore exited 0 and migrate ran the newer code's patches over the restored
-// data.
+// data. A pinned restore should never drift; if it does, a checkout silently
+// did not take, and saying so is the point.
 func checkDrift(runner *bench.Runner, plan restorePlan, pinned bool, pw ProgressWriter) driftReport {
 	apps := plan.pinnable()
 	var names []string
@@ -102,7 +103,7 @@ func checkDrift(runner *bench.Runner, plan restorePlan, pinned bool, pw Progress
 		fmt.Fprintf(pw.Stderr(), "  %-14s archived %s  restored %s\n", d.Name, shortCommit(d.Archived), shortCommit(d.Restored))
 	}
 	if !pinned {
-		fmt.Fprintln(pw.Stderr(), "  Restore with --pin-apps to get the archived commits.")
+		fmt.Fprintln(pw.Stderr(), "  This is what --latest-apps asks for; restore without it to get the archived commits.")
 	}
 	return r
 }
