@@ -1110,7 +1110,7 @@ internal/
 - `github.com/go-resty/resty/v2` — HTTP client for the GitHub releases API
 
 The dashboard and server add **no** dependencies — stdlib `net/http`, `html/template`, `embed`,
-`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.9; the router uses Go 1.22 method+pattern
+`log/slog`, `crypto/hmac`. `go.mod` declares Go 1.26.10; the router uses Go 1.22 method+pattern
 syntax.
 
 ## Release
