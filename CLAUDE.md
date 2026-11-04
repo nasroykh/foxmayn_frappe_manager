@@ -292,7 +292,10 @@ internal/
                             GET api.github.com/repos/<o>/<r>/commits/<sha> per pinned github.com app
                             (frappe included): 422 = commit gone, 404 = repo invisible (refused, except an
                             SSH source with no token: a forwarded agent may still clone it), 401 = bad
-                            token (reported once); errors and other answers warn. githubCommitStatus is a
+                            token; the first 401, transport error or 403/429 stops the loop (one message,
+                            no N×timeout stall offline); other answers warn. An --app override onto a
+                            branch other than the archived one is never pinned (overrideMovesBranch); one
+                            without a branch, or on the same branch, is (moved repo, old archive). githubCommitStatus is a
                             var; restore_pincheck_test.go's init() stubs it for the whole package, so no
                             test reaches GitHub. pinFailureSuffix: a failed pin fetch names --latest-apps
     restore_drift.go      → checkDrift: after pinning, before site_config / bench restore / migrate, one

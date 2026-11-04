@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/nasroykh/foxmayn_frappe_manager/internal/state"
 )
 
 // No test in this package may reach api.github.com: a restore now checks every
@@ -167,8 +169,13 @@ func TestCheckPinnedCommitsWarnsWhenItCannotTell(t *testing.T) {
 		if len(problems) != 0 {
 			t.Errorf("%s: refused on an answer it cannot interpret: %v", c.name, problems)
 		}
-		if len(warnings) != 3 || !strings.Contains(warnings[0], "trying anyway") {
+		// One warning, and no further calls: offline, each would wait out its
+		// timeout; rate-limited, each would be refused the same way.
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "trying anyway") {
 			t.Errorf("%s: warnings = %v", c.name, warnings)
+		}
+		if len(calls) != 1 {
+			t.Errorf("%s: %d calls, want 1", c.name, len(calls))
 		}
 	}
 }
@@ -205,3 +212,49 @@ func TestLatestAppsSkipsTheCommitGate(t *testing.T) {
 		t.Error("--latest-apps was refused over a commit it never uses")
 	}
 }
+
+func TestOverrideOntoAnotherBranchIsNotPinned(t *testing.T) {
+	m := Manifest{
+		Bench: state.Bench{FrappeBranch: "version-15", FrappeRepo: "https://github.com/acme/kb_frappe.git@main",
+			Apps: []string{"https://github.com/acme/kb_pro@dev"}},
+		Site: SiteInfo{InstalledApps: []string{"frappe", "kb_pro"}},
+		Apps: []AppInfo{
+			{Name: "frappe", Remote: "https://github.com/acme/kb_frappe.git", RemoteBranch: "main", Commit: commitA, Source: AppSourceGit},
+			{Name: "kb_pro", Remote: "https://github.com/acme/kb_pro", RemoteBranch: "dev", Commit: commitB, Source: AppSourceGit},
+		},
+	}
+	names := func(p restorePlan) []string {
+		var out []string
+		for _, t := range pinTargets(p) {
+			out = append(out, t.Name+"@"+t.Source)
+		}
+		if len(pinnable(p)) != len(out) {
+			t.Errorf("pinnable and pinTargets disagree: %v vs %v", pinnable(p), out)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name      string
+		overrides map[string]string
+		want      string
+	}{
+		{"no override", nil, "frappe@https://github.com/acme/kb_frappe.git kb_pro@https://github.com/acme/kb_pro"},
+		{"moved repo, no branch: pinned", map[string]string{"kb_pro": "https://github.com/new/kb_pro"},
+			"frappe@https://github.com/acme/kb_frappe.git kb_pro@https://github.com/new/kb_pro"},
+		{"same branch: pinned", map[string]string{"kb_pro": "https://github.com/new/kb_pro@dev"},
+			"frappe@https://github.com/acme/kb_frappe.git kb_pro@https://github.com/new/kb_pro"},
+		{"another branch: not pinned", map[string]string{"kb_pro": "https://github.com/acme/kb_pro@develop"},
+			"frappe@https://github.com/acme/kb_frappe.git"},
+		{"frappe onto another branch: not pinned", map[string]string{"frappe": "https://github.com/acme/kb_frappe.git@version-16"},
+			"kb_pro@https://github.com/acme/kb_pro"},
+		{"frappe moved, same branch: pinned", map[string]string{"frappe": "https://github.com/new/kb_frappe.git@main"},
+			"frappe@https://github.com/new/kb_frappe.git kb_pro@https://github.com/acme/kb_pro"},
+	} {
+		got := strings.Join(names(planRestoreApps(m, c.overrides)), " ")
+		if got != c.want {
+			t.Errorf("%s: pinned %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func pinnable(p restorePlan) []AppInfo { return p.pinnable() }

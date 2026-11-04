@@ -20,7 +20,7 @@ type pinTarget struct {
 // pinTargets mirrors pinnable, adding each app's clone source.
 func pinTargets(p restorePlan) []pinTarget {
 	var out []pinTarget
-	if p.FrappeArchive == nil && p.frappeInfo != nil && p.frappeInfo.Commit != "" {
+	if p.FrappeArchive == nil && p.frappeInfo != nil && p.frappeInfo.Commit != "" && !p.frappeOverrideMovesBranch() {
 		src := p.FrappeRepo
 		if src == "" {
 			src = "https://github.com/frappe/frappe"
@@ -28,7 +28,7 @@ func pinTargets(p restorePlan) []pinTarget {
 		out = append(out, pinTarget{Name: "frappe", Source: src, Commit: p.frappeInfo.Commit})
 	}
 	for _, a := range p.Apps {
-		if a.Archived() || a.Info == nil || a.Info.Commit == "" || !appNameRe.MatchString(a.Name) {
+		if a.Archived() || a.Info == nil || a.Info.Commit == "" || !appNameRe.MatchString(a.Name) || a.overrideMovesBranch() {
 			continue
 		}
 		out = append(out, pinTarget{Name: a.Name, Source: bench.ParseAppSpec(a.Spec, "").Source, Commit: a.Info.Commit})
@@ -89,10 +89,13 @@ var githubCommitStatus commitStatus = func(ctx context.Context, repo, sha, token
 // forwarded agent.
 func checkPinnedCommits(plan restorePlan, token string, lookup commitStatus, warn func(string)) []Problem {
 	var problems []Problem
-	refused := false
+	// One 401, one unreachable network or one rate limit says it all: every
+	// further call would only repeat it (offline, each one waits out its
+	// timeout).
+	stop := false
 	for _, t := range pinTargets(plan) {
-		if refused {
-			break // one 401 says it all; every further call would repeat it
+		if stop {
+			break
 		}
 		repo, ssh := githubRepoOf(t.Source)
 		if repo == "" || !commitRe.MatchString(t.Commit) {
@@ -104,17 +107,18 @@ func checkPinnedCommits(plan restorePlan, token string, lookup commitStatus, war
 		short := shortCommit(t.Commit)
 		switch {
 		case err != nil:
-			warn(fmt.Sprintf("could not check that github.com/%s still has %s's commit %s (%v) — trying anyway",
-				repo, t.Name, short, err))
+			stop = true
+			warn(fmt.Sprintf("could not reach GitHub to check the pinned commits (%v) — trying anyway", err))
 		case status == http.StatusOK:
 		case status == http.StatusUnprocessableEntity:
 			problems = append(problems, Problem{
 				Message: fmt.Sprintf("%s: commit %s, which the archive recorded, is no longer on github.com/%s "+
 					"(force-pushed, or its branch deleted)", t.Name, short, repo),
-				Override: fmt.Sprintf("--latest-apps to restore at the branch head, or --app %s=<git-url>@<branch>", t.Name),
+				Override: fmt.Sprintf("--latest-apps to restore at the branch heads, or --app %s=<git-url>@<another-branch> "+
+					"to take that one app from a branch's head", t.Name),
 			})
 		case status == http.StatusUnauthorized:
-			refused = true
+			stop = true
 			problems = append(problems, Problem{
 				Message: "GitHub refused the token (401): it is expired, revoked or mistyped",
 			})
@@ -131,6 +135,10 @@ func checkPinnedCommits(plan restorePlan, token string, lookup commitStatus, war
 			})
 		case status == http.StatusNotFound:
 			// SSH with no token: see above.
+		case status == http.StatusForbidden || status == http.StatusTooManyRequests:
+			stop = true
+			warn(fmt.Sprintf("GitHub would not answer (%d, usually the rate limit for calls without a token) — "+
+				"the pinned commits are not checked; trying anyway", status))
 		default:
 			warn(fmt.Sprintf("could not check that github.com/%s still has %s's commit %s (GitHub answered %d) — trying anyway",
 				repo, t.Name, short, status))

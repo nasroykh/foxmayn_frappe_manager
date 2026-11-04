@@ -1196,7 +1196,9 @@ runs on the code the data was backed up with. Before anything is built, each git
 is looked up through the GitHub API: a commit that is gone (force-push, deleted branch) or a
 private repository without `--github-token` is refused in seconds, not after provisioning.
 `--latest-apps` leaves apps at their branch heads instead, and the restore warns about every app
-whose code is not the archived commit. (Before this, the heads were the default and `--pin-apps`
+whose code is not the archived commit. An `--app <app>=<url>@<branch>` naming a different branch
+than the archive recorded takes that app from the branch head; without a branch, or on the same
+one, it is pinned like the rest. (Before this, the heads were the default and `--pin-apps`
 opted in; `--pin-apps` is still accepted.)
 
 What a restore cannot bring back, and says so when it happens: uncommitted changes in an app's
