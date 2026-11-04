@@ -223,7 +223,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 		if run.frappe {
 			printFrappeRestorePlan(pw, m, plan, target, in, webPort, socketIOPort, run)
 		} else {
-			printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath)
+			printRestorePlan(pw, m, plan, target, in.Domain, webPort, socketIOPort, withFiles, archivePath, in.PinApps)
 		}
 		return nil
 	}
@@ -278,7 +278,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 				return fmt.Errorf("configure the GitHub token for pinning: %w", err)
 			}
 		}
-		err := s.pinApps(runner, plan, pw)
+		err := s.pinApps(runner, plan, in.GithubToken != "", pw)
 		if in.GithubToken != "" {
 			runner.CleanupGitHubToken()
 		}
@@ -286,6 +286,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 			return err
 		}
 	}
+	drift := checkDrift(runner, plan, in.PinApps, pw)
 
 	// Phase C. The order below is load-bearing; see the comments on each step.
 	if err := s.applySiteConfig(b, m, in, pw); err != nil {
@@ -298,7 +299,7 @@ func (s *Service) restoreCore(in RestoreInput, pw ProgressWriter, run restoreRun
 		return err
 	}
 
-	printRestoreSummary(pw, b, m, target, withFiles)
+	printRestoreSummary(pw, b, m, target, withFiles, drift)
 	if run.frappe {
 		printFrappeRestoreNotes(pw, b)
 	}
@@ -440,7 +441,7 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 	// The archived toolchain applies only to the branch it was chosen for: an
 	// --app frappe=…@<other branch> override gets that branch's default.
 	var python, node string
-	if plan.FrappeBranch == m.Bench.FrappeBranch {
+	if plan.FrappeBranch == archivedInitBranch(m.Bench) {
 		python, node = m.Bench.Python, m.Bench.Node
 	}
 
@@ -480,6 +481,20 @@ func restoreCreateInput(m Manifest, plan restorePlan, target string, in RestoreI
 		SkipAppInstall:    true,
 		SkipAssetBuild:    true,
 	}, nil
+}
+
+// archivedInitBranch is the frappe branch the archived bench's bench init
+// cloned, which is what its toolchain was chosen for. A --frappe-repo with an
+// @branch wins over FrappeBranch on create (`--frappe-branch version-15
+// --frappe-repo <fork>@main` clones main), so comparing FrappeBranch alone
+// read every such bench as switched and dropped its recorded Python and Node.
+func archivedInitBranch(b state.Bench) string {
+	if b.FrappeRepo != "" {
+		if br := bench.ParseAppSpec(b.FrappeRepo, "").Branch; br != "" {
+			return br
+		}
+	}
+	return b.FrappeBranch
 }
 
 // applySiteConfig merges the archived site configuration into the new site.
@@ -808,7 +823,7 @@ func appsWithoutFramework(installed []string, specs map[string]string) []string 
 // rejects a SHA where it expects a branch name, so the clone fails outright.
 // Apps restored from archived source are skipped: they already are the exact
 // tree that was backed up, and have no remote to fetch from.
-func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, pw ProgressWriter) error {
+func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, githubToken bool, pw ProgressWriter) error {
 	var pinned []string
 	for _, app := range plan.pinnable() {
 		if app.Commit == "" {
@@ -846,7 +861,8 @@ func (s *Service) pinApps(runner *bench.Runner, plan restorePlan, pw ProgressWri
 				"git fetch --quiet --depth 1 \"$remote\" %s; else git fetch --quiet \"$remote\"; fi "+
 				"&& git checkout --force --quiet %s", dir, app.Commit, app.Commit)
 		if out, err := runner.ExecSilent("frappe", "bash", "-c", cmd); err != nil {
-			return fmt.Errorf("pin %s to %s: %w\n%s", app.Name, shortCommit(app.Commit), err, out)
+			return fmt.Errorf("pin %s to %s: %w\n%s%s", app.Name, shortCommit(app.Commit), err, out,
+				gitAuthSuffix(out, githubToken))
 		}
 		pinned = append(pinned, bench.ShellQuote(app.Name))
 	}
@@ -915,7 +931,7 @@ func dockerHasContainers(project string) bool {
 
 // printRestorePlan renders what --dry-run would have done.
 func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target, domainOverride string, webPort, socketIOPort int,
-	withFiles bool, archivePath string) {
+	withFiles bool, archivePath string, pinned bool) {
 
 	pw.Printf("\nThe archive is valid and this restore would succeed.\n\n")
 	pw.Printf("  Archive:       %s\n", archivePath)
@@ -936,6 +952,14 @@ func printRestorePlan(pw ProgressWriter, m Manifest, plan restorePlan, target, d
 	pw.Printf("  App sources:\n")
 	for _, line := range describePlan(plan) {
 		pw.Printf("    %s\n", line)
+	}
+	if hasRecordedCommits(plan) {
+		if pinned {
+			pw.Printf("  App code:      the commits the archive recorded\n")
+		} else {
+			pw.Printf("  App code:      branch heads, which may be newer than the backup " +
+				"(--pin-apps checks out the archived commits)\n")
+		}
 	}
 	pw.Printf("  Attachments:   %s\n", yesNo(withFiles))
 	pw.Printf("  Encryption key present: %s\n", yesNo(m.Secrets.EncryptionKey != ""))
@@ -964,7 +988,7 @@ func yesNo(b bool) string {
 }
 
 // printRestoreSummary reports what came back and what could not.
-func printRestoreSummary(pw ProgressWriter, b state.Bench, m Manifest, target string, withFiles bool) {
+func printRestoreSummary(pw ProgressWriter, b state.Bench, m Manifest, target string, withFiles bool, drift driftReport) {
 	pw.Printf("\nRestored %q into bench %q.\n", m.Header.SiteName, target)
 	if b.IsProd() {
 		pw.Printf("  URL:           %s\n", b.ProxyHost)
@@ -974,6 +998,9 @@ func printRestoreSummary(pw ProgressWriter, b state.Bench, m Manifest, target st
 	pw.Printf("  Site:          %s\n", b.SiteName)
 	pw.Printf("  Admin:         administrator / %s\n", SecretFor(pw, b.AdminPassword, "ffm status "+b.Name+" --show-secrets"))
 	pw.Printf("  Attachments:   %s\n", yesNo(withFiles))
+	if line := drift.summaryLine(); line != "" {
+		pw.Printf("  App code:      %s\n", line)
+	}
 
 	// Say plainly what a logical restore cannot carry, rather than letting the
 	// user discover it.

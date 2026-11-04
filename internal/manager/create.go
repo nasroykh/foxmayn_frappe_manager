@@ -1,9 +1,11 @@
 package manager
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -724,7 +726,7 @@ func (s *Service) Create(in CreateInput, pw ProgressWriter) (createErr error) {
 			step(fmt.Sprintf("Getting app %q (branch: %s) — may take a few minutes", displayName, branchDesc))
 			if out, err := runner.ExecSilent("frappe", "bash", "-c",
 				"cd /workspace/frappe-bench && "+spec.GetAppCmd()); err != nil {
-				return fmt.Errorf("bench get-app %s: %w\n%s", displayName, err, out)
+				return fmt.Errorf("bench get-app %s: %w\n%s%s", displayName, err, out, gitAuthSuffix(out, githubToken != ""))
 			}
 		}
 
@@ -992,18 +994,33 @@ func (s *Service) benchInit(runner *bench.Runner, mode, branch, repoURL, src str
 	// inject credentials directly into the one-off run container. ConfigureGitHubToken
 	// uses docker compose exec (needs a running container) so it cannot cover this step.
 	// The token goes in on stdin, never on an argument list.
+	//
+	// Run prints a failed command's output through ErrOut; a copy is kept so a
+	// failed clone can say what to do about it (gitAuthHint). Verbose mode
+	// streams to the terminal instead, where the user reads git's own error.
+	var dump bytes.Buffer
+	prevErrOut := runner.ErrOut
+	errOut := prevErrOut
+	if errOut == nil {
+		errOut = os.Stderr
+	}
+	runner.ErrOut = io.MultiWriter(errOut, &dump)
+	defer func() { runner.ErrOut = prevErrOut }()
+	initFailed := func(err error) error {
+		return fmt.Errorf("bench init: %w%s", err, gitAuthSuffix(dump.String(), githubToken != ""))
+	}
 	if githubToken != "" {
 		if err := bench.ValidateGitHubToken(githubToken); err != nil {
 			return err
 		}
 		benchInitCmd = bench.GitCredentialsStdinCmd + " && " + benchInitCmd
 		if err := runner.RunStdin("frappe", strings.NewReader(githubToken+"\n"), "bash", "-c", benchInitCmd); err != nil {
-			return fmt.Errorf("bench init: %w", err)
+			return initFailed(err)
 		}
 		return nil
 	}
 	if err := runner.Run("frappe", "bash", "-c", benchInitCmd); err != nil {
-		return fmt.Errorf("bench init: %w", err)
+		return initFailed(err)
 	}
 	return nil
 }
